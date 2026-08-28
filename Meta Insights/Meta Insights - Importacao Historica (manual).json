@@ -1,0 +1,843 @@
+{
+  "name": "Meta Insights - Importacao Historica (manual)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "painel-api/campanhas-importar-historico",
+        "responseMode": "responseNode",
+        "options": {},
+        "httpMethod": "POST"
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -720,
+        480
+      ],
+      "id": "webhook-1",
+      "name": "Painel - Importar Historico Campanhas",
+      "webhookId": "whid-2"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT * FROM `trakeamento_controle`.`ad_accounts` WHERE client_db_name = {{ JSON.stringify(($json.query && $json.query.client_db) || '') }} LIMIT 1",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -480,
+        480
+      ],
+      "id": "mysql-3",
+      "name": "Valida Cliente (Importar Historico)",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-c-4",
+              "leftValue": "={{ $json.client_db_name || '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -304,
+        480
+      ],
+      "id": "if-5",
+      "name": "Cliente Valido? (Importar Historico)"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { message: 'Cliente não encontrado ou inválido.' } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        640
+      ],
+      "id": "code-6",
+      "name": "Erro Cliente Nao Encontrado (Importar Historico)"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "options": {
+          "responseCode": 404
+        },
+        "responseBody": "={{ $json }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        48,
+        640
+      ],
+      "id": "respond-7",
+      "name": "Responde 404 (Importar Historico)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT DATE(MIN(created_at)) as primeiro_lead_em FROM `{{ $json.client_db_name.replace(/`/g,'') }}`.`customers`",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -240,
+        480
+      ],
+      "id": "mysql-8",
+      "name": "Consulta Primeiro Lead (Backfill)",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Cliente Valido? (Importar Historico)').first().json;\nconst primeiro = $json.primeiro_lead_em;\nconst DAY_MS = 86400000;\nconst now = new Date();\nconst until = new Date(now.getTime());\nconst maxWindowSince = new Date(now.getTime() - 89 * DAY_MS); // limite maximo: 90 dias (hoje + 89 anteriores)\nlet since = maxWindowSince;\nif (primeiro) {\n  const primeiroLeadDate = new Date(String(primeiro).slice(0, 10) + 'T00:00:00Z');\n  if (primeiroLeadDate.getTime() > since.getTime()) since = primeiroLeadDate; // cliente mais novo que 90 dias: nao volta antes do primeiro lead\n}\nfunction fmt(d) { return d.toISOString().slice(0, 10); }\nreturn [{ json: Object.assign({}, ctx, { since: fmt(since), until: fmt(until), meta_api_version: 'v25.0' }) }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        480
+      ],
+      "id": "code-9",
+      "name": "Monta Range 90 Dias"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/{{ $('Monta Range 90 Dias').first().json.meta_api_version }}/act_{{ $('Monta Range 90 Dias').first().json.ad_account_id }}/campaigns",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "id,name,status,objective,daily_budget,lifetime_budget"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Monta Range 90 Dias').first().json.meta_access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.paging || !$response.body.paging.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 50
+            }
+          }
+        }
+      },
+      "id": "http-10",
+      "name": "Busca Campanhas Meta (Backfill)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        480
+      ],
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const pages = $input.all().map(function(i){ return i.json; });\nconst rows = [];\npages.forEach(function(p){ if (p && Array.isArray(p.data)) rows.push.apply(rows, p.data); });\nconst ctx = $('Monta Range 90 Dias').first().json;\nreturn [{ json: Object.assign({}, ctx, { campaigns: rows }) }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        480
+      ],
+      "id": "code-11",
+      "name": "Achata Campanhas (Backfill)"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/{{ $('Monta Range 90 Dias').first().json.meta_api_version }}/act_{{ $('Monta Range 90 Dias').first().json.ad_account_id }}/adsets",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "id,name,status,campaign_id,daily_budget,lifetime_budget"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Monta Range 90 Dias').first().json.meta_access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.paging || !$response.body.paging.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 50
+            }
+          }
+        }
+      },
+      "id": "http-12",
+      "name": "Busca Conjuntos Meta (Backfill)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        480
+      ],
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const pages = $input.all().map(function(i){ return i.json; });\nconst rows = [];\npages.forEach(function(p){ if (p && Array.isArray(p.data)) rows.push.apply(rows, p.data); });\nconst ctx = $('Monta Range 90 Dias').first().json;\nreturn [{ json: Object.assign({}, ctx, { adsets: rows }) }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        480
+      ],
+      "id": "code-13",
+      "name": "Achata Conjuntos (Backfill)"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/{{ $('Monta Range 90 Dias').first().json.meta_api_version }}/act_{{ $('Monta Range 90 Dias').first().json.ad_account_id }}/ads",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "id,name,status,adset_id,campaign_id"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Monta Range 90 Dias').first().json.meta_access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.paging || !$response.body.paging.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 50
+            }
+          }
+        }
+      },
+      "id": "http-14",
+      "name": "Busca Anuncios Meta (Backfill)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        480
+      ],
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const pages = $input.all().map(function(i){ return i.json; });\nconst rows = [];\npages.forEach(function(p){ if (p && Array.isArray(p.data)) rows.push.apply(rows, p.data); });\nconst ctx = $('Monta Range 90 Dias').first().json;\nreturn [{ json: Object.assign({}, ctx, { ads: rows }) }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        480
+      ],
+      "id": "code-15",
+      "name": "Achata Anuncios (Backfill)"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/{{ $('Monta Range 90 Dias').first().json.meta_api_version }}/act_{{ $('Monta Range 90 Dias').first().json.ad_account_id }}/insights",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "level",
+              "value": "campaign"
+            },
+            {
+              "name": "time_increment",
+              "value": "1"
+            },
+            {
+              "name": "fields",
+              "value": "campaign_id,date_start,spend,impressions,reach,frequency,clicks,unique_clicks,cpc,cpm,ctr"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            },
+            {
+              "name": "time_range",
+              "value": "={{ JSON.stringify({ since: $('Monta Range 90 Dias').first().json.since, until: $('Monta Range 90 Dias').first().json.until }) }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Monta Range 90 Dias').first().json.meta_access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.paging || !$response.body.paging.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 50
+            }
+          }
+        }
+      },
+      "id": "http-16",
+      "name": "Busca Insights Campanha (Backfill)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        480
+      ],
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const pages = $input.all().map(function(i){ return i.json; });\nconst rows = [];\npages.forEach(function(p){ if (p && Array.isArray(p.data)) rows.push.apply(rows, p.data); });\nconst ctx = $('Monta Range 90 Dias').first().json;\nreturn [{ json: Object.assign({}, ctx, { rowsCampanha: rows }) }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        480
+      ],
+      "id": "code-17",
+      "name": "Achata Insights Campanha (Backfill)"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/{{ $('Monta Range 90 Dias').first().json.meta_api_version }}/act_{{ $('Monta Range 90 Dias').first().json.ad_account_id }}/insights",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "level",
+              "value": "adset"
+            },
+            {
+              "name": "time_increment",
+              "value": "1"
+            },
+            {
+              "name": "fields",
+              "value": "adset_id,campaign_id,date_start,spend,impressions,reach,frequency,clicks,unique_clicks,cpc,cpm,ctr"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            },
+            {
+              "name": "time_range",
+              "value": "={{ JSON.stringify({ since: $('Monta Range 90 Dias').first().json.since, until: $('Monta Range 90 Dias').first().json.until }) }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Monta Range 90 Dias').first().json.meta_access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.paging || !$response.body.paging.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 50
+            }
+          }
+        }
+      },
+      "id": "http-18",
+      "name": "Busca Insights Conjunto (Backfill)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        480
+      ],
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const pages = $input.all().map(function(i){ return i.json; });\nconst rows = [];\npages.forEach(function(p){ if (p && Array.isArray(p.data)) rows.push.apply(rows, p.data); });\nconst ctx = $('Monta Range 90 Dias').first().json;\nreturn [{ json: Object.assign({}, ctx, { rowsAdset: rows }) }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        480
+      ],
+      "id": "code-19",
+      "name": "Achata Insights Conjunto (Backfill)"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/{{ $('Monta Range 90 Dias').first().json.meta_api_version }}/act_{{ $('Monta Range 90 Dias').first().json.ad_account_id }}/insights",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "level",
+              "value": "ad"
+            },
+            {
+              "name": "time_increment",
+              "value": "1"
+            },
+            {
+              "name": "fields",
+              "value": "ad_id,adset_id,campaign_id,date_start,spend,impressions,reach,frequency,clicks,unique_clicks,cpc,cpm,ctr"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            },
+            {
+              "name": "time_range",
+              "value": "={{ JSON.stringify({ since: $('Monta Range 90 Dias').first().json.since, until: $('Monta Range 90 Dias').first().json.until }) }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Monta Range 90 Dias').first().json.meta_access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.paging || !$response.body.paging.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 50
+            }
+          }
+        }
+      },
+      "id": "http-20",
+      "name": "Busca Insights Anuncio (Backfill)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        480
+      ],
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const pages = $input.all().map(function(i){ return i.json; });\nconst rows = [];\npages.forEach(function(p){ if (p && Array.isArray(p.data)) rows.push.apply(rows, p.data); });\nconst ctx = $('Monta Range 90 Dias').first().json;\nreturn [{ json: Object.assign({}, ctx, { rowsAd: rows }) }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2880,
+        480
+      ],
+      "id": "code-21",
+      "name": "Achata Insights Anuncio (Backfill)"
+    },
+    {
+      "parameters": {
+        "jsCode": "function sqlVal(v) {\n  if (v === null || v === undefined || v === '') return 'NULL';\n  return JSON.stringify(String(v));\n}\nfunction sqlNum(v) {\n  const n = Number(v);\n  return isFinite(n) ? n : 0;\n}\nfunction sqlIdent(v) {\n  return '`' + String(v).replace(/`/g, '') + '`';\n}\n\nconst ctx = $('Monta Range 90 Dias').first().json;\nconst db = sqlIdent(ctx.client_db_name);\nconst campaigns = ($('Achata Campanhas (Backfill)').first().json.campaigns) || [];\nconst adsets = ($('Achata Conjuntos (Backfill)').first().json.adsets) || [];\nconst ads = ($('Achata Anuncios (Backfill)').first().json.ads) || [];\nconst insCampanha = ($('Achata Insights Campanha (Backfill)').first().json.rowsCampanha) || [];\nconst insAdset = ($('Achata Insights Conjunto (Backfill)').first().json.rowsAdset) || [];\nconst insAd = ($('Achata Insights Anuncio (Backfill)').first().json.rowsAd) || [];\n\nconst out = [];\n\ncampaigns.forEach(function (c) {\n  out.push(\n    'INSERT INTO ' + db + '.`meta_campaigns` (campaign_id, campaign_name, status, objective, daily_budget, lifetime_budget) VALUES (' +\n    [sqlVal(c.id), sqlVal(c.name), sqlVal(c.status), sqlVal(c.objective), sqlNum(c.daily_budget) / 100 || 'NULL', sqlNum(c.lifetime_budget) / 100 || 'NULL'].join(', ') +\n    ') ON DUPLICATE KEY UPDATE campaign_name = ' + sqlVal(c.name) + ', status = ' + sqlVal(c.status) + ', objective = ' + sqlVal(c.objective) +\n    ', daily_budget = ' + (sqlNum(c.daily_budget) / 100 || 'NULL') + ', lifetime_budget = ' + (sqlNum(c.lifetime_budget) / 100 || 'NULL') + ';'\n  );\n});\n\nadsets.forEach(function (a) {\n  out.push(\n    'INSERT INTO ' + db + '.`meta_adsets` (adset_id, campaign_id, adset_name, status, daily_budget, lifetime_budget) VALUES (' +\n    [sqlVal(a.id), sqlVal(a.campaign_id), sqlVal(a.name), sqlVal(a.status), sqlNum(a.daily_budget) / 100 || 'NULL', sqlNum(a.lifetime_budget) / 100 || 'NULL'].join(', ') +\n    ') ON DUPLICATE KEY UPDATE campaign_id = ' + sqlVal(a.campaign_id) + ', adset_name = ' + sqlVal(a.name) + ', status = ' + sqlVal(a.status) +\n    ', daily_budget = ' + (sqlNum(a.daily_budget) / 100 || 'NULL') + ', lifetime_budget = ' + (sqlNum(a.lifetime_budget) / 100 || 'NULL') + ';'\n  );\n});\n\nads.forEach(function (ad) {\n  out.push(\n    'INSERT INTO ' + db + '.`meta_ads` (ad_id, adset_id, campaign_id, ad_name, status) VALUES (' +\n    [sqlVal(ad.id), sqlVal(ad.adset_id), sqlVal(ad.campaign_id), sqlVal(ad.name), sqlVal(ad.status)].join(', ') +\n    ') ON DUPLICATE KEY UPDATE adset_id = ' + sqlVal(ad.adset_id) + ', campaign_id = ' + sqlVal(ad.campaign_id) + ', ad_name = ' + sqlVal(ad.name) + ', status = ' + sqlVal(ad.status) + ';'\n  );\n});\n\nfunction insightUpsert(level, row, entityId, campaignId, adsetId, adId) {\n  const spend = sqlNum(row.spend);\n  const impressions = sqlNum(row.impressions);\n  const reach = sqlNum(row.reach);\n  const frequency = sqlNum(row.frequency);\n  const clicks = sqlNum(row.clicks);\n  const uniqueClicks = sqlNum(row.unique_clicks);\n  const cpc = sqlNum(row.cpc);\n  const cpm = sqlNum(row.cpm);\n  const ctr = sqlNum(row.ctr);\n  const raw = sqlVal(JSON.stringify(row));\n  return 'INSERT INTO ' + db + '.`meta_insights_daily` ' +\n    '(entity_level, entity_id, campaign_id, adset_id, ad_id, `date`, spend, impressions, reach, frequency, clicks, unique_clicks, cpc, cpm, ctr, raw_insights) VALUES (' +\n    [sqlVal(level), sqlVal(entityId), sqlVal(campaignId), sqlVal(adsetId), sqlVal(adId), sqlVal(row.date_start), spend, impressions, reach, frequency, clicks, uniqueClicks, cpc, cpm, ctr, raw].join(', ') +\n    ') ON DUPLICATE KEY UPDATE spend = ' + spend + ', impressions = ' + impressions + ', reach = ' + reach + ', frequency = ' + frequency +\n    ', clicks = ' + clicks + ', unique_clicks = ' + uniqueClicks + ', cpc = ' + cpc + ', cpm = ' + cpm + ', ctr = ' + ctr + ', raw_insights = ' + raw + ';';\n}\n\ninsCampanha.forEach(function (r) { out.push(insightUpsert('campaign', r, r.campaign_id, r.campaign_id, null, null)); });\ninsAdset.forEach(function (r) { out.push(insightUpsert('adset', r, r.adset_id, r.campaign_id, r.adset_id, null)); });\ninsAd.forEach(function (r) { out.push(insightUpsert('ad', r, r.ad_id, r.campaign_id, r.adset_id, r.ad_id)); });\n\nif (out.length === 0) {\n  return [{ json: { sql: null, skip: true, totalRegistros: 0 } }];\n}\nreturn out.map(function (sql) { return { json: { sql: sql, totalRegistros: out.length } }; });\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3120,
+        480
+      ],
+      "id": "code-22",
+      "name": "Monta Upserts Insights (Backfill)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        3360,
+        480
+      ],
+      "id": "mysql-23",
+      "name": "Executa Upsert Insights (Backfill)",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const total = $input.all().length;\nreturn [{ json: { message: 'Importação de histórico concluída: ' + total + ' registro(s) processado(s) (últimos 90 dias).' } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3600,
+        480
+      ],
+      "id": "code-24",
+      "name": "Resposta Importacao Historico"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "options": {},
+        "responseBody": "={{ $json }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3840,
+        480
+      ],
+      "id": "respond-25",
+      "name": "Responde Importacao Historico"
+    }
+  ],
+  "connections": {
+    "Painel - Importar Historico Campanhas": {
+      "main": [
+        [
+          {
+            "node": "Valida Cliente (Importar Historico)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valida Cliente (Importar Historico)": {
+      "main": [
+        [
+          {
+            "node": "Cliente Valido? (Importar Historico)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cliente Valido? (Importar Historico)": {
+      "main": [
+        [
+          {
+            "node": "Consulta Primeiro Lead (Backfill)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Erro Cliente Nao Encontrado (Importar Historico)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Erro Cliente Nao Encontrado (Importar Historico)": {
+      "main": [
+        [
+          {
+            "node": "Responde 404 (Importar Historico)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consulta Primeiro Lead (Backfill)": {
+      "main": [
+        [
+          {
+            "node": "Monta Range 90 Dias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monta Range 90 Dias": {
+      "main": [
+        [
+          {
+            "node": "Busca Campanhas Meta (Backfill)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Campanhas Meta (Backfill)": {
+      "main": [
+        [
+          {
+            "node": "Achata Campanhas (Backfill)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Achata Campanhas (Backfill)": {
+      "main": [
+        [
+          {
+            "node": "Busca Conjuntos Meta (Backfill)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Conjuntos Meta (Backfill)": {
+      "main": [
+        [
+          {
+            "node": "Achata Conjuntos (Backfill)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Achata Conjuntos (Backfill)": {
+      "main": [
+        [
+          {
+            "node": "Busca Anuncios Meta (Backfill)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Anuncios Meta (Backfill)": {
+      "main": [
+        [
+          {
+            "node": "Achata Anuncios (Backfill)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Achata Anuncios (Backfill)": {
+      "main": [
+        [
+          {
+            "node": "Busca Insights Campanha (Backfill)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Insights Campanha (Backfill)": {
+      "main": [
+        [
+          {
+            "node": "Achata Insights Campanha (Backfill)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Achata Insights Campanha (Backfill)": {
+      "main": [
+        [
+          {
+            "node": "Busca Insights Conjunto (Backfill)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Insights Conjunto (Backfill)": {
+      "main": [
+        [
+          {
+            "node": "Achata Insights Conjunto (Backfill)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Achata Insights Conjunto (Backfill)": {
+      "main": [
+        [
+          {
+            "node": "Busca Insights Anuncio (Backfill)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Insights Anuncio (Backfill)": {
+      "main": [
+        [
+          {
+            "node": "Achata Insights Anuncio (Backfill)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Achata Insights Anuncio (Backfill)": {
+      "main": [
+        [
+          {
+            "node": "Monta Upserts Insights (Backfill)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monta Upserts Insights (Backfill)": {
+      "main": [
+        [
+          {
+            "node": "Executa Upsert Insights (Backfill)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Executa Upsert Insights (Backfill)": {
+      "main": [
+        [
+          {
+            "node": "Resposta Importacao Historico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resposta Importacao Historico": {
+      "main": [
+        [
+          {
+            "node": "Responde Importacao Historico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "meta": {
+    "instanceId": "manual-build"
+  },
+  "id": "MetaInsightsImportacaoHistorica",
+  "tags": []
+}

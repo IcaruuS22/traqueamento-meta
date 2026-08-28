@@ -1,0 +1,81 @@
+# dependências
+node_modules/
+.pnp
+.pnp.js
+
+# build
+.next/
+out/
+build/
+dist/
+
+# ambiente — nunca versionar credenciais
+.env
+.env.local
+.env.*.local
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# sistema operacional
+.DS_Store
+Thumbs.db
+
+# =======================================================
+# Workflows n8n exportados
+#
+# Os .json de workflow podem conter IDs e nomes de credenciais.
+# Os que estão neste repositório usam placeholders
+# (MYSQL_CRED_PLACEHOLDER, GROQ_CRED_PLACEHOLDER) e por isso são
+# versionados normalmente.
+#
+# Um .json exportado DIRETO do n8n, porém, carrega os IDs reais
+# das credenciais. Salve esses como *.local.json — o padrão abaixo
+# impede que sejam commitados por engano.
+# =======================================================
+*.local.json
+01 - Recebe leads*.json
+*.backup-*.json
+
+# =======================================================
+# Comparador painel antigo x app (Fase 4, item 1)
+#
+# `comparacao-painel.mts` lê o workflow do painel n8n na pasta irmã
+# `mySQL - Copia/` — caminho que só existe nesta máquina. Fica fora do
+# repositório de propósito; some junto com o painel antigo no corte.
+# =======================================================
+comparacao-painel.mts
+
+# =======================================================
+# Ferramentas de desenvolvimento locais
+#
+# `.claude/` e `.agents/` guardam skills e a configuração do preview
+# desta máquina; `skills-lock.json` é o lock dessas skills. Nada disso
+# faz parte da aplicação nem é usado em runtime.
+# =======================================================
+.claude/
+.agents/
+skills-lock.json
+
+# =======================================================
+# Legado n8n — painel HTML e automações substituídas pelo app
+#
+# Ficam ignorados para não subirem ao GitHub mesmo antes de serem
+# apagados da pasta. Os originais continuam em `mySQL - Copia/`.
+# =======================================================
+Painel Administrativo/
+Cadastro de Clientes/
+mock-serve.js
+Meta Insights/OBSOLETO - *.json
+Formulários Instantâneos/build_event_workflow.js
+Formulários Instantâneos/Traq. Form Instantâneo - Meta ADS - MySQL.json

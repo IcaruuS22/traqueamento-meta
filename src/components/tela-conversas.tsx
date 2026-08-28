@@ -1,0 +1,735 @@
+'use client';
+
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
+import { acaoEnviarMensagem, acaoExcluirConversa, acaoSalvarLead } from '@/lib/acoes/conversas';
+import { fmtDataHora } from '@/lib/format';
+import { IconesNav } from '@/components/icones';
+import {
+  FAIXAS,
+  FAIXA_PADRAO,
+  fimDaJanela,
+  iniciais,
+  nomeExibicao,
+  rotuloEstagio,
+  textoDaBolha,
+  textoDaMensagem,
+  avisoMidia,
+  formatoMidia,
+  nomeArquivo,
+  tamanhoLegivel,
+  temMidia,
+  type Conversa,
+  type FaixaConversa,
+  type LeadConversa,
+  type MensagemWhatsapp,
+} from '@/lib/whatsapp-conversas';
+
+/**
+ * Tela de Conversas — porte da aba "Conversas" do painel antigo, com as
+ * mesmas três colunas: lista, thread e dados do lead.
+ *
+ * Atualização por polling, como no painel antigo e pelo mesmo motivo
+ * (ver PLANO_IMPLEMENTACAO.md): lista a cada 10s, conversa aberta a cada
+ * 5s, e nada enquanto a aba do navegador estiver oculta. Comparar uma
+ * assinatura do que chegou antes de trocar o estado evita dois
+ * problemas: re-render inútil de 200 linhas e, principalmente,
+ * sobrescrever um campo que a pessoa está digitando no painel da direita.
+ *
+ * Duas diferenças em relação ao painel antigo:
+ *
+ *  - não existe botão "Resolver". Ele gravava o estágio fixo
+ *    `'resolvida'`, que pode não existir na lista de estágios do cliente;
+ *    quem muda o estágio é o seletor, alimentado por `whatsapp_event_map`;
+ *  - o aviso da janela de 24h vem dos segundos calculados pelo servidor,
+ *    não do relógio do navegador.
+ *
+ * O filtro da lista é por faixa do funil — Em aberto, Ganho, Perdido —, e
+ * não por estágio. Os estágios continuam existindo inteiros no seletor do
+ * lead: são eles que disparam os eventos da Meta. O que muda é só a
+ * navegação da lista, onde uma aba por estágio dava sete filtros que
+ * ninguém usava e escondia o que importa (o que ainda está aberto).
+ */
+
+const INTERVALO_LISTA_MS = 10_000;
+const INTERVALO_THREAD_MS = 5_000;
+const DEBOUNCE_BUSCA_MS = 300;
+
+type ThreadCarregada = {
+  lead: LeadConversa;
+  mensagens: MensagemWhatsapp[];
+  /** Quando esta resposta chegou, para posicionar a janela de 24h. */
+  recebidoEm: number;
+};
+
+type FormLead = {
+  first_name: string;
+  email: string;
+  status: string;
+  notes: string;
+  tags: string;
+};
+
+const assinaturaLista = (itens: Conversa[]) =>
+  itens
+    .map((c) => `${c.customer_id}:${c.last_message_at}:${c.unread_count}:${c.status}`)
+    .join('|');
+
+// O terceiro campo é o que faz a bolha trocar o "Baixando arquivo…" pelo
+// arquivo: o download acontece depois de a mensagem já estar gravada, e
+// sem contar os pendentes a assinatura não mudaria — a mídia só apareceria
+// na próxima mensagem da conversa.
+const assinaturaMensagens = (msgs: MensagemWhatsapp[]) =>
+  msgs.length
+    ? `${msgs.length}:${msgs[msgs.length - 1].id}:${
+        msgs.filter((m) => m.media_status === 'pendente').length
+      }`
+    : '0';
+
+const assinaturaLead = (l: LeadConversa) =>
+  [l.first_name, l.email, l.status, l.notes, l.tags].join('|');
+
+const doFormulario = (l: LeadConversa): FormLead => ({
+  first_name: l.first_name ?? '',
+  email: l.email ?? '',
+  status: l.status || 'novo',
+  notes: l.notes ?? '',
+  tags: l.tags ?? '',
+});
+
+/**
+ * O arquivo de uma mensagem dentro da bolha.
+ *
+ * Imagem, áudio e vídeo saem no player do próprio navegador; o resto
+ * vira link de download. Os bytes vêm da rota autenticada
+ * `/api/conversas/midia`, nunca da URL do WhatsApp — a mídia lá expira
+ * e a URL exige a credencial do cliente.
+ *
+ * Quando não há arquivo para mostrar, devolve `null` e a bolha fica só
+ * com o rótulo de `textoDaMensagem` ("📎 Imagem recebida"), que é o que
+ * já acontecia antes da captura existir.
+ */
+function Anexo({
+  cliente,
+  customerId,
+  msg,
+}: {
+  cliente: string;
+  customerId: number;
+  msg: MensagemWhatsapp;
+}) {
+  const aviso = avisoMidia(msg.media_status);
+  if (aviso) return <span className="crm-bubble-midia-aviso">{aviso}</span>;
+  if (!temMidia(msg)) return null;
+
+  const base = `/api/conversas/midia?client_db=${encodeURIComponent(cliente)}&customer_id=${customerId}&message_id=${msg.id}`;
+  const formato = formatoMidia(msg);
+
+  if (formato === 'imagem') {
+    // <img> e não <Image>: o arquivo vem do banco, sem dimensão conhecida
+    // antes do download, e não há o que o otimizador do Next faça com uma
+    // rota autenticada por sessão.
+    return (
+      <a href={base} target="_blank" rel="noreferrer" className="crm-bubble-midia">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={base} alt={nomeArquivo(msg)} className="crm-bubble-img" />
+      </a>
+    );
+  }
+
+  if (formato === 'audio') {
+    return <audio className="crm-bubble-audio" controls preload="none" src={base} />;
+  }
+
+  if (formato === 'video') {
+    return <video className="crm-bubble-video" controls preload="metadata" src={base} />;
+  }
+
+  const tamanho = tamanhoLegivel(msg.media_size);
+  return (
+    <a href={`${base}&baixar=1`} className="crm-bubble-arquivo" download>
+      <span aria-hidden>📎</span>
+      <span>
+        {nomeArquivo(msg)}
+        {tamanho ? ` · ${tamanho}` : ''}
+      </span>
+    </a>
+  );
+}
+
+export function TelaConversas({
+  cliente,
+  estagios,
+  iniciaisConversas,
+  provider = 'cloud',
+  podeExcluir = false,
+}: {
+  cliente: string;
+  /** Estágios cadastrados em `whatsapp_event_map`. */
+  estagios: string[];
+  iniciaisConversas: Conversa[];
+  /**
+   * Sessão de administrador. Só controla o que a tela mostra — quem
+   * recusa a exclusão de fato é `acaoExcluirConversa`, no servidor.
+   */
+  podeExcluir?: boolean;
+  /**
+   * Conexão em uso. A janela de 24h é regra da Cloud API da Meta; pela
+   * Evolution a conversa sai do mesmo jeito que sairia do celular, e
+   * bloquear o campo ali seria inventar uma restrição que não existe.
+   */
+  provider?: 'cloud' | 'evolution';
+}) {
+  const [conversas, setConversas] = useState<Conversa[]>(iniciaisConversas);
+  const [faixa, setFaixa] = useState<FaixaConversa>(FAIXA_PADRAO);
+  const [busca, setBusca] = useState('');
+  const [buscaAtiva, setBuscaAtiva] = useState('');
+  const [erroLista, setErroLista] = useState<string | null>(null);
+
+  const [selecionado, setSelecionado] = useState<number | null>(null);
+  const [thread, setThread] = useState<ThreadCarregada | null>(null);
+  const [erroThread, setErroThread] = useState<string | null>(null);
+
+  const [form, setForm] = useState<FormLead>({
+    first_name: '',
+    email: '',
+    status: 'novo',
+    notes: '',
+    tags: '',
+  });
+  const [aviso, setAviso] = useState<{ tipo: 'erro' | 'sucesso'; texto: string } | null>(null);
+  const [salvando, iniciaSalvar] = useTransition();
+
+  const [texto, setTexto] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+
+  // Relógio próprio: sem ele, o aviso da janela de 24h só mudaria quando
+  // chegasse mensagem nova.
+  const [agora, setAgora] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setAgora(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  // `null` significa "ainda não sei o que o servidor tem". Guardar string
+  // vazia aqui esconderia a resposta legítima de uma lista vazia, que tem
+  // assinatura vazia: o filtro que não devolve nada não limparia a tela.
+  const sigLista = useRef<string | null>(assinaturaLista(iniciaisConversas));
+  const sigMensagens = useRef<string | null>(null);
+  const sigLead = useRef<string | null>(null);
+  const fimDaListaRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaAtiva(busca.trim()), DEBOUNCE_BUSCA_MS);
+    return () => clearTimeout(t);
+  }, [busca]);
+
+  // ---------------------------------------------------------------
+  // Lista de conversas
+  // ---------------------------------------------------------------
+  const carregaLista = useCallback(async () => {
+    const params = new URLSearchParams({ client_db: cliente, faixa });
+    if (buscaAtiva) params.set('busca', buscaAtiva);
+    try {
+      const r = await fetch(`/api/conversas?${params.toString()}`);
+      const corpo = await r.json();
+      if (!r.ok || !corpo?.ok) throw new Error(corpo?.erro || 'Erro ao carregar conversas.');
+      const itens = corpo.data.itens as Conversa[];
+      const assinatura = assinaturaLista(itens);
+      if (assinatura !== sigLista.current) {
+        sigLista.current = assinatura;
+        setConversas(itens);
+      }
+      setErroLista(null);
+    } catch (e) {
+      setErroLista(e instanceof Error ? e.message : 'Falha ao carregar conversas.');
+    }
+  }, [cliente, faixa, buscaAtiva]);
+
+  useEffect(() => {
+    // Filtro ou busca mudaram: recarrega na hora e reinicia o ciclo.
+    sigLista.current = null;
+    void carregaLista();
+    const t = setInterval(() => {
+      if (document.hidden) return;
+      void carregaLista();
+    }, INTERVALO_LISTA_MS);
+    return () => clearInterval(t);
+  }, [carregaLista]);
+
+  // ---------------------------------------------------------------
+  // Conversa aberta
+  // ---------------------------------------------------------------
+  const carregaThread = useCallback(
+    async (customerId: number) => {
+      try {
+        const params = new URLSearchParams({
+          client_db: cliente,
+          customer_id: String(customerId),
+        });
+        const r = await fetch(`/api/conversas/thread?${params.toString()}`);
+        const corpo = await r.json();
+        if (!r.ok || !corpo?.ok) throw new Error(corpo?.erro || 'Erro ao carregar a conversa.');
+
+        const lead = corpo.data.lead as LeadConversa;
+        const mensagens = corpo.data.mensagens as MensagemWhatsapp[];
+        const recebidoEm = Date.now();
+
+        const sigM = assinaturaMensagens(mensagens);
+        const sigL = assinaturaLead(lead);
+        const mudouMensagem = sigM !== sigMensagens.current;
+        const mudouLead = sigL !== sigLead.current;
+
+        // A janela de 24h é recalculada a cada resposta, mesmo quando
+        // nada mais mudou — é ela que libera ou bloqueia o envio.
+        setThread((atual) =>
+          !atual || mudouMensagem || mudouLead
+            ? { lead, mensagens, recebidoEm }
+            : { ...atual, lead, recebidoEm },
+        );
+
+        if (mudouLead) {
+          sigLead.current = sigL;
+          setForm(doFormulario(lead));
+        }
+        if (mudouMensagem) sigMensagens.current = sigM;
+        setErroThread(null);
+      } catch (e) {
+        setErroThread(e instanceof Error ? e.message : 'Falha ao carregar a conversa.');
+      }
+    },
+    [cliente],
+  );
+
+  useEffect(() => {
+    if (selecionado === null) return;
+    void carregaThread(selecionado);
+    const t = setInterval(() => {
+      if (document.hidden) return;
+      void carregaThread(selecionado);
+    }, INTERVALO_THREAD_MS);
+    return () => clearInterval(t);
+  }, [selecionado, carregaThread]);
+
+  // Rola para a última mensagem quando a conversa muda ou chega mensagem.
+  useEffect(() => {
+    fimDaListaRef.current?.scrollIntoView({ block: 'end' });
+  }, [thread?.lead.customer_id, thread?.mensagens.length]);
+
+  function selecionaConversa(customerId: number) {
+    if (customerId === selecionado) return;
+    setConfirmandoExclusao(false);
+    sigMensagens.current = null;
+    sigLead.current = null;
+    setThread(null);
+    setTexto('');
+    setAviso(null);
+    setErroThread(null);
+    setSelecionado(customerId);
+    // O badge some assim que a conversa abre; o servidor zera junto.
+    setConversas((atual) =>
+      atual.map((c) => (c.customer_id === customerId ? { ...c, unread_count: 0 } : c)),
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // Janela de 24h
+  // ---------------------------------------------------------------
+  const fim = thread ? fimDaJanela(thread.lead.segundos_desde_inbound, thread.recebidoEm) : null;
+  const janelaSeAplica = provider === 'cloud';
+  const dentroDaJanela = !janelaSeAplica || (fim !== null && fim > agora);
+  const horasRestantes = fim === null ? 0 : Math.max(0, Math.floor((fim - agora) / 3_600_000));
+
+  async function envia() {
+    if (!thread || !texto.trim() || enviando) return;
+    setEnviando(true);
+    setAviso(null);
+    const r = await acaoEnviarMensagem({
+      cliente,
+      customer_id: thread.lead.customer_id,
+      texto,
+    });
+    setEnviando(false);
+    if (!r.ok) {
+      setAviso({ tipo: 'erro', texto: r.erro });
+      return;
+    }
+    setTexto('');
+    await carregaThread(thread.lead.customer_id);
+    await carregaLista();
+  }
+
+  function salva() {
+    if (!thread) return;
+    setAviso(null);
+    const customerId = thread.lead.customer_id;
+    iniciaSalvar(async () => {
+      const r = await acaoSalvarLead({ cliente, customer_id: customerId, ...form });
+      setAviso(r.ok ? { tipo: 'sucesso', texto: r.sucesso } : { tipo: 'erro', texto: r.erro });
+      if (r.ok) {
+        // Força a próxima resposta a reescrever o formulário com o que o
+        // banco realmente gravou.
+        sigLead.current = null;
+        await carregaThread(customerId);
+        await carregaLista();
+      }
+    });
+  }
+
+  function exclui() {
+    if (!thread) return;
+    setAviso(null);
+    const customerId = thread.lead.customer_id;
+    iniciaSalvar(async () => {
+      const r = await acaoExcluirConversa({ cliente, customer_id: customerId });
+      setConfirmandoExclusao(false);
+      if (!r.ok) {
+        setAviso({ tipo: 'erro', texto: r.erro });
+        return;
+      }
+      // A conversa não existe mais: fechar o painel antes de recarregar
+      // evita o polling pedir uma thread recém-apagada.
+      setSelecionado(null);
+      setThread(null);
+      sigMensagens.current = null;
+      sigLead.current = null;
+      sigLista.current = null;
+      setConversas((atual) => atual.filter((c) => c.customer_id !== customerId));
+      await carregaLista();
+    });
+  }
+
+  const opcoesEstagio = estagios.includes(form.status) ? estagios : [form.status, ...estagios];
+
+  return (
+    <div className="crm-shell">
+      {/* Coluna 1 — lista */}
+      <div className="crm-col crm-col-list">
+        <div className="crm-list-head">
+          <div className="search-inline">
+            <IconesNav.busca />
+            <input
+              type="text"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar por nome ou telefone..."
+            />
+          </div>
+          <div className="crm-status-tabs">
+            {FAIXAS.map((f) => (
+              <button
+                key={f.valor}
+                type="button"
+                onClick={() => setFaixa(f.valor)}
+                className={`crm-status-tab${faixa === f.valor ? ' active' : ''}`}
+              >
+                {f.rotulo}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {erroLista ? <p className="crm-thread-window-warning">{erroLista}</p> : null}
+
+        <ul className="crm-list">
+          {conversas.length === 0 ? (
+            <li className="crm-thread-empty">Nenhuma conversa encontrada.</li>
+          ) : null}
+          {conversas.map((c) => {
+            const nome = nomeExibicao(c.first_name, c.last_name, c.phone);
+            const ativo = c.customer_id === selecionado;
+            return (
+              <li key={c.customer_id}>
+                <button
+                  type="button"
+                  onClick={() => selecionaConversa(c.customer_id)}
+                  aria-current={ativo ? 'true' : undefined}
+                  className={`crm-list-item${ativo ? ' active' : ''}`}
+                >
+                  <span className="avatar-circle">{iniciais(nome)}</span>
+                  <span className="crm-list-item-body">
+                    <span className="crm-list-item-top">
+                      <span className="crm-list-item-name">{nome}</span>
+                      <span className="crm-list-item-time">
+                        {c.last_message_at ? fmtDataHora(c.last_message_at) : ''}
+                      </span>
+                    </span>
+                    <span className="crm-list-item-preview">
+                      {c.ultima_mensagem_direcao === 'outbound' ? 'Você: ' : ''}
+                      {textoDaMensagem(c.ultima_mensagem_tipo, c.ultima_mensagem) || '—'}
+                    </span>
+                    <span className="crm-list-item-top" style={{ marginTop: 2 }}>
+                      <span className="crm-list-item-time">{rotuloEstagio(c.status)}</span>
+                      {c.unread_count > 0 ? (
+                        <span className="crm-unread-badge">{c.unread_count}</span>
+                      ) : null}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      {/* Coluna 2 — conversa */}
+      <div className="crm-col crm-col-thread">
+        {!thread ? (
+          <div className="crm-thread-empty">
+            <IconesNav.conversas width={28} height={28} />
+            <span>{erroThread ?? 'Selecione uma conversa à esquerda para ver o histórico.'}</span>
+          </div>
+        ) : (
+          <>
+            <div className="crm-thread-head">
+              <div>
+                <div className="text-body-medium">
+                  {nomeExibicao(thread.lead.first_name, thread.lead.last_name, thread.lead.phone)}
+                </div>
+                <div className="text-body-small text-tertiary">
+                  {thread.lead.phone ?? 'sem telefone'} · {rotuloEstagio(thread.lead.status)}
+                </div>
+              </div>
+            </div>
+
+            <div className="crm-thread-messages">
+              {thread.mensagens.length === 0 ? (
+                <p className="text-body-small text-tertiary">Nenhuma mensagem nesta conversa.</p>
+              ) : null}
+              {thread.mensagens.map((m) => {
+                const saiu = m.direction === 'outbound';
+                return (
+                  <div
+                    key={m.id}
+                    className={`crm-bubble-row ${saiu ? 'outbound' : 'inbound'}`}
+                  >
+                    <div className="crm-bubble">
+                      <Anexo cliente={cliente} customerId={thread.lead.customer_id} msg={m} />
+                      {textoDaBolha(m)}
+                      <span className="crm-bubble-time">{fmtDataHora(m.created_at)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={fimDaListaRef} />
+            </div>
+
+            {dentroDaJanela ? null : (
+              <p className="crm-thread-window-warning">
+                Fora da janela de 24h da Meta: só é possível enviar mensagens livres até 24h após
+                a última mensagem do lead. Envio por template não está disponível nesta versão.
+              </p>
+            )}
+
+            {aviso ? (
+              <p
+                role="alert"
+                className={
+                  aviso.tipo === 'erro'
+                    ? 'crm-thread-window-warning'
+                    : 'crm-thread-window-warning crm-thread-ok'
+                }
+              >
+                {aviso.texto}
+              </p>
+            ) : null}
+
+            <div className={`crm-thread-compose${dentroDaJanela ? '' : ' disabled'}`}>
+              <textarea
+                value={texto}
+                onChange={(e) => setTexto(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void envia();
+                  }
+                }}
+                disabled={!dentroDaJanela || enviando}
+                rows={1}
+                placeholder={
+                  dentroDaJanela ? 'Digite uma mensagem...' : 'Janela de 24h encerrada'
+                }
+              />
+              <button
+                type="button"
+                onClick={() => void envia()}
+                disabled={!dentroDaJanela || enviando || !texto.trim()}
+                className="btn btn-primary"
+              >
+                {enviando ? 'Enviando…' : 'Enviar'}
+              </button>
+            </div>
+
+            {janelaSeAplica && dentroDaJanela ? (
+              <p className="crm-janela-restante">
+                Restam cerca de {horasRestantes}h na janela de resposta livre.
+              </p>
+            ) : null}
+          </>
+        )}
+      </div>
+
+      {/* Coluna 3 — lead */}
+      <div className="crm-col crm-col-lead">
+        {!thread ? (
+          <div className="crm-thread-empty">
+            <span>Selecione uma conversa para ver os dados do lead.</span>
+          </div>
+        ) : (
+          <>
+            <h3>Dados do lead</h3>
+
+            <div className="crm-field">
+              <label htmlFor="leadNome">Nome</label>
+              <input
+                id="leadNome"
+                type="text"
+                className="field"
+                value={form.first_name}
+                onChange={(e) => setForm({ ...form, first_name: e.target.value })}
+              />
+            </div>
+
+            <div className="crm-field">
+              <label htmlFor="leadEmail">Email</label>
+              <input
+                id="leadEmail"
+                type="text"
+                className="field"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+              />
+            </div>
+
+            <div className="crm-field">
+              <label htmlFor="leadStatus">Status</label>
+              <select
+                id="leadStatus"
+                className="field"
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+              >
+                {opcoesEstagio.map((e) => (
+                  <option key={e} value={e}>
+                    {rotuloEstagio(e)}
+                  </option>
+                ))}
+              </select>
+              <span className="crm-field-hint">
+                Mudar o estágio dispara o evento configurado em “Estágios e eventos”.
+              </span>
+            </div>
+
+            <div className="crm-field">
+              <label htmlFor="leadNotas">Notas</label>
+              <textarea
+                id="leadNotas"
+                rows={4}
+                className="field crm-textarea"
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              />
+            </div>
+
+            <div className="crm-field">
+              <label htmlFor="leadTags">Tags</label>
+              <input
+                id="leadTags"
+                type="text"
+                className="field"
+                placeholder="Separadas por vírgula"
+                value={form.tags}
+                onChange={(e) => setForm({ ...form, tags: e.target.value })}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={salva}
+              disabled={salvando}
+              className="btn btn-primary btn-sm"
+              style={{ width: '100%' }}
+            >
+              {salvando ? 'Salvando…' : 'Salvar'}
+            </button>
+
+            <div className="crm-lead-origem">
+              <h4>Origem do Anúncio</h4>
+              <div className="crm-field">
+                <label>Ad ID</label>
+                <div className="crm-readonly">{thread.lead.referral_ad_id ?? '—'}</div>
+              </div>
+              <div className="crm-field">
+                <label>Click ID (ctwa_clid)</label>
+                <div className="crm-readonly">{thread.lead.referral_ctwa_clid ?? '—'}</div>
+              </div>
+            </div>
+
+            {podeExcluir ? (
+              <div className="crm-lead-origem">
+                <h4>Área do administrador</h4>
+                {confirmandoExclusao ? (
+                  <div className="space-y-2">
+                    <p className="text-body-small text-tertiary">
+                      Apagar todas as mensagens desta conversa e o estado dela? O lead e os
+                      eventos já enviados à Meta continuam no banco. Não há como desfazer.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm"
+                        disabled={salvando}
+                        onClick={exclui}
+                      >
+                        Confirmar exclusão
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={salvando}
+                        onClick={() => setConfirmandoExclusao(false)}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-sm"
+                    disabled={salvando}
+                    onClick={() => setConfirmandoExclusao(true)}
+                  >
+                    Excluir conversa
+                  </button>
+                )}
+              </div>
+            ) : null}
+
+            <div className="crm-lead-origem">
+              <h4>Classificação por IA</h4>
+              <div className="crm-field">
+                <label>Última análise</label>
+                <div className="crm-readonly">
+                  {thread.lead.ai_last_analyzed_at
+                    ? fmtDataHora(thread.lead.ai_last_analyzed_at)
+                    : '—'}
+                </div>
+              </div>
+              <div className="crm-field">
+                <label>Estágio sugerido</label>
+                <div className="crm-readonly">
+                  {rotuloEstagio(thread.lead.ai_last_classification)}
+                </div>
+              </div>
+              <div className="crm-field">
+                <label>Motivo</label>
+                <div className="crm-readonly">{thread.lead.ai_last_reason ?? '—'}</div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

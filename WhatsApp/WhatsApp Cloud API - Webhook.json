@@ -1,0 +1,1030 @@
+{
+  "name": "WhatsApp Cloud API - Webhook",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WhatsApp Cloud API (oficial da Meta) — Webhook + CAPI multi-tenant\n\nRecebe mensagens de WhatsApp via Cloud API (uma conexão por cliente, cadastrada na aba WhatsApp do painel -> tabela central `whatsapp_accounts`). Resolve o cliente por `phone_number_id`, encontra ou cria o customer por telefone (últimos 10-11 dígitos, contorna as variações de formato já existentes em `customers.phone`), grava a mensagem em `whatsapp_messages` e, se a conversa nasceu de um anúncio \"Clique para WhatsApp\" (`referral.ctwa_clid`) e ainda não foi enviado, dispara um evento `Contact` para a Meta CAPI (`action_source: business_messaging`) — em modo de teste enquanto `ad_accounts.meta_test_event_code` estiver preenchido.\n\nANTES DE PUBLICAR: troque a constante CLOUD_API_VERIFY_TOKEN no topo deste script pelo mesmo valor cadastrado no App Dashboard da Meta (WhatsApp > Configuration > Webhook > Verify Token), e configure a credencial MySQL no node genérico.",
+        "height": 420,
+        "width": 1100,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -520,
+        -220
+      ],
+      "typeVersion": 1,
+      "id": "sticky-whatsapp",
+      "name": "Sticky Note WhatsApp"
+    },
+    {
+      "parameters": {
+        "path": "whatsapp-cloud-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -480,
+        40
+      ],
+      "id": "webhook-1",
+      "name": "WhatsApp Cloud - Verificacao (GET)",
+      "webhookId": "whid-2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-c-3",
+              "leftValue": "={{ $json.query && $json.query['hub.verify_token'] }}",
+              "rightValue": "TROCAR_ANTES_DE_PUBLICAR_whatsapp_verify_token",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -240,
+        40
+      ],
+      "id": "if-4",
+      "name": "Verify Token Confere?"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/plain; charset=utf-8"
+              }
+            ]
+          }
+        },
+        "responseBody": "={{ $json.query['hub.challenge'] }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        -40
+      ],
+      "id": "respond-5",
+      "name": "Responde Challenge"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "options": {
+          "responseCode": 403,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/plain; charset=utf-8"
+              }
+            ]
+          }
+        },
+        "responseBody": "Verify token inválido."
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        120
+      ],
+      "id": "respond-6",
+      "name": "Responde Verificacao Falhou"
+    },
+    {
+      "parameters": {
+        "path": "whatsapp-cloud-webhook",
+        "responseMode": "responseNode",
+        "options": {},
+        "httpMethod": "POST"
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -480,
+        320
+      ],
+      "id": "webhook-7",
+      "name": "WhatsApp Cloud - Recebe (POST)",
+      "webhookId": "whid-8"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrai os campos relevantes do payload de webhook da Cloud API.\n// A Meta manda tanto mensagens reais (value.messages) quanto callbacks\n// de entrega/leitura (value.statuses) no MESMO webhook -- os callbacks\n// de status precisam ser ignorados sem erro (sinalizado por ignorar_flag).\nconst body = $json.body || {};\nconst entry = (body.entry && body.entry[0]) || {};\nconst change = (entry.changes && entry.changes[0]) || {};\nconst value = change.value || {};\n\nfunction normalizeWhatsappPhone(raw) {\n  const digits = String(raw || '').replace(/\\D/g, '');\n  if (!digits) return '';\n  return digits.startsWith('55') ? digits : '55' + digits;\n}\n\nif (!value.messages || !value.messages[0]) {\n  return [{ json: { ignorar_flag: '1' } }];\n}\n\nconst message = value.messages[0];\nconst contact = (value.contacts && value.contacts[0]) || {};\nconst referral = message.referral || {};\n\nreturn [{\n  json: {\n    ignorar_flag: '0',\n    phone_number_id: (value.metadata && value.metadata.phone_number_id) || '',\n    wa_message_id: message.id,\n    telefone_normalizado: normalizeWhatsappPhone(message.from),\n    tipo_mensagem: message.type,\n    texto_mensagem: (message.text && message.text.body) || '',\n    timestamp_unix: Number(message.timestamp) || Math.floor(Date.now() / 1000),\n    nome_perfil: (contact.profile && contact.profile.name) || null,\n    referral_ad_id: referral.source_id || null,\n    referral_ctwa_clid: referral.ctwa_clid || null,\n    referral_source_url: referral.source_url || null,\n    raw: value\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        320
+      ],
+      "id": "code-9",
+      "name": "Extrai Metadados Cloud API"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-c-10",
+              "leftValue": "={{ $json.ignorar_flag }}",
+              "rightValue": "1",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -16,
+        320
+      ],
+      "id": "if-11",
+      "name": "Deve Ignorar? (status/sem mensagem)"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "options": {},
+        "responseBody": "={{ { message: 'ok (status/sem mensagem, ignorado)' } }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        240
+      ],
+      "id": "respond-12",
+      "name": "Responde Ignorado"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "options": {},
+        "responseBody": "={{ { message: 'ok (recebido, processando)' } }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        400
+      ],
+      "id": "respond-13",
+      "name": "Responde Recebido (ack imediato)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT wa.*, aa.client_db_name, aa.ad_account_id, aa.meta_pixel_dataset_id, aa.meta_access_token, aa.meta_test_event_code FROM `trakeamento_controle`.`whatsapp_accounts` wa JOIN `trakeamento_controle`.`ad_accounts` aa ON aa.client_db_name = wa.client_db_name WHERE wa.cloud_phone_number_id = {{ JSON.stringify($json.phone_number_id) }} AND wa.status = 'ACTIVE' LIMIT 1",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        432,
+        400
+      ],
+      "id": "mysql-14",
+      "name": "Busca Conta WhatsApp",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const contaEncontrada = !!$json.client_db_name;\nreturn [{ json: Object.assign({}, $json, { processar_flag: contaEncontrada ? '1' : '0' }) }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        400
+      ],
+      "id": "code-15",
+      "name": "Decide Processamento"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-c-16",
+              "leftValue": "={{ $json.processar_flag }}",
+              "rightValue": "1",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        656,
+        400
+      ],
+      "id": "if-17",
+      "name": "Conta Encontrada?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT * FROM `{{ $json.client_db_name.replace(/`/g,'') }}`.`customers` WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) = RIGHT({{ JSON.stringify($('Extrai Metadados Cloud API').item.json.telefone_normalizado) }}, 10) ORDER BY id DESC LIMIT 1",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        880,
+        320
+      ],
+      "id": "mysql-18",
+      "name": "Busca Customer por Telefone",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-c-19",
+              "leftValue": "={{ String($json.id || '') }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1104,
+        320
+      ],
+      "id": "if-20",
+      "name": "Customer Encontrado?"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { customer_id: $json.id, whatsapp_contact_capi_sent_at: $json.whatsapp_contact_capi_sent_at || null } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        240
+      ],
+      "id": "code-21",
+      "name": "Normaliza Customer Existente"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO `{{ $('Decide Processamento').item.json.client_db_name.replace(/`/g,'') }}`.`customers` (ad_account_id, first_name, phone, meta_ad_id, current_stage) VALUES ({{ JSON.stringify($('Decide Processamento').item.json.ad_account_id || null) }}, {{ JSON.stringify($('Extrai Metadados Cloud API').item.json.nome_perfil || null) }}, {{ JSON.stringify($('Extrai Metadados Cloud API').item.json.telefone_normalizado) }}, {{ JSON.stringify($('Extrai Metadados Cloud API').item.json.referral_ad_id || null) }}, 'whatsapp_contact')",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1328,
+        420
+      ],
+      "id": "mysql-22",
+      "name": "Cria Customer via WhatsApp",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { customer_id: $json.insertId, whatsapp_contact_capi_sent_at: null } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        420
+      ],
+      "id": "code-23",
+      "name": "Normaliza Customer Novo"
+    },
+    {
+      "parameters": {
+        "jsCode": "function sqlVal(v) {\n  if (v === null || v === undefined || v === '') return 'NULL';\n  return JSON.stringify(String(v));\n}\nfunction sqlIdent(v) {\n  return '`' + String(v).replace(/`/g, '') + '`';\n}\n\nconst dbName = $('Decide Processamento').item.json.client_db_name;\nconst msg = $('Extrai Metadados Cloud API').item.json;\nconst customerId = $json.customer_id;\n\nconst sql =\n  'INSERT INTO ' + sqlIdent(dbName) + '.`whatsapp_messages` ' +\n  '(customer_id, direction, wa_message_id, phone, message_type, message_text, message_timestamp_unix, referral_ad_id, referral_ctwa_clid, raw_payload) VALUES (' +\n  [\n    customerId ? Number(customerId) : 'NULL',\n    \"'inbound'\",\n    sqlVal(msg.wa_message_id),\n    sqlVal(msg.telefone_normalizado),\n    sqlVal(msg.tipo_mensagem),\n    sqlVal(msg.texto_mensagem),\n    Number(msg.timestamp_unix) || 0,\n    sqlVal(msg.referral_ad_id),\n    sqlVal(msg.referral_ctwa_clid),\n    sqlVal(JSON.stringify(msg.raw))\n  ].join(', ') + ');';\n\nreturn [{\n  json: {\n    sql: sql,\n    customer_id: customerId,\n    whatsapp_contact_capi_sent_at: $json.whatsapp_contact_capi_sent_at,\n    referral_ctwa_clid: msg.referral_ctwa_clid,\n    client_db_name: dbName\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        320
+      ],
+      "id": "code-24",
+      "name": "Monta Insert Mensagem"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        2000,
+        320
+      ],
+      "id": "mysql-25",
+      "name": "Insere Mensagem",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "function sqlIdent(v) {\n  return '`' + String(v).replace(/`/g, '') + '`';\n}\nconst dbName = $('Monta Insert Mensagem').item.json.client_db_name;\nconst customerId = $('Monta Insert Mensagem').item.json.customer_id;\nconst sql = customerId\n  ? 'INSERT INTO ' + sqlIdent(dbName) + '.`whatsapp_conversations` (customer_id, unread_count, last_message_at, last_inbound_at) VALUES (' + Number(customerId) + ', 1, NOW(), NOW()) ON DUPLICATE KEY UPDATE unread_count = unread_count + 1, last_message_at = NOW(), last_inbound_at = NOW();'\n  : '';\nreturn [{ json: { sql: sql } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        480
+      ],
+      "id": "code-26",
+      "name": "Monta Upsert Conversa WhatsApp"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        2112,
+        480
+      ],
+      "id": "mysql-27",
+      "name": "Upsert Conversa WhatsApp",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctwaClid = $('Monta Insert Mensagem').item.json.referral_ctwa_clid || '';\nconst jaEnviado = !!$('Monta Insert Mensagem').item.json.whatsapp_contact_capi_sent_at;\nconst customerId = $('Monta Insert Mensagem').item.json.customer_id;\nconst deveDisparar = (ctwaClid && !jaEnviado && customerId) ? '1' : '0';\nreturn [{ json: { deve_disparar_flag: deveDisparar, customer_id: customerId } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2224,
+        320
+      ],
+      "id": "code-28",
+      "name": "Decide Disparo CAPI"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-c-29",
+              "leftValue": "={{ $json.deve_disparar_flag }}",
+              "rightValue": "1",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2448,
+        320
+      ],
+      "id": "if-30",
+      "name": "Deve Disparar CAPI?"
+    },
+    {
+      "parameters": {
+        "type": "SHA256",
+        "value": "={{ $('Extrai Metadados Cloud API').item.json.telefone_normalizado }}",
+        "dataPropertyName": "crypto_ph"
+      },
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        2672,
+        240
+      ],
+      "id": "crypto-31",
+      "name": "Crypto Telefone WhatsApp"
+    },
+    {
+      "parameters": {
+        "jsCode": "const info = $('Decide Processamento').item.json;\nconst msg = $('Extrai Metadados Cloud API').item.json;\nconst phHash = $('Crypto Telefone WhatsApp').item.json.crypto_ph;\n\nconst payload = {\n  data: [\n    {\n      event_name: 'Contact',\n      event_time: Math.floor(Date.now() / 1000),\n      action_source: 'business_messaging',\n      messaging_channel: 'whatsapp',\n      event_id: 'whatsapp_contact_' + msg.wa_message_id,\n      user_data: {\n        ph: [phHash],\n        ctwa_clid: msg.referral_ctwa_clid\n      }\n    }\n  ]\n};\n\nif (msg.referral_ad_id) {\n  payload.data[0].attribution_data = {\n    ad_id: String(msg.referral_ad_id),\n    attribution_share: 1\n  };\n}\n\nif (info.meta_test_event_code) {\n  payload.test_event_code = info.meta_test_event_code;\n}\n\nreturn [{ json: payload }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2896,
+        240
+      ],
+      "id": "code-32",
+      "name": "Monta Payload CAPI WhatsApp"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v25.0/{{ $('Decide Processamento').item.json.meta_pixel_dataset_id }}/events",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Decide Processamento').item.json.meta_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3120,
+        240
+      ],
+      "id": "http-33",
+      "name": "Envia Evento CAPI WhatsApp",
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "function sqlVal(v) {\n  if (v === null || v === undefined || v === '') return 'NULL';\n  return JSON.stringify(String(v));\n}\nfunction sqlIdent(v) {\n  return '`' + String(v).replace(/`/g, '') + '`';\n}\n\nconst dbName = $('Decide Processamento').item.json.client_db_name;\nconst customerId = $('Decide Disparo CAPI').item.json.customer_id;\nconst payload = $('Monta Payload CAPI WhatsApp').item.json;\nconst eventId = payload.data[0].event_id;\n\nconst sqlEvento =\n  'INSERT INTO ' + sqlIdent(dbName) + '.`meta_capi_events` ' +\n  '(customer_id, event_name, event_id, event_time_unix, action_source, lead_event_source, user_data_hashed, meta_payload_sent, meta_response, status) VALUES (' +\n  [\n    customerId ? Number(customerId) : 'NULL',\n    sqlVal(payload.data[0].event_name),\n    sqlVal(eventId),\n    Number(payload.data[0].event_time) || 0,\n    sqlVal(payload.data[0].action_source),\n    \"'whatsapp_ctwa'\",\n    sqlVal(JSON.stringify(payload.data[0].user_data)),\n    sqlVal(JSON.stringify(payload)),\n    sqlVal(JSON.stringify($json)),\n    \"'SENT'\"\n  ].join(', ') + ') ON DUPLICATE KEY UPDATE meta_response = ' + sqlVal(JSON.stringify($json)) + \", status = 'SENT';\";\n\nconst sqlCustomer = customerId\n  ? 'UPDATE ' + sqlIdent(dbName) + '.`customers` SET whatsapp_contact_capi_sent_at = NOW() WHERE id = ' + Number(customerId) + ';'\n  : '';\nconst sqlMensagem =\n  'UPDATE ' + sqlIdent(dbName) + '.`whatsapp_messages` SET capi_event_id = ' + sqlVal(eventId) +\n  ' WHERE wa_message_id = ' + sqlVal($('Extrai Metadados Cloud API').item.json.wa_message_id) + ';';\n\nreturn [{ json: { sql_evento: sqlEvento, sql_customer: sqlCustomer, sql_mensagem: sqlMensagem } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3344,
+        160
+      ],
+      "id": "code-34",
+      "name": "Monta Log CAPI (sucesso)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql_evento }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        3568,
+        160
+      ],
+      "id": "mysql-35",
+      "name": "Grava Log Evento CAPI",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $('Monta Log CAPI (sucesso)').item.json.sql_customer }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        3792,
+        160
+      ],
+      "id": "mysql-36",
+      "name": "Marca Customer (CAPI enviado)",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $('Monta Log CAPI (sucesso)').item.json.sql_mensagem }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        4016,
+        160
+      ],
+      "id": "mysql-37",
+      "name": "Marca Mensagem (capi_event_id)",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "function sqlVal(v) {\n  if (v === null || v === undefined || v === '') return 'NULL';\n  return JSON.stringify(String(v));\n}\nfunction sqlIdent(v) {\n  return '`' + String(v).replace(/`/g, '') + '`';\n}\n\nconst dbName = $('Decide Processamento').item.json.client_db_name;\nconst customerId = $('Decide Disparo CAPI').item.json.customer_id;\nconst payload = $('Monta Payload CAPI WhatsApp').item.json;\nconst eventId = payload.data[0].event_id;\n\nconst sql =\n  'INSERT INTO ' + sqlIdent(dbName) + '.`meta_capi_events` ' +\n  '(customer_id, event_name, event_id, event_time_unix, action_source, lead_event_source, user_data_hashed, meta_payload_sent, meta_response, status, error_message) VALUES (' +\n  [\n    customerId ? Number(customerId) : 'NULL',\n    sqlVal(payload.data[0].event_name),\n    sqlVal(eventId),\n    Number(payload.data[0].event_time) || 0,\n    sqlVal(payload.data[0].action_source),\n    \"'whatsapp_ctwa'\",\n    sqlVal(JSON.stringify(payload.data[0].user_data)),\n    sqlVal(JSON.stringify(payload)),\n    sqlVal(JSON.stringify($json)),\n    \"'ERROR'\",\n    sqlVal(($json.error && $json.error.message) || JSON.stringify($json))\n  ].join(', ') + ') ON DUPLICATE KEY UPDATE meta_response = ' + sqlVal(JSON.stringify($json)) + \", status = 'ERROR';\";\n\nreturn [{ json: { sql: sql } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3344,
+        320
+      ],
+      "id": "code-38",
+      "name": "Monta Log CAPI (erro)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        3568,
+        320
+      ],
+      "id": "mysql-39",
+      "name": "Grava Log Evento CAPI (erro)",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "connections": {
+    "WhatsApp Cloud - Verificacao (GET)": {
+      "main": [
+        [
+          {
+            "node": "Verify Token Confere?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Token Confere?": {
+      "main": [
+        [
+          {
+            "node": "Responde Challenge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responde Verificacao Falhou",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Cloud - Recebe (POST)": {
+      "main": [
+        [
+          {
+            "node": "Extrai Metadados Cloud API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrai Metadados Cloud API": {
+      "main": [
+        [
+          {
+            "node": "Deve Ignorar? (status/sem mensagem)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deve Ignorar? (status/sem mensagem)": {
+      "main": [
+        [
+          {
+            "node": "Responde Ignorado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responde Recebido (ack imediato)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responde Recebido (ack imediato)": {
+      "main": [
+        [
+          {
+            "node": "Busca Conta WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Conta WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Decide Processamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide Processamento": {
+      "main": [
+        [
+          {
+            "node": "Conta Encontrada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conta Encontrada?": {
+      "main": [
+        [
+          {
+            "node": "Busca Customer por Telefone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Customer por Telefone": {
+      "main": [
+        [
+          {
+            "node": "Customer Encontrado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Customer Encontrado?": {
+      "main": [
+        [
+          {
+            "node": "Normaliza Customer Existente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cria Customer via WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cria Customer via WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Normaliza Customer Novo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliza Customer Existente": {
+      "main": [
+        [
+          {
+            "node": "Monta Insert Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliza Customer Novo": {
+      "main": [
+        [
+          {
+            "node": "Monta Insert Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monta Insert Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Insere Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insere Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Monta Upsert Conversa WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Monta Upsert Conversa WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monta Upsert Conversa WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Upsert Conversa WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Conversa WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Decide Disparo CAPI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Decide Disparo CAPI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide Disparo CAPI": {
+      "main": [
+        [
+          {
+            "node": "Deve Disparar CAPI?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deve Disparar CAPI?": {
+      "main": [
+        [
+          {
+            "node": "Crypto Telefone WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crypto Telefone WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Monta Payload CAPI WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monta Payload CAPI WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Envia Evento CAPI WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envia Evento CAPI WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Monta Log CAPI (sucesso)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Monta Log CAPI (erro)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monta Log CAPI (sucesso)": {
+      "main": [
+        [
+          {
+            "node": "Grava Log Evento CAPI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Grava Log Evento CAPI": {
+      "main": [
+        [
+          {
+            "node": "Marca Customer (CAPI enviado)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marca Customer (CAPI enviado)": {
+      "main": [
+        [
+          {
+            "node": "Marca Mensagem (capi_event_id)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monta Log CAPI (erro)": {
+      "main": [
+        [
+          {
+            "node": "Grava Log Evento CAPI (erro)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "meta": {
+    "instanceId": "manual-build"
+  },
+  "id": "WhatsappCloudApiWebhook",
+  "tags": []
+}
