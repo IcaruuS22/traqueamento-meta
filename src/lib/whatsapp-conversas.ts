@@ -172,6 +172,8 @@ export type LeadConversa = {
   status: string;
   notes: string | null;
   tags: string | null;
+  /** Só existe em banco que já rodou a migração de motivo de perda. */
+  motivo_perda: string | null;
   /**
    * Segundos decorridos desde a última mensagem recebida do lead,
    * calculados pelo MySQL (`TIMESTAMPDIFF(... , NOW())`). `null` quando

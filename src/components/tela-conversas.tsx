@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { acaoEnviarMensagem, acaoExcluirConversa, acaoSalvarLead } from '@/lib/acoes/conversas';
-import { fmtDataHora } from '@/lib/format';
+import { ehEtapaDePerda, MOTIVOS_PERDA_SUGERIDOS, TAMANHO_MOTIVO } from '@/lib/funil';
+import { fmtDataHora, fmtHoraRelativa } from '@/lib/format';
+import Link from 'next/link';
 import { IconesNav } from '@/components/icones';
+import { ModalRastreio } from '@/components/modal-rastreio';
 import {
   FAIXAS,
   FAIXA_PADRAO,
@@ -67,6 +70,8 @@ type FormLead = {
   status: string;
   notes: string;
   tags: string;
+  /** Só é gravado quando o estágio salvo é o de perda. */
+  motivo_perda: string;
 };
 
 const assinaturaLista = (itens: Conversa[]) =>
@@ -86,7 +91,7 @@ const assinaturaMensagens = (msgs: MensagemWhatsapp[]) =>
     : '0';
 
 const assinaturaLead = (l: LeadConversa) =>
-  [l.first_name, l.email, l.status, l.notes, l.tags].join('|');
+  [l.first_name, l.email, l.status, l.notes, l.tags, l.motivo_perda].join('|');
 
 const doFormulario = (l: LeadConversa): FormLead => ({
   first_name: l.first_name ?? '',
@@ -94,6 +99,7 @@ const doFormulario = (l: LeadConversa): FormLead => ({
   status: l.status || 'novo',
   notes: l.notes ?? '',
   tags: l.tags ?? '',
+  motivo_perda: l.motivo_perda ?? '',
 });
 
 /**
@@ -160,6 +166,7 @@ export function TelaConversas({
   cliente,
   estagios,
   iniciaisConversas,
+  leadInicial = null,
   provider = 'cloud',
   podeExcluir = false,
 }: {
@@ -167,6 +174,12 @@ export function TelaConversas({
   /** Estágios cadastrados em `whatsapp_event_map`. */
   estagios: string[];
   iniciaisConversas: Conversa[];
+  /**
+   * Conversa a abrir de saída, vinda de `?lead=` — é assim que o card do
+   * CRM chega aqui. Pode não estar na lista da faixa em que a tela abre;
+   * a thread é buscada pelo id, então ela aparece do mesmo jeito.
+   */
+  leadInicial?: number | null;
   /**
    * Sessão de administrador. Só controla o que a tela mostra — quem
    * recusa a exclusão de fato é `acaoExcluirConversa`, no servidor.
@@ -185,9 +198,10 @@ export function TelaConversas({
   const [buscaAtiva, setBuscaAtiva] = useState('');
   const [erroLista, setErroLista] = useState<string | null>(null);
 
-  const [selecionado, setSelecionado] = useState<number | null>(null);
+  const [selecionado, setSelecionado] = useState<number | null>(leadInicial);
   const [thread, setThread] = useState<ThreadCarregada | null>(null);
   const [erroThread, setErroThread] = useState<string | null>(null);
+  const [rastreioAberto, setRastreioAberto] = useState(false);
 
   const [form, setForm] = useState<FormLead>({
     first_name: '',
@@ -195,6 +209,7 @@ export function TelaConversas({
     status: 'novo',
     notes: '',
     tags: '',
+    motivo_perda: '',
   });
   const [aviso, setAviso] = useState<{ tipo: 'erro' | 'sucesso'; texto: string } | null>(null);
   const [salvando, iniciaSalvar] = useTransition();
@@ -319,6 +334,7 @@ export function TelaConversas({
   function selecionaConversa(customerId: number) {
     if (customerId === selecionado) return;
     setConfirmandoExclusao(false);
+    setRastreioAberto(false);
     sigMensagens.current = null;
     sigLead.current = null;
     setThread(null);
@@ -450,8 +466,11 @@ export function TelaConversas({
                   <span className="crm-list-item-body">
                     <span className="crm-list-item-top">
                       <span className="crm-list-item-name">{nome}</span>
-                      <span className="crm-list-item-time">
-                        {c.last_message_at ? fmtDataHora(c.last_message_at) : ''}
+                      <span
+                        className="crm-list-item-time"
+                        title={c.last_message_at ? fmtDataHora(c.last_message_at) : undefined}
+                      >
+                        {fmtHoraRelativa(c.last_message_at)}
                       </span>
                     </span>
                     <span className="crm-list-item-preview">
@@ -620,6 +639,33 @@ export function TelaConversas({
               </span>
             </div>
 
+            {/* O motivo só faz sentido no estágio de perda, e é dele que
+                sai o ranking da tela de Funil. Fica em branco quando
+                ninguém quis dizer — o funil conta como sem motivo. */}
+            {ehEtapaDePerda(form.status) ? (
+              <div className="crm-field">
+                <label htmlFor="leadMotivoPerda">Motivo da perda</label>
+                <input
+                  id="leadMotivoPerda"
+                  type="text"
+                  className="field"
+                  list="conversasMotivosSugeridos"
+                  placeholder="Escolha ou escreva"
+                  maxLength={TAMANHO_MOTIVO}
+                  value={form.motivo_perda}
+                  onChange={(e) => setForm({ ...form, motivo_perda: e.target.value })}
+                />
+                <datalist id="conversasMotivosSugeridos">
+                  {MOTIVOS_PERDA_SUGERIDOS.map((m) => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
+                <span className="crm-field-hint">
+                  Gravado ao salvar. Em branco, o funil conta como “sem motivo registrado”.
+                </span>
+              </div>
+            ) : null}
+
             <div className="crm-field">
               <label htmlFor="leadNotas">Notas</label>
               <textarea
@@ -662,6 +708,24 @@ export function TelaConversas({
               <div className="crm-field">
                 <label>Click ID (ctwa_clid)</label>
                 <div className="crm-readonly">{thread.lead.referral_ctwa_clid ?? '—'}</div>
+              </div>
+              {/* Aqui ficam os identificadores crus; nome de campanha,
+                  conjunto, anúncio e os eventos já enviados moram no modal
+                  de rastreio, que é o mesmo da tela "Rastreamento". */}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setRastreioAberto(true)}
+                >
+                  Ver rastreio completo
+                </button>
+                <Link
+                  href={`/app/${encodeURIComponent(cliente)}/crm?lead=${thread.lead.customer_id}`}
+                  className="btn btn-secondary btn-sm"
+                >
+                  Ver no CRM
+                </Link>
               </div>
             </div>
 
@@ -730,6 +794,15 @@ export function TelaConversas({
           </>
         )}
       </div>
+
+      {rastreioAberto && thread ? (
+        <ModalRastreio
+          cliente={cliente}
+          customerId={thread.lead.customer_id}
+          nomeInicial={nomeExibicao(thread.lead.first_name, thread.lead.last_name, thread.lead.phone)}
+          aoFechar={() => setRastreioAberto(false)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import 'server-only';
 import { BancoCliente, sanitizaNomeBanco } from '@/lib/db/cliente';
+import type { PoolConnection } from 'mysql2/promise';
 import { queryOne, transacao, lacunaDeEsquema, LacunasDeEsquema } from '@/lib/db/pool';
+import { ehEtapaDePerda } from '@/lib/funil';
 import {
   ESTAGIO_GANHO,
   ESTAGIO_PERDIDO,
@@ -140,6 +142,46 @@ async function leMensagens(
   }
 }
 
+/**
+ * Dados do lead da conversa.
+ *
+ * Mesma queda das mensagens: o motivo de perda é migração separada
+ * (`migracao_motivo_perda.sql`) e o cliente que ainda não rodou não pode
+ * perder a conversa inteira por causa de um campo do painel direito.
+ */
+async function leLead(
+  db: BancoCliente,
+  msgs: string,
+  customerId: number,
+): Promise<LinhaLead | null> {
+  const consulta = (motivo: string) =>
+    db.queryOne<LinhaLead>(
+      `SELECT c.id AS customer_id, c.first_name, c.last_name, c.email, c.phone,
+              COALESCE(wc.status, 'novo') AS status, wc.notes, wc.tags,
+              ${motivo} AS motivo_perda,
+              TIMESTAMPDIFF(SECOND, wc.last_inbound_at, NOW()) AS segundos_desde_inbound,
+              wc.ai_last_analyzed_at, wc.ai_last_classification, wc.ai_last_reason,
+              (SELECT m.referral_ctwa_clid FROM ${msgs} m
+                WHERE m.customer_id = c.id AND m.referral_ctwa_clid IS NOT NULL
+                ORDER BY m.id ASC LIMIT 1) AS referral_ctwa_clid,
+              (SELECT m.referral_ad_id FROM ${msgs} m
+                WHERE m.customer_id = c.id AND m.referral_ad_id IS NOT NULL
+                ORDER BY m.id ASC LIMIT 1) AS referral_ad_id
+         FROM ${db.tabela('customers')} c
+         LEFT JOIN ${db.tabela('whatsapp_conversations')} wc ON wc.customer_id = c.id
+        WHERE c.id = ?
+        LIMIT 1`,
+      [customerId],
+    );
+
+  try {
+    return await consulta('wc.lost_reason');
+  } catch (erro) {
+    if (!lacunaDeEsquema(erro)) throw erro;
+    return consulta('NULL');
+  }
+}
+
 export async function buscaThread(
   db: BancoCliente,
   customerId: number,
@@ -161,26 +203,7 @@ export async function buscaThread(
     { affectedRows: 0, insertId: 0 },
   );
 
-  const lead = await lacunas.ou(
-    db.queryOne<LinhaLead>(
-      `SELECT c.id AS customer_id, c.first_name, c.last_name, c.email, c.phone,
-              COALESCE(wc.status, 'novo') AS status, wc.notes, wc.tags,
-              TIMESTAMPDIFF(SECOND, wc.last_inbound_at, NOW()) AS segundos_desde_inbound,
-              wc.ai_last_analyzed_at, wc.ai_last_classification, wc.ai_last_reason,
-              (SELECT m.referral_ctwa_clid FROM ${msgs} m
-                WHERE m.customer_id = c.id AND m.referral_ctwa_clid IS NOT NULL
-                ORDER BY m.id ASC LIMIT 1) AS referral_ctwa_clid,
-              (SELECT m.referral_ad_id FROM ${msgs} m
-                WHERE m.customer_id = c.id AND m.referral_ad_id IS NOT NULL
-                ORDER BY m.id ASC LIMIT 1) AS referral_ad_id
-         FROM ${db.tabela('customers')} c
-         LEFT JOIN ${db.tabela('whatsapp_conversations')} wc ON wc.customer_id = c.id
-        WHERE c.id = ?
-        LIMIT 1`,
-      [customerId],
-    ),
-    null,
-  );
+  const lead = await lacunas.ou(leLead(db, msgs, customerId), null);
 
   const mensagens = await lacunas.ou(leMensagens(db, msgs, customerId), []);
 
@@ -290,6 +313,85 @@ export async function registraMensagemEnviada(
   });
 }
 
+export type EscritaConversa = {
+  status?: string;
+  notes?: string | null;
+  tags?: string | null;
+  /**
+   * O que fazer com as colunas de perda:
+   *
+   *  - ausente: não mexe nelas (salvar nota não pode apagar a perda);
+   *  - `{ motivo }`: marca a perda agora, com o motivo (ou sem, se null);
+   *  - `null`: limpa a perda — a conversa saiu de `perdido`, e uma perda
+   *    desfeita não pode continuar contando no Analytics do funil.
+   */
+  perda?: { motivo: string | null } | null;
+};
+
+/**
+ * Escreve a linha da conversa, criando-a se ainda não existir.
+ *
+ * As colunas de perda são recentes (ver
+ * `WhatsApp/migracao_motivo_perda.sql`): num banco de cliente que ainda
+ * não rodou a migração, o INSERT com elas falha. Aqui a falha vira uma
+ * segunda tentativa sem essas duas colunas, e não um erro na tela —
+ * mover o card é a operação principal e ela tem que funcionar de
+ * qualquer jeito. Devolve se o motivo chegou a ser gravado, para quem
+ * chamou poder avisar.
+ */
+export async function gravaConversa(
+  conn: PoolConnection,
+  db: BancoCliente,
+  customerId: number,
+  escrita: EscritaConversa,
+): Promise<boolean> {
+  const base: [string, unknown][] = [];
+  if (escrita.status !== undefined) base.push(['status', escrita.status]);
+  if (escrita.notes !== undefined) base.push(['notes', escrita.notes]);
+  if (escrita.tags !== undefined) base.push(['tags', escrita.tags]);
+
+  // Os nomes de coluna são fixos, escritos logo acima — nada aqui vem da
+  // requisição, só os valores, que continuam em placeholder.
+  const monta = (comPerda: boolean) => {
+    const colunas = base.map(([c]) => c);
+    const valores = base.map(([, v]) => v);
+    const insercao = colunas.map(() => '?');
+    const atualizacao = colunas.map((c) => `${c} = ?`);
+
+    if (comPerda) {
+      const agora = escrita.perda ? 'NOW()' : 'NULL';
+      colunas.push('lost_reason', 'lost_at');
+      valores.push(escrita.perda ? escrita.perda.motivo : null);
+      insercao.push('?', agora);
+      atualizacao.push('lost_reason = ?', `lost_at = ${agora}`);
+    }
+
+    return {
+      sql: `INSERT INTO ${db.tabela('whatsapp_conversations')} (customer_id, ${colunas.join(', ')})
+            VALUES (?, ${insercao.join(', ')})
+            ON DUPLICATE KEY UPDATE ${atualizacao.join(', ')}`,
+      params: [customerId, ...valores, ...valores],
+    };
+  };
+
+  if (escrita.perda === undefined) {
+    const { sql, params } = monta(false);
+    await conn.query(sql, params);
+    return false;
+  }
+
+  try {
+    const { sql, params } = monta(true);
+    await conn.query(sql, params);
+    return true;
+  } catch (erro) {
+    if (!lacunaDeEsquema(erro)) throw erro;
+    const { sql, params } = monta(false);
+    await conn.query(sql, params);
+    return false;
+  }
+}
+
 export type EntradaLead = {
   customerId: number;
   first_name: string | null;
@@ -297,6 +399,8 @@ export type EntradaLead = {
   status: string;
   notes: string | null;
   tags: string | null;
+  /** Motivo, quando o estágio salvo é o de perda. */
+  motivo_perda: string | null;
 };
 
 /**
@@ -322,15 +426,12 @@ export async function salvaLead(
       [entrada.first_name, entrada.email, entrada.customerId],
     );
 
-    await conn.query(
-      `INSERT INTO ${db.tabela('whatsapp_conversations')} (customer_id, status, notes, tags)
-       VALUES (?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE status = ?, notes = ?, tags = ?`,
-      [
-        entrada.customerId, entrada.status, entrada.notes, entrada.tags,
-        entrada.status, entrada.notes, entrada.tags,
-      ],
-    );
+    await gravaConversa(conn, db, entrada.customerId, {
+      status: entrada.status,
+      notes: entrada.notes,
+      tags: entrada.tags,
+      perda: ehEtapaDePerda(entrada.status) ? { motivo: entrada.motivo_perda } : null,
+    });
 
     return { status_anterior: anterior };
   });

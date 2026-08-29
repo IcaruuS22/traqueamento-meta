@@ -15,6 +15,7 @@ import {
 import { enviaEventoEstagio, VERSAO_GRAPH_CLOUD } from '@/lib/meta-capi';
 import { enviaTexto as enviaTextoEvolution, ErroEvolution } from '@/lib/evolution';
 import { JANELA_24H_SEGUNDOS } from '@/lib/whatsapp-conversas';
+import { ehEtapaDePerda, normalizaMotivo, TAMANHO_MOTIVO } from '@/lib/funil';
 
 /**
  * Ações da tela "Conversas" — porte de `POST /painel-api/whatsapp-enviar`
@@ -213,6 +214,7 @@ const SchemaLead = z.object({
   status: z.string().trim().max(60).optional(),
   notes: z.string().max(10_000).optional(),
   tags: z.string().trim().max(500).optional(),
+  motivo_perda: z.string().max(TAMANHO_MOTIVO).optional(),
 });
 
 export async function acaoSalvarLead(
@@ -237,6 +239,9 @@ export async function acaoSalvarLead(
       status,
       notes: dados.notes || null,
       tags: dados.tags || null,
+      // Motivo só faz sentido no estágio de perda; em qualquer outro a
+      // gravação limpa o que estava lá.
+      motivo_perda: ehEtapaDePerda(status) ? normalizaMotivo(dados.motivo_perda) : null,
     }));
   } catch (erro) {
     console.error('[conversas] falha ao salvar lead:', erro);
@@ -283,6 +288,7 @@ export async function acaoSalvarLead(
   });
 
   revalidatePath(`/app/${encodeURIComponent(conta.client_db_name)}/whatsapp/conversas`);
+  revalidatePath(`/app/${encodeURIComponent(conta.client_db_name)}/funil`);
   return { ok: true, sucesso: 'Dados do lead salvos com sucesso.' };
 }
 
@@ -334,5 +340,6 @@ export async function acaoExcluirConversa(
   });
 
   revalidatePath(`/app/${encodeURIComponent(conta.client_db_name)}/whatsapp/conversas`);
+  revalidatePath(`/app/${encodeURIComponent(conta.client_db_name)}/funil`);
   return { ok: true, sucesso: `Conversa excluída (${mensagens} mensagens apagadas).` };
 }
