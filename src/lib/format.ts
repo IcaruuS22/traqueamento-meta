@@ -67,6 +67,47 @@ export function fmtDataHora(valor: unknown): string {
   return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
 }
 
+/**
+ * Hora curta de lista de conversas: "agora", "12 min", "14:32", "ontem",
+ * "3 d", "10/05".
+ *
+ * A lista mostra dezenas de linhas e o que importa nelas é "quão recente",
+ * não a data exata — esta fica no título e na bolha da mensagem. Abaixo
+ * de uma hora vale sempre o contador em minutos; da hora em diante o
+ * corte é o dia em São Paulo, não "24h atrás": às 08:00, uma mensagem das
+ * 23:50 é "ontem", não "8 h" solto sem dia.
+ *
+ * `agora` entra por parâmetro para o teste não depender do relógio.
+ */
+export function fmtHoraRelativa(valor: unknown, agora: number = Date.now()): string {
+  const ms = paraMs(valor);
+  if (ms === null) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  const local = (t: number) => new Date(t - SP_OFFSET_MS);
+  const diaDe = (t: number) => Math.floor((t - SP_OFFSET_MS) / 86_400_000);
+  const hora = () => {
+    const d = local(ms);
+    return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+  };
+
+  const diff = agora - ms;
+  // Relógio do servidor adiantado em relação ao do navegador acontece; o
+  // futuro vira a hora do dia em vez de "-2 min".
+  if (diff < 0) return hora();
+
+  const minutos = Math.floor(diff / 60_000);
+  if (minutos < 1) return 'agora';
+  if (minutos < 60) return `${minutos} min`;
+
+  const dias = diaDe(agora) - diaDe(ms);
+  if (dias <= 0) return hora();
+  if (dias === 1) return 'ontem';
+  if (dias < 7) return `${dias} d`;
+
+  const d = local(ms);
+  return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)}`;
+}
+
 /** "10/05/2026" no horário de São Paulo. */
 export function fmtData(valor: unknown): string {
   const ms = paraMs(valor);

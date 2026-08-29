@@ -63,7 +63,18 @@ function secoesDoCliente(cliente: string): SecaoNav[] {
           icone: IconesNav.metricas,
           canal: 'geral',
         },
+        // O CRM é um só e vive aqui, não dentro de Formulários: ele
+        // junta lead de formulário e contato de WhatsApp no mesmo quadro.
+        { href: `${base}/crm`, rotulo: 'CRM', icone: IconesNav.kanban },
+        // O Funil também é dos dois canais: mostra o de WhatsApp e o de
+        // formulário lado a lado, cada um com o seu cadastro de etapas.
+        { href: `${base}/funil`, rotulo: 'Funil', icone: IconesNav.funil },
         { href: `${base}/campanhas`, rotulo: 'Campanhas', icone: IconesNav.campanhas },
+        {
+          href: `${base}/rastreamento`,
+          rotulo: 'Rastreamento',
+          icone: IconesNav.rastreamento,
+        },
       ],
     },
     {
@@ -76,7 +87,6 @@ function secoesDoCliente(cliente: string): SecaoNav[] {
           icone: IconesNav.metricas,
           canal: 'form',
         },
-        { href: `${base}/formularios/kanban`, rotulo: 'CRM · Kanban', icone: IconesNav.kanban },
         {
           href: `${base}/formularios/config`,
           rotulo: 'Configuração de Eventos',
@@ -130,8 +140,12 @@ function rotuloDaTela(resto: string, canal: string): string {
       return 'Métricas Gerais';
     case 'campanhas':
       return 'Campanhas';
-    case 'formularios/kanban':
-      return 'CRM · Kanban';
+    case 'rastreamento':
+      return 'Rastreamento';
+    case 'crm':
+      return 'CRM';
+    case 'funil':
+      return 'Funil';
     case 'formularios/config':
       return 'Configuração de Eventos';
     case 'formularios/eventos':

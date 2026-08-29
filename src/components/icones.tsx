@@ -169,6 +169,13 @@ export const IconesNav = {
       <path d="M3 11 20 3l-5 18-4-8-8-2Z" />
     </Svg>
   ),
+  rastreamento: (p: PropsSvg = {}) => (
+    <Svg {...p}>
+      <circle cx="12" cy="12" r="3" />
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 1v3M12 20v3M1 12h3M20 12h3" />
+    </Svg>
+  ),
   kanban: (p: PropsSvg = {}) => (
     <Svg {...p}>
       <rect x="3" y="3" width="5" height="18" rx="1.2" />
@@ -207,6 +214,11 @@ export const IconesNav = {
   whatsapp: (p: PropsSvg = {}) => (
     <Svg {...p}>
       <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+    </Svg>
+  ),
+  funil: (p: PropsSvg = {}) => (
+    <Svg {...p}>
+      <path d="M3 4h18l-7 8v7l-4 2v-9L3 4Z" />
     </Svg>
   ),
   conversas: (p: PropsSvg = {}) => (
