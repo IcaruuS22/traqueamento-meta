@@ -7,14 +7,21 @@ export function BotaoEnviar({
   children,
   carregando = 'Aguarde…',
   className = '',
+  disabled = false,
 }: {
   children: React.ReactNode;
   carregando?: string;
   className?: string;
+  /** Trava o envio por regra da tela (confirmação ainda não digitada, por exemplo). */
+  disabled?: boolean;
 }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" disabled={pending} className={`btn-primary w-full ${className}`}>
+    <button
+      type="submit"
+      disabled={pending || disabled}
+      className={`btn-primary w-full ${className}`}
+    >
       {pending ? carregando : children}
     </button>
   );

@@ -2,7 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { separaStatements, geraNomeBanco } from '../src/lib/nomes-banco';
+import {
+  confirmacaoDeExclusaoBate,
+  ehBancoProtegido,
+  geraNomeBanco,
+  separaStatements,
+} from '../src/lib/nomes-banco';
 
 /**
  * O template SQL é a única fonte do esquema por cliente. Se ele parar de
@@ -76,4 +81,44 @@ test('sem CRM, o nome ainda começa por letra e não fica com sufixo vazio', () 
   assert.match(nome, /^[a-z_][a-z0-9_]*$/);
   assert.ok(nome.startsWith('cliente_123_reformas_'));
   assert.ok(nome.length > 'cliente_123_reformas_'.length);
+});
+
+
+/**
+ * Estas duas funções são as barreiras da exclusão de cliente, que apaga
+ * o banco inteiro sem lixeira nem desfazer. Testar aqui é barato; testar
+ * em produção não existe.
+ */
+
+test('nenhum banco de controle ou do MySQL pode ser apagado como cliente', () => {
+  for (const nome of [
+    'trakeamento_controle',
+    'TRAKEAMENTO_CONTROLE',
+    'mysql',
+    'information_schema',
+    'performance_schema',
+    'sys',
+  ]) {
+    assert.equal(ehBancoProtegido(nome), true, nome);
+  }
+
+  assert.equal(ehBancoProtegido('cliente_acresce_imoveis_33994099'), false);
+  // A sanitização vem antes da lista: disfarçar o nome com crase cai na
+  // mesma recusa. Já o espaço não vira `_` (a sanitização remove o que
+  // não é [A-Za-z0-9_]), então `trakeamento controle` passa como outro
+  // nome — que não existe no servidor.
+  assert.equal(ehBancoProtegido('`trakeamento_controle`'), true);
+});
+
+test('confirmação de exclusão aceita nome do cliente ou do banco, e recusa o resto', () => {
+  const alvos = ['Acresce Imóveis', 'cliente_acresce_imoveis_33994099'];
+
+  assert.equal(confirmacaoDeExclusaoBate('Acresce Imóveis', alvos), true);
+  assert.equal(confirmacaoDeExclusaoBate('  acresce   imóveis ', alvos), true);
+  assert.equal(confirmacaoDeExclusaoBate('cliente_acresce_imoveis_33994099', alvos), true);
+
+  assert.equal(confirmacaoDeExclusaoBate('Acresce', alvos), false);
+  assert.equal(confirmacaoDeExclusaoBate('Acresce Imoveis', alvos), false);
+  assert.equal(confirmacaoDeExclusaoBate('', alvos), false);
+  assert.equal(confirmacaoDeExclusaoBate('   ', alvos), false);
 });

@@ -21,10 +21,18 @@ export const metadata: Metadata = { title: 'Conversas — Trakeamento' };
  */
 export default async function PaginaConversas({
   params,
+  searchParams,
 }: {
   params: Promise<{ cliente: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { cliente } = await params;
+  const busca = await searchParams;
+
+  // `?lead=` abre a tela já com a conversa daquele contato — é o link
+  // que o card do CRM usa. Valor inválido é ignorado, não repassado.
+  const leadBruto = Array.isArray(busca.lead) ? busca.lead[0] : busca.lead;
+  const leadInicial = Number.parseInt(String(leadBruto ?? ''), 10);
   const { usuario, conta, db } = await requireClientAccessPagina(decodeURIComponent(cliente));
 
   const [conversas, mapeamentos, config] = await Promise.all([
@@ -61,6 +69,7 @@ export default async function PaginaConversas({
         cliente={conta.client_db_name}
         estagios={mapeamentos.itens.map((m) => m.estagio)}
         iniciaisConversas={conversas.itens}
+        leadInicial={Number.isSafeInteger(leadInicial) && leadInicial > 0 ? leadInicial : null}
         provider={config.provider}
         podeExcluir={usuario.papel === 'admin'}
       />

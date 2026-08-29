@@ -82,3 +82,46 @@ export function separaStatements(sqlBruto: string, clientDb: string): string[] {
     .map((comando) => comando.trim())
     .filter(Boolean);
 }
+
+
+/**
+ * Bancos que esta aplicação nunca pode apagar.
+ *
+ * `trakeamento_controle` é o catálogo: apagá-lo derruba todos os
+ * clientes de uma vez. Os outros quatro são do próprio MySQL. Esta lista
+ * é a última barreira da exclusão de cliente — quem chama já confirmou o
+ * nome contra o catálogo, e isto é o que sobra se essa checagem for
+ * contornada um dia.
+ */
+const BANCOS_PROTEGIDOS = new Set([
+  'trakeamento_controle',
+  'mysql',
+  'information_schema',
+  'performance_schema',
+  'sys',
+]);
+
+export function ehBancoProtegido(nome: string): boolean {
+  return BANCOS_PROTEGIDOS.has(sanitizaNomeBanco(nome).toLowerCase());
+}
+
+/**
+ * Confere o que o administrador digitou para confirmar uma exclusão.
+ *
+ * Aceita o nome do cliente ou o nome do banco, sem diferenciar
+ * maiúsculas nem espaço repetido: quem digita "Acresce  Imóveis" está
+ * tão decidido quanto quem acerta o espaçamento. O que não passa é
+ * digitar outra coisa — e é só para isso que o campo existe, porque
+ * exclusão de cliente não tem lixeira nem desfazer.
+ */
+export function confirmacaoDeExclusaoBate(digitado: string, alvos: string[]): boolean {
+  const normaliza = (t: string) =>
+    String(t ?? '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+
+  const alvo = normaliza(digitado);
+  if (!alvo) return false;
+  return alvos.some((a) => normaliza(a) === alvo);
+}

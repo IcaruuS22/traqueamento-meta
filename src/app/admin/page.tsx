@@ -24,6 +24,12 @@ const ATALHOS = [
     icone: IconesNav.usuarios,
   },
   {
+    href: '/admin/clientes',
+    titulo: 'Clientes',
+    descricao: 'O que existe no catálogo, para qual banco aponta e a exclusão de cliente.',
+    icone: IconesNav.clientes,
+  },
+  {
     href: '/admin/clientes/novo',
     titulo: 'Novo cliente',
     descricao:

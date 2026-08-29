@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import mysql from 'mysql2/promise';
 import { env } from '@/lib/env';
-import { sanitizaNomeBanco, separaStatements } from '@/lib/nomes-banco';
+import { ehBancoProtegido, sanitizaNomeBanco, separaStatements } from '@/lib/nomes-banco';
 
 /**
  * Criação do banco isolado de um cliente novo.
@@ -77,6 +77,26 @@ const ESTAGIOS_INICIAIS: { estagio: string; conversao: boolean }[] = [
 ];
 
 /**
+ * Conexão fora do pool, para os comandos que mexem no banco em si.
+ *
+ * O template contém `USE <banco>`: numa conexão de pool o banco
+ * selecionado ficaria grudado na conexão devolvida e a próxima
+ * requisição herdaria o banco de outro cliente. Esta conexão é
+ * encerrada por quem a abriu, nunca reaproveitada.
+ */
+function conexaoDireta() {
+  return mysql.createConnection({
+    host: env.mysql.host,
+    port: env.mysql.port,
+    user: env.mysql.user,
+    password: env.mysql.password,
+    charset: 'utf8mb4_unicode_ci',
+    multipleStatements: false,
+    ...(env.mysql.ssl ? { ssl: { rejectUnauthorized: true } } : {}),
+  });
+}
+
+/**
  * Cria o banco do cliente e popula os estágios iniciais.
  *
  * Usa conexão própria, fora do pool da aplicação, porque o template
@@ -96,15 +116,7 @@ export async function criaBancoDoCliente(clientDb: string): Promise<{ comandos: 
   const comandos = separaStatements(template, clientDb);
   const nome = sanitizaNomeBanco(clientDb);
 
-  const conexao = await mysql.createConnection({
-    host: env.mysql.host,
-    port: env.mysql.port,
-    user: env.mysql.user,
-    password: env.mysql.password,
-    charset: 'utf8mb4_unicode_ci',
-    multipleStatements: false,
-    ...(env.mysql.ssl ? { ssl: { rejectUnauthorized: true } } : {}),
-  });
+  const conexao = await conexaoDireta();
 
   try {
     for (const comando of comandos) {
@@ -131,4 +143,31 @@ export async function criaBancoDoCliente(clientDb: string): Promise<{ comandos: 
   }
 
   return { comandos: comandos.length };
+}
+
+/**
+ * Apaga o banco inteiro de um cliente. NÃO TEM VOLTA.
+ *
+ * Usa conexão própria pelo mesmo motivo da criação: `DROP DATABASE` é
+ * DDL, faz commit implícito, e a conexão não volta para o pool com
+ * estado estranho. Só é chamada depois que o cliente já saiu do catálogo
+ * — ver `acaoExcluirCliente`.
+ *
+ * `ehBancoProtegido` é a última barreira: nome de banco entra em SQL por
+ * interpolação (identificador não aceita `?`), então além da sanitização
+ * existe uma lista do que nunca pode ser apagado.
+ */
+export async function apagaBancoDoCliente(clientDb: string): Promise<void> {
+  const nome = sanitizaNomeBanco(clientDb);
+  if (!nome) throw new Error('Nome de banco de cliente inválido');
+  if (ehBancoProtegido(nome)) {
+    throw new Error(`Recusado: \`${nome}\` não é banco de cliente`);
+  }
+
+  const conexao = await conexaoDireta();
+  try {
+    await conexao.query(`DROP DATABASE IF EXISTS \`${nome}\``);
+  } finally {
+    await conexao.end();
+  }
 }

@@ -1,5 +1,5 @@
 import 'server-only';
-import { query, queryOne, execute } from '@/lib/db/pool';
+import { query, queryOne, execute, transacao } from '@/lib/db/pool';
 import { sanitizaNomeBanco } from '@/lib/nomes-banco';
 
 /**
@@ -92,6 +92,24 @@ export async function buscaCredenciaisCliente(clientDb: string): Promise<{
   );
 }
 
+
+/**
+ * Quantos usuários estão vinculados a cada cliente.
+ *
+ * Uma consulta só para a lista inteira: a tela de administração mostra o
+ * número em cada cartão, e uma consulta por cliente seria N idas ao
+ * banco remoto para exibir um inteiro. Cliente sem ninguém vinculado não
+ * aparece no resultado — quem lê usa `?? 0`.
+ */
+export async function contaVinculosPorCliente(): Promise<Record<string, number>> {
+  const linhas = await query<{ client_db_name: string; total: number }>(
+    `SELECT client_db_name, COUNT(*) AS total
+       FROM trakeamento_controle.app_user_clients
+      GROUP BY client_db_name`,
+  );
+  return Object.fromEntries(linhas.map((l) => [l.client_db_name, Number(l.total)]));
+}
+
 export type NovaAdAccount = {
   account_name: string;
   ad_account_id: string;
@@ -168,6 +186,64 @@ export async function criaAdAccount(dados: NovaAdAccount): Promise<number> {
     ],
   );
   return insertId;
+}
+
+
+/**
+ * Apaga o cliente do catálogo central. NÃO TEM VOLTA.
+ *
+ * O que sai daqui, em uma transação só:
+ *
+ *  - `painel_metric_prefs`: não tem chave estrangeira para `ad_accounts`,
+ *    então ninguém a limparia sozinha. O `<> ''` protege a linha global,
+ *    que é a preferência padrão de TODOS os clientes;
+ *  - `app_user_clients` e `whatsapp_accounts`: têm ON DELETE CASCADE e
+ *    sairiam de qualquer jeito. São apagadas explicitamente para render
+ *    contagem (o administrador precisa saber quantos usuários perderam o
+ *    vínculo) e para o resultado não depender de a instalação ter mesmo
+ *    as chaves estrangeiras do template;
+ *  - `ad_accounts`: a linha do cliente, por último.
+ *
+ * `app_audit_log` fica intacta de propósito: é o histórico de quem fez o
+ * quê, e apagá-lo junto do cliente removeria justamente o registro da
+ * exclusão. As linhas continuam com o `client_db_name` antigo, que ali é
+ * texto solto, sem chave estrangeira.
+ *
+ * Convites pendentes (`app_invites.client_db_names`) também ficam: o
+ * cliente excluído some da lista quando o convite é aceito, porque o
+ * vínculo é conferido contra o catálogo.
+ */
+export async function removeAdAccount(clientDb: string): Promise<{
+  vinculos: number;
+  preferencias: number;
+  whatsapp: number;
+}> {
+  const nome = sanitizaNomeBanco(clientDb);
+  if (!nome) throw new Error('Nome de banco de cliente inválido');
+
+  return transacao(async (conn) => {
+    const afetadas = async (sql: string) => {
+      const [r] = await conn.query(sql, [nome]);
+      return (r as { affectedRows?: number }).affectedRows ?? 0;
+    };
+
+    const preferencias = await afetadas(
+      `DELETE FROM trakeamento_controle.painel_metric_prefs
+        WHERE client_db_name = ? AND client_db_name <> ''`,
+    );
+    const vinculos = await afetadas(
+      'DELETE FROM trakeamento_controle.app_user_clients WHERE client_db_name = ?',
+    );
+    const whatsapp = await afetadas(
+      'DELETE FROM trakeamento_controle.whatsapp_accounts WHERE client_db_name = ?',
+    );
+    const contas = await afetadas(
+      'DELETE FROM trakeamento_controle.ad_accounts WHERE client_db_name = ?',
+    );
+    if (contas === 0) throw new Error(`Cliente \`${nome}\` não está no catálogo`);
+
+    return { vinculos, preferencias, whatsapp };
+  });
 }
 
 /**

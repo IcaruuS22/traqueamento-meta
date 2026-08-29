@@ -4,9 +4,9 @@ import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { requireAdmin } from '@/lib/auth/guard';
 import { ACOES, registraAuditoria } from '@/lib/audit';
-import { conflitoDeAdAccount, criaAdAccount } from '@/lib/db/cliente';
-import { criaBancoDoCliente } from '@/lib/db/provisiona';
-import { geraNomeBanco } from '@/lib/nomes-banco';
+import { buscaAdAccount, conflitoDeAdAccount, criaAdAccount, removeAdAccount } from '@/lib/db/cliente';
+import { apagaBancoDoCliente, criaBancoDoCliente } from '@/lib/db/provisiona';
+import { confirmacaoDeExclusaoBate, geraNomeBanco } from '@/lib/nomes-banco';
 import type { EstadoFormulario } from '@/lib/auth/actions';
 
 /**
@@ -139,5 +139,105 @@ export async function acaoCriarCliente(
     sucesso:
       `Cliente "${dados.account_name}" criado. Banco: ${clientDb}. ` +
       'Configure os eventos e a conexão do WhatsApp pela tela do cliente.',
+  };
+}
+
+
+/**
+ * Exclusão de cliente. Definitiva, sem lixeira e sem desfazer.
+ *
+ * Some tudo do cliente de uma vez: o banco `cliente_*` inteiro (leads,
+ * conversas, mensagens, campanhas, eventos, mapeamentos) e o registro no
+ * catálogo central, com os vínculos de usuário, a conexão de WhatsApp e
+ * as preferências de métrica. Não existe backup automático — quem quiser
+ * guardar precisa ter feito o dump antes.
+ *
+ * Por isso o campo de confirmação: o administrador digita o nome do
+ * cliente, e nada acontece enquanto o texto não bater. Clique errado não
+ * apaga cliente nenhum.
+ *
+ * A ordem é a inversa da criação, pelo mesmo motivo dela: catálogo
+ * primeiro, banco depois. Linha no catálogo apontando para um banco que
+ * não existe mais quebraria todas as telas daquele cliente; banco órfão,
+ * sem linha no catálogo, é inerte — nenhuma tela chega nele, e ele pode
+ * ser apagado à mão depois.
+ */
+const schemaExclusao = z.object({
+  client_db: z.string().trim().min(1, 'Cliente não informado').max(64),
+  confirmacao: z.string().trim().max(255),
+});
+
+export async function acaoExcluirCliente(
+  _estado: EstadoFormulario,
+  form: FormData,
+): Promise<EstadoFormulario> {
+  const admin = await requireAdmin();
+
+  const parsed = schemaExclusao.safeParse({
+    client_db: form.get('client_db'),
+    confirmacao: form.get('confirmacao'),
+  });
+  if (!parsed.success) return { erro: parsed.error.issues[0]?.message ?? 'Dados inválidos' };
+
+  // O nome do banco usado daqui em diante é o do catálogo, nunca o que
+  // veio do formulário — mesma regra do guard de cliente.
+  const conta = await buscaAdAccount(parsed.data.client_db);
+  if (!conta) return { erro: 'Cliente não encontrado no catálogo.' };
+
+  if (!confirmacaoDeExclusaoBate(parsed.data.confirmacao, [conta.account_name, conta.client_db_name])) {
+    return {
+      erro: `A confirmação não bate. Digite exatamente "${conta.account_name}" para excluir — nada foi apagado.`,
+    };
+  }
+
+  let removidos: { vinculos: number; preferencias: number; whatsapp: number };
+  try {
+    removidos = await removeAdAccount(conta.client_db_name);
+  } catch (erro) {
+    console.error('[clientes] falha ao remover do catálogo', conta.client_db_name, erro);
+    return {
+      erro:
+        'Não foi possível remover o cliente do catálogo. Nada foi apagado — ' +
+        'confira o log do servidor e tente de novo.',
+    };
+  }
+
+  // Daqui em diante o cliente já sumiu do painel. Se o DROP falhar, o
+  // que resta é um banco órfão ocupando disco: é aviso, não erro.
+  let bancoApagado = true;
+  let aviso = '';
+  try {
+    await apagaBancoDoCliente(conta.client_db_name);
+  } catch (erro) {
+    console.error('[clientes] catálogo limpo mas o DROP DATABASE falhou', conta.client_db_name, erro);
+    bancoApagado = false;
+    aviso =
+      ` Atenção: o banco \`${conta.client_db_name}\` continua no servidor — ` +
+      'o cliente já saiu do painel, mas os dados só somem com um DROP DATABASE manual.';
+  }
+
+  await registraAuditoria({
+    userId: admin.id,
+    userEmail: admin.email,
+    acao: ACOES.CLIENTE_EXCLUIDO,
+    clientDb: conta.client_db_name,
+    detalhe: {
+      account_name: conta.account_name,
+      ad_account_id: conta.ad_account_id,
+      banco_apagado: bancoApagado,
+      vinculos_removidos: removidos.vinculos,
+      whatsapp_removido: removidos.whatsapp > 0,
+    },
+  });
+
+  revalidatePath('/app');
+  revalidatePath('/admin/clientes');
+  return {
+    sucesso:
+      `Cliente "${conta.account_name}" excluído em definitivo.` +
+      (removidos.vinculos > 0
+        ? ` ${removidos.vinculos} ${removidos.vinculos === 1 ? 'usuário perdeu o vínculo' : 'usuários perderam o vínculo'}.`
+        : '') +
+      aviso,
   };
 }
