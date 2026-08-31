@@ -8,8 +8,17 @@ const nextConfig: NextConfig = {
   // rastreio automático do Next só enxerga `import` — um `readFile` com
   // caminho montado em variável passa despercebido e o arquivo ficaria
   // fora do bundle na Vercel. A criação de cliente falharia só em produção.
+  //
+  // O mesmo vale para as fontes padrão do PDF: o `pdfkit` (dentro do
+  // `@react-pdf/renderer`) carrega `standard-fonts/Helvetica` por import
+  // dinâmico, com o nome montado em runtime. O rastreio não enxerga, e a
+  // rota do relatório quebrava só na Vercel com MODULE_NOT_FOUND.
   outputFileTracingIncludes: {
     '/admin/clientes/novo': ['./Banco de Dados/02_Template_Banco_Por_Cliente.sql'],
+    '/api/relatorio/metricas': [
+      './node_modules/pdfkit/js/standard-fonts/*',
+      './node_modules/pdfkit/js/data/*',
+    ],
   },
 
   eslint: {
