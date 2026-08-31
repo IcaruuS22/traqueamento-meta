@@ -16,7 +16,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/admin/clientes/novo': ['./Banco de Dados/02_Template_Banco_Por_Cliente.sql'],
     '/api/relatorio/metricas': [
-      './node_modules/pdfkit/js/standard-fonts/*',
+      './node_modules/pdfkit/js/standard-fonts/**/*',
       './node_modules/pdfkit/js/data/*',
     ],
   },
