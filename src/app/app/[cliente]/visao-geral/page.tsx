@@ -240,7 +240,12 @@ function CorpoMetricas({
 
       <Card titulo="Últimos leads" className="mt-4">
         {metricas.ultimos_leads.length ? (
-          <ListaLeads cliente={cliente} iniciais={metricas.ultimos_leads} busca={qsLeads} />
+          <ListaLeads
+            cliente={cliente}
+            iniciais={metricas.ultimos_leads}
+            busca={qsLeads}
+            etapas={metricas.etapas_de_leads}
+          />
         ) : (
           <Vazio>Nenhum lead no período.</Vazio>
         )}

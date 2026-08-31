@@ -26,6 +26,10 @@ const Entrada = z.object({
   date_from: z.string().optional(),
   date_to: z.string().optional(),
   channel: z.string().optional(),
+  /** Etapa escolhida no filtro da tabela. */
+  stage: z.string().max(255).optional(),
+  /** Busca por nome. O teto evita um LIKE gigante vindo de URL forjada. */
+  nome: z.string().max(120).optional(),
 });
 
 export const GET = rota(async (req) => {
@@ -46,6 +50,7 @@ export const GET = rota(async (req) => {
     filtroLeads(db, periodo),
     entrada.limit,
     entrada.offset,
+    { etapa: entrada.stage, nome: entrada.nome },
   );
   return { leads };
 });

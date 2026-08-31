@@ -50,6 +50,9 @@ export type Lead = {
   last_moved_at: string | null;
 };
 
+/** Filtros da tabela "Últimos leads" — etapa e busca por nome. */
+export type FiltroLista = { etapa?: string | null; nome?: string | null };
+
 export type Totais = {
   total_leads: number;
   total_spend: number;
@@ -73,6 +76,8 @@ export type Metricas = Totais & {
   eventos_por_nome: EventoPorNome[];
   tempo_medio_entre_etapas: Transicao[];
   ultimos_leads: Lead[];
+  /** Etapas distintas dos leads do período, para o filtro da tabela. */
+  etapas_de_leads: string[];
   /**
    * Tabelas e colunas que faltam neste banco de cliente. Vazio no caso
    * normal. A tela avisa em vez de exibir os zeros como se fossem dado
@@ -293,6 +298,44 @@ async function eventosPorNome(db: BancoCliente, f: Fragmento): Promise<EventoPor
 }
 
 /**
+ * Soma ao filtro da janela as condições da tabela: etapa escolhida
+ * no select e busca por nome.
+ */
+function comFiltroDeLista(f: Fragmento, filtro: FiltroLista = {}): Fragmento {
+  const condicoes: string[] = [];
+  const params: unknown[] = [...f.params];
+
+  const etapa = filtro.etapa?.trim();
+  if (etapa) {
+    // O mesmo COALESCE do SELECT, repetido: MySQL não aceita apelido do
+    // SELECT no WHERE, e o que a tela mostra (e o usuário escolhe no
+    // filtro) é o nome mapeado, não o status cru do CRM.
+    condicoes.push('COALESCE(em.content_name, c.current_stage) = ?');
+    params.push(etapa);
+  }
+
+  const nome = filtro.nome?.trim();
+  if (nome) {
+    // Escapa os curingas do LIKE para que um '%' digitado seja buscado
+    // como caractere, e não vire "qualquer coisa". O caractere de escape
+    // é declarado como '|' no próprio LIKE: assim a contrabarra continua
+    // sendo um caractere comum e não precisa de tratamento à parte.
+    const termo = nome.replace(/[|%_]/g, (c) => '|' + c);
+    condicoes.push(
+      "TRIM(CONCAT_WS(' ', c.first_name, c.last_name)) LIKE ? ESCAPE '|'",
+    );
+    params.push('%' + termo + '%');
+  }
+
+  if (condicoes.length === 0) return f;
+  const extra = condicoes.join(' AND ');
+  return {
+    sql: f.sql ? `${f.sql} AND ${extra}` : `WHERE ${extra}`,
+    params,
+  };
+}
+
+/**
  * Últimos leads do período.
  *
  * `current_stage` guarda o status_id bruto do CRM (ex.: "75275031"),
@@ -311,7 +354,9 @@ export async function ultimosLeads(
   f: Fragmento,
   limite = 10,
   offset = 0,
+  filtro: FiltroLista = {},
 ): Promise<Lead[]> {
+  const w = comFiltroDeLista(f, filtro);
   return db.query<Lead>(
     `SELECT c.id, c.first_name, c.last_name, c.email, c.phone,
             COALESCE(em.content_name, c.current_stage) AS current_stage,
@@ -321,11 +366,35 @@ export async function ultimosLeads(
               WHERE e.customer_id = c.id AND e.status = 'SENT') AS last_moved_at
        FROM ${db.tabela('customers')} c
        LEFT JOIN ${db.tabela('crm_meta_event_map')} em ON em.status_id = c.current_stage
-       ${f.sql}
+       ${w.sql}
       ORDER BY c.created_at DESC
       LIMIT ? OFFSET ?`,
-    [...f.params, limite, offset],
+    [...w.params, limite, offset],
   );
+}
+
+/**
+ * Etapas distintas dos leads do período — as opções do filtro da tabela
+ * "Últimos leads". Sai dos próprios leads, e não de
+ * `crm_meta_event_map`, para o select não oferecer etapa que não
+ * devolveria nenhuma linha.
+ */
+async function etapasDeLeads(db: BancoCliente, f: Fragmento): Promise<string[]> {
+  const semVazio: Fragmento = {
+    sql: f.sql
+      ? `${f.sql} AND c.current_stage IS NOT NULL AND c.current_stage <> ''`
+      : "WHERE c.current_stage IS NOT NULL AND c.current_stage <> ''",
+    params: f.params,
+  };
+  const linhas = await db.query<{ etapa: string | null }>(
+    `SELECT DISTINCT COALESCE(em.content_name, c.current_stage) AS etapa
+       FROM ${db.tabela('customers')} c
+       LEFT JOIN ${db.tabela('crm_meta_event_map')} em ON em.status_id = c.current_stage
+       ${semVazio.sql}
+      ORDER BY etapa`,
+    semVazio.params,
+  );
+  return linhas.map((l) => l.etapa).filter((e): e is string => Boolean(e));
 }
 
 /**
@@ -431,6 +500,7 @@ export async function buscaMetricas(db: BancoCliente, periodo: Periodo): Promise
     eventos,
     transicoes,
     leadsRecentes,
+    etapasDisponiveis,
     anunciosAnt,
     leadsAnt,
     conversoesAnt,
@@ -444,6 +514,7 @@ export async function buscaMetricas(db: BancoCliente, periodo: Periodo): Promise
     lacunas.ou(eventosPorNome(db, atual.whereC), [] as EventoPorNome[]),
     lacunas.ou(tempoEntreEtapas(db, atual.andC), [] as Transicao[]),
     lacunas.ou(ultimosLeads(db, atual.whereC), [] as Lead[]),
+    lacunas.ou(etapasDeLeads(db, atual.whereC), [] as string[]),
     ant ? lacunas.ou(totaisAnuncios(db, ant.andInsights), ANUNCIOS_ZERADOS) : ANUNCIOS_ZERADOS,
     ant ? lacunas.ou(contaLeads(db, ant.whereCustomers), 0) : 0,
     ant ? lacunas.ou(contaConversoes(db, ant.convJoin, ant.whereConv), 0) : 0,
@@ -468,6 +539,7 @@ export async function buscaMetricas(db: BancoCliente, periodo: Periodo): Promise
     eventos_por_nome: eventos,
     tempo_medio_entre_etapas: transicoes,
     ultimos_leads: leadsRecentes,
+    etapas_de_leads: etapasDisponiveis,
     lacunas_de_esquema: lacunas.lista(),
   };
 }
