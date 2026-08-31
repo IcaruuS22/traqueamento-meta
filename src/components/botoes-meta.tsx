@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Alerta } from '@/components/form';
 
@@ -16,9 +16,18 @@ import { Alerta } from '@/components/form';
  * Terminada a chamada, `router.refresh()` recarrega os dados renderizados
  * no servidor — sem ele a tela continuaria mostrando o que já estava lá,
  * que é justamente o que a pessoa acabou de pedir para atualizar.
+ *
+ * O estado não muda o tamanho de nada: o rótulo do botão é fixo (o que
+ * indica trabalho é o spinner) e as mensagens flutuam sob o grupo, fora do
+ * fluxo. Antes o rótulo trocava por "Sincronizando…" e o aviso entrava
+ * como parágrafo, então a barra inteira do cabeçalho se rearranjava a cada
+ * clique.
  */
 
 type Estado = { tipo: 'erro' | 'sucesso' | 'aviso'; texto: string } | null;
+
+/** Quanto tempo a confirmação fica na tela. Erro não some sozinho. */
+const MS_ATE_SUMIR = 6000;
 
 export function BotoesMeta({
   cliente,
@@ -32,6 +41,15 @@ export function BotoesMeta({
   const [estado, setEstado] = useState<Estado>(null);
   const [acao, setAcao] = useState<'sync' | 'historico' | null>(null);
   const [pendente, iniciar] = useTransition();
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!estado || estado.tipo === 'erro') return;
+    timer.current = setTimeout(() => setEstado(null), MS_ATE_SUMIR);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, [estado]);
 
   function chama(qual: 'sync' | 'historico') {
     setEstado(null);
@@ -70,49 +88,53 @@ export function BotoesMeta({
   const ocupado = pendente;
 
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="acoes-estado">
+      <button
+        type="button"
+        onClick={() => chama('sync')}
+        disabled={ocupado}
+        aria-busy={ocupado && acao === 'sync'}
+        className="btn-ghost btn-largura-fixa disabled:opacity-50"
+      >
+        {ocupado && acao === 'sync' ? <span className="spinner-inline" aria-hidden /> : null}
+        Atualizar dados da Meta
+      </button>
+
+      {mostrarImportacao ? (
         <button
           type="button"
-          onClick={() => chama('sync')}
+          onClick={() => {
+            // Confirmação porque a importação ocupa a conta do Meta por
+            // minutos e reescreve 90 dias de métricas; o painel antigo
+            // também perguntava, com `window.confirm`.
+            const ok = window.confirm(
+              'Importar até 90 dias de métricas do Meta Ads para este cliente? ' +
+                'A importação pode levar alguns minutos.',
+            );
+            if (ok) chama('historico');
+          }}
           disabled={ocupado}
-          className="btn-ghost disabled:opacity-50"
+          aria-busy={ocupado && acao === 'historico'}
+          className="btn-ghost btn-largura-fixa disabled:opacity-50"
         >
-          {ocupado && acao === 'sync' ? 'Sincronizando…' : 'Atualizar dados da Meta'}
+          {ocupado && acao === 'historico' ? (
+            <span className="spinner-inline" aria-hidden />
+          ) : null}
+          Importar histórico (90 dias)
         </button>
-
-        {mostrarImportacao ? (
-          <button
-            type="button"
-            onClick={() => {
-              // Confirmação porque a importação ocupa a conta do Meta por
-              // minutos e reescreve 90 dias de métricas; o painel antigo
-              // também perguntava, com `window.confirm`.
-              const ok = window.confirm(
-                'Importar até 90 dias de métricas do Meta Ads para este cliente? ' +
-                  'A importação pode levar alguns minutos.',
-              );
-              if (ok) chama('historico');
-            }}
-            disabled={ocupado}
-            className="btn-ghost disabled:opacity-50"
-          >
-            {ocupado && acao === 'historico'
-              ? 'Importando histórico…'
-              : 'Importar histórico (90 dias)'}
-          </button>
-        ) : null}
-      </div>
-
-      {ocupado ? (
-        <p className="text-xs text-[var(--text-tertiary)]">
-          {acao === 'historico'
-            ? 'A importação varre até 90 dias de métricas e pode levar alguns minutos.'
-            : 'Buscando os últimos 3 dias de métricas na Meta.'}
-        </p>
       ) : null}
 
-      {estado ? <Alerta tipo={estado.tipo}>{estado.texto}</Alerta> : null}
+      <div className="acoes-estado-aviso">
+        {ocupado ? (
+          <p className="text-xs text-[var(--text-tertiary)]">
+            {acao === 'historico'
+              ? 'A importação varre até 90 dias de métricas e pode levar alguns minutos.'
+              : 'Buscando os últimos 3 dias de métricas na Meta.'}
+          </p>
+        ) : estado ? (
+          <Alerta tipo={estado.tipo}>{estado.texto}</Alerta>
+        ) : null}
+      </div>
     </div>
   );
 }

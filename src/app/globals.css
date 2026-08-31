@@ -25,15 +25,9 @@
   --color-ink-900: #17191f;
   --color-ink-800: #262a32;
 
-  --color-red-50: #fde8e5;
-  --color-red-700: #b42318;
-  --color-amber-50: #fbf0da;
-  --color-amber-700: #a66a08;
   --color-lime-50: #ecf5da;
   --color-lime-700: #457f19;
-  --color-green-50: #e2f4e6;
   --color-green-400: #07b93b;
-  --color-green-700: #147a3a;
 
   --radius-chip: 6px;
   --radius-pill: 7px;
@@ -50,10 +44,10 @@
   --bg-field-on-canvas: #f5f7f9;
   --bg-raised: #ffffff;
   --nav-active-bg: #ffffff;
-  --brand: #6d5efc;
-  --brand-hover: #5b4be8;
-  --brand-soft: #eeecfe;
-  --brand-border: #ccc6fb;
+  --brand: #2563eb;
+  --brand-hover: #1d4ed8;
+  --brand-soft: #eaf1fe;
+  --brand-border: #bfd6fb;
   --bg-primary: var(--brand);
   --bg-primary-hover: var(--brand-hover);
   --text-primary: #0d0f14;
@@ -72,26 +66,26 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg-canvas: #0d0f14;
-    --bg-sidebar: #1b1e28;
-    --bg-field: #262a32;
-    --bg-field-on-canvas: #1b1e28;
-    --bg-raised: #1b1e28;
-    --nav-active-bg: #262a32;
-    --brand: #7c6ffd;
-    --brand-hover: #8f84ff;
-    --brand-soft: #221f3d;
-    --brand-border: #3b3566;
+    --bg-canvas: #0a0f1a;
+    --bg-sidebar: #0e1524;
+    --bg-field: #182236;
+    --bg-field-on-canvas: #111a2b;
+    --bg-raised: #111a2b;
+    --nav-active-bg: #1b2942;
+    --brand: #3b82f6;
+    --brand-hover: #60a5fa;
+    --brand-soft: #17233d;
+    --brand-border: #26406b;
     --bg-primary: var(--brand);
     --bg-primary-hover: var(--brand-hover);
-    --text-primary: #f5f7f9;
-    --text-secondary: #9ba0a6;
-    --text-tertiary: #5a5f68;
+    --text-primary: #e8edf7;
+    --text-secondary: #93a1b8;
+    --text-tertiary: #5c6a82;
     --text-on-primary: #ffffff;
-    --border-default: #262a32;
-    --border-strong: #3b3f4b;
-    --icon-default: #9ba0a6;
-    --icon-muted: #5a5f68;
+    --border-default: #1c2740;
+    --border-strong: #2b3a58;
+    --icon-default: #93a1b8;
+    --icon-muted: #5c6a82;
     --chart-line: var(--brand);
     --shadow-raised: 0 2px 5px rgba(0, 0, 0, 0.4), 0 1px 1px rgba(0, 0, 0, 0.3);
     --shadow-floating: 0 12px 32px -4px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.35);
@@ -99,32 +93,38 @@
 }
 
 :root[data-theme='dark'] {
-  --bg-canvas: #0d0f14;
-  --bg-sidebar: #1b1e28;
-  --bg-field: #262a32;
-  --bg-field-on-canvas: #1b1e28;
-  --bg-raised: #1b1e28;
-  --nav-active-bg: #262a32;
-  --brand: #7c6ffd;
-  --brand-hover: #8f84ff;
-  --brand-soft: #221f3d;
-  --brand-border: #3b3566;
+  --bg-canvas: #0a0f1a;
+  --bg-sidebar: #0e1524;
+  --bg-field: #182236;
+  --bg-field-on-canvas: #111a2b;
+  --bg-raised: #111a2b;
+  --nav-active-bg: #1b2942;
+  --brand: #3b82f6;
+  --brand-hover: #60a5fa;
+  --brand-soft: #17233d;
+  --brand-border: #26406b;
   --bg-primary: var(--brand);
   --bg-primary-hover: var(--brand-hover);
-  --text-primary: #f5f7f9;
-  --text-secondary: #9ba0a6;
-  --text-tertiary: #5a5f68;
+  --text-primary: #e8edf7;
+  --text-secondary: #93a1b8;
+  --text-tertiary: #5c6a82;
   --text-on-primary: #ffffff;
-  --border-default: #262a32;
-  --border-strong: #3b3f4b;
-  --icon-default: #9ba0a6;
-  --icon-muted: #5a5f68;
+  --border-default: #1c2740;
+  --border-strong: #2b3a58;
+  --icon-default: #93a1b8;
+  --icon-muted: #5c6a82;
   --chart-line: var(--brand);
   --shadow-raised: 0 2px 5px rgba(0, 0, 0, 0.4), 0 1px 1px rgba(0, 0, 0, 0.3);
   --shadow-floating: 0 12px 32px -4px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 @theme inline {
+  --color-red-50: var(--red-50);
+  --color-red-700: var(--red-700);
+  --color-amber-50: var(--amber-50);
+  --color-amber-700: var(--amber-700);
+  --color-green-50: var(--green-50);
+  --color-green-700: var(--green-700);
   --color-canvas: var(--bg-canvas);
   --color-sidebar: var(--bg-sidebar);
   --color-field: var(--bg-field);
@@ -234,11 +234,23 @@ body {
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg-logo: #0d0f14;
+    --bg-logo: #0a0f1a;
+    --red-50: #2b1418;
+    --red-700: #f4a4a0;
+    --amber-50: #2c2210;
+    --amber-700: #f0c265;
+    --green-50: #0f2620;
+    --green-700: #6fdca3;
   }
 }
 :root[data-theme='dark'] {
-  --bg-logo: #0d0f14;
+  --bg-logo: #0a0f1a;
+  --red-50: #2b1418;
+  --red-700: #f4a4a0;
+  --amber-50: #2c2210;
+  --amber-700: #f0c265;
+  --green-50: #0f2620;
+  --green-700: #6fdca3;
 }
 
 /* ---------- Escala tipográfica ---------- */
@@ -339,8 +351,8 @@ body {
   width: 48px;
   height: 48px;
   border-radius: var(--radius-surface);
-  background: linear-gradient(135deg, #6d5efc 0%, #9b6dff 100%);
-  box-shadow: 0 4px 12px -2px rgba(109, 94, 252, 0.5);
+  background: linear-gradient(135deg, #2563eb 0%, #4f8dfb 100%);
+  box-shadow: 0 4px 12px -2px rgba(37, 99, 235, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -864,6 +876,64 @@ body {
   gap: 10px;
   flex-shrink: 0;
   flex-wrap: wrap;
+}
+
+/*
+ * Ações que mudam de estado (sincronizar, importar) dentro do cabeçalho.
+ *
+ * O aviso sai do fluxo: enquanto ele participava do layout, aparecer
+ * "Buscando os últimos 3 dias..." empurrava os botões vizinhos e a linha
+ * inteira dançava a cada clique. Aqui ele flutua sob o grupo, e os botões
+ * ficam parados. `min-width` no botão faz o mesmo pelo eixo horizontal:
+ * trocar o rótulo por "Sincronizando…" não pode encolher o botão.
+ */
+.acoes-estado {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.acoes-estado-aviso {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  max-width: min(420px, 70vw);
+  text-align: right;
+  pointer-events: none;
+}
+.acoes-estado-aviso p {
+  margin: 0;
+}
+.btn-largura-fixa {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 196px;
+  white-space: nowrap;
+}
+
+/* Indicador de trabalho em andamento, do tamanho da linha de texto. */
+.spinner-inline {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 7px;
+  vertical-align: -2px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spinner-inline-gira 0.7s linear infinite;
+}
+@keyframes spinner-inline-gira {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner-inline {
+    animation-duration: 2.4s;
+  }
 }
 .chip-static {
   display: inline-flex;
