@@ -1322,6 +1322,58 @@ body {
 .table-wrap {
   overflow-x: auto;
 }
+
+/*
+ * Tabela larga de metricas (Campanhas): rola na horizontal, alinha numero
+ * a direita e prende a coluna de nome na esquerda. Sem isso, quem rola ate
+ * o fim das 19 colunas perde de vista de qual campanha e a linha.
+ */
+.tabela-metricas {
+  width: max-content;
+  min-width: 100%;
+}
+.tabela-metricas th.num,
+.tabela-metricas td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/*
+ * A celula fixa precisa de fundo opaco proprio, senao o conteudo das outras
+ * colunas passa por baixo dela. `--linha-bg` existe para o fundo acompanhar
+ * o estado da linha (normal, aninhada, hover) sem repetir cada combinacao.
+ */
+.tabela-metricas tbody tr {
+  --linha-bg: var(--bg-raised);
+}
+.tabela-metricas tbody tr.linha-aninhada {
+  --linha-bg: var(--bg-field-on-canvas);
+  background: var(--linha-bg);
+}
+.tabela-metricas tbody tr:hover,
+.tabela-metricas tbody tr.linha-aninhada:hover {
+  --linha-bg: var(--bg-sidebar);
+  background: var(--linha-bg);
+}
+.tabela-metricas .col-fixa {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--linha-bg, var(--bg-raised));
+  border-right: 1px solid var(--border-default);
+}
+.tabela-metricas thead .col-fixa {
+  z-index: 2;
+}
+.tabela-metricas tfoot tr {
+  --linha-bg: var(--bg-raised);
+}
+.tabela-metricas tfoot td {
+  border-top: 1px solid var(--border-strong);
+  border-bottom: none;
+  font-weight: 600;
+  white-space: nowrap;
+}
 .load-more-wrap {
   display: flex;
   justify-content: center;

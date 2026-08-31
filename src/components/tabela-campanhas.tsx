@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import type { LinhaHierarquia, NivelHierarquia } from '@/lib/db/campanhas';
+import type { EventoFunil, LinhaHierarquia, NivelHierarquia } from '@/lib/db/campanhas';
+import { rotuloStatus, somaCampanhas, tomStatus, type TotaisCampanhas } from '@/lib/campanhas';
+import { Icones } from '@/components/icones';
 import { fmtBRL, fmtInt, fmtDec, fmtPct, fmtRoas, fmtRoi } from '@/lib/format';
 
 /**
@@ -13,6 +15,10 @@ import { fmtBRL, fmtInt, fmtDec, fmtPct, fmtRoas, fmtRoi } from '@/lib/format';
  * carregados só quando alguém abre a linha — o painel antigo fazia igual,
  * porque carregar os três níveis de antemão são dezenas de consultas por
  * render para dados que quase nunca são abertos.
+ *
+ * São 19 colunas: a tabela rola na horizontal e a coluna Nome fica presa à
+ * esquerda (`col-fixa`), senão quem rola até o ROI não sabe mais de qual
+ * campanha é a linha.
  */
 
 const FILHO: Record<NivelHierarquia, NivelHierarquia | null> = {
@@ -27,26 +33,211 @@ const ROTULO_FILHO: Record<NivelHierarquia, string> = {
   ad: 'anúncios',
 };
 
+const ROTULO_NIVEL: Record<NivelHierarquia, string> = {
+  campaign: 'Campanha',
+  adset: 'Conjunto',
+  ad: 'Anúncio',
+};
+
 export type ColunasOpcionais = { receita: boolean; roas: boolean; roi: boolean };
 
 type Item =
-  | { tipo: 'linha'; chave: string; nivel: NivelHierarquia; profundidade: number; linha: LinhaHierarquia }
+  | {
+      tipo: 'linha';
+      chave: string;
+      nivel: NivelHierarquia;
+      profundidade: number;
+      linha: LinhaHierarquia;
+    }
   | { tipo: 'aviso'; chave: string; profundidade: number; texto: string };
 
-function Chip({ status }: { status: string | null }) {
-  const bruto = String(status ?? '').trim();
-  const s = bruto.toUpperCase();
-  const cor =
-    s === 'ACTIVE'
-      ? 'bg-green-50 text-green-700'
-      : s === 'PAUSED'
-        ? 'bg-[var(--bg-field)] text-[var(--text-secondary)]'
-        : 'bg-amber-50 text-amber-700';
+/**
+ * Uma coluna de métrica descreve cabeçalho, célula e total no mesmo lugar.
+ *
+ * Antes o cabeçalho era um array solto e as células eram JSX escrito à mão
+ * em outra parte do arquivo: bastava inserir uma coluna em um dos dois para
+ * a tabela sair torta. Com o rodapé de totais seriam três listas paralelas
+ * para manter em sincronia.
+ */
+type ColunaMetrica = {
+  chave: string;
+  rotulo: string;
+  /** Explicação no `title` do cabeçalho, para as siglas. */
+  dica?: string;
+  /** Coluna que o cliente pode esconder pelo seletor de métricas. */
+  opcional?: keyof ColunasOpcionais;
+  valor: (l: LinhaHierarquia) => string;
+  total: (t: TotaisCampanhas) => string;
+};
+
+const COLUNAS: ColunaMetrica[] = [
+  {
+    chave: 'orcamento',
+    rotulo: 'Orçamento',
+    dica: 'Orçamento diário quando existe; senão o vitalício. Anúncio não tem orçamento próprio.',
+    valor: (l) => (l.orcamento === null ? '—' : fmtBRL(l.orcamento)),
+    // Somar diário com vitalício daria um número sem significado.
+    total: () => '—',
+  },
+  { chave: 'spend', rotulo: 'Gasto', valor: (l) => fmtBRL(l.spend), total: (t) => fmtBRL(t.spend) },
+  {
+    chave: 'impressions',
+    rotulo: 'Impressões',
+    valor: (l) => fmtInt(l.impressions),
+    total: (t) => fmtInt(t.impressions),
+  },
+  {
+    chave: 'reach',
+    rotulo: 'Alcance',
+    dica: 'Pessoas únicas alcançadas. Não soma entre campanhas: quem viu duas contaria duas vezes.',
+    valor: (l) => fmtInt(l.reach),
+    total: () => '—',
+  },
+  {
+    chave: 'frequency',
+    rotulo: 'Frequência',
+    dica: 'Impressões por pessoa alcançada.',
+    valor: (l) => fmtDec(l.frequency, 2),
+    total: () => '—',
+  },
+  {
+    chave: 'clicks',
+    rotulo: 'Cliques',
+    valor: (l) => fmtInt(l.clicks),
+    total: (t) => fmtInt(t.clicks),
+  },
+  {
+    chave: 'ctr',
+    rotulo: 'CTR',
+    dica: 'Cliques ÷ impressões.',
+    valor: (l) => fmtPct(l.ctr),
+    total: (t) => fmtPct(t.ctr),
+  },
+  {
+    chave: 'cpc',
+    rotulo: 'CPC',
+    dica: 'Custo por clique.',
+    valor: (l) => fmtBRL(l.cpc),
+    total: (t) => fmtBRL(t.cpc),
+  },
+  {
+    chave: 'cpm',
+    rotulo: 'CPM',
+    dica: 'Custo por mil impressões.',
+    valor: (l) => fmtBRL(l.cpm),
+    total: (t) => fmtBRL(t.cpm),
+  },
+  {
+    chave: 'leads',
+    rotulo: 'Leads',
+    valor: (l) => fmtInt(l.total_leads),
+    total: (t) => fmtInt(t.total_leads),
+  },
+  {
+    chave: 'conversoes',
+    rotulo: 'Conversões',
+    valor: (l) => fmtInt(l.total_conversoes),
+    total: (t) => fmtInt(t.total_conversoes),
+  },
+  {
+    chave: 'cpl',
+    rotulo: 'CPL',
+    dica: 'Custo por lead: gasto ÷ leads.',
+    valor: (l) => (l.cpl === null ? '—' : fmtBRL(l.cpl)),
+    total: (t) => (t.cpl === null ? '—' : fmtBRL(t.cpl)),
+  },
+  {
+    chave: 'cac',
+    rotulo: 'CAC',
+    dica: 'Custo por cliente: gasto ÷ conversões.',
+    valor: (l) => (l.cac === null ? '—' : fmtBRL(l.cac)),
+    total: (t) => (t.cac === null ? '—' : fmtBRL(t.cac)),
+  },
+  {
+    chave: 'receita',
+    rotulo: 'Receita',
+    opcional: 'receita',
+    valor: (l) => fmtBRL(l.receita),
+    total: (t) => fmtBRL(t.receita),
+  },
+  {
+    chave: 'roas',
+    rotulo: 'ROAS',
+    dica: 'Receita ÷ gasto.',
+    opcional: 'roas',
+    valor: (l) => fmtRoas(l.spend, l.receita),
+    total: (t) => fmtRoas(t.spend, t.receita),
+  },
+  {
+    chave: 'roi',
+    rotulo: 'ROI',
+    dica: 'Retorno sobre o gasto: (receita − gasto) ÷ gasto.',
+    opcional: 'roi',
+    valor: (l) => fmtRoi(l.spend, l.receita),
+    total: (t) => fmtRoi(t.spend, t.receita),
+  },
+];
+
+type Tom = ReturnType<typeof tomStatus>;
+
+const COR_TEXTO_STATUS: Record<Tom, string> = {
+  ativo: 'text-green-700 dark:text-green-400',
+  pausado: 'text-[var(--text-secondary)]',
+  atencao: 'text-amber-700 dark:text-amber-400',
+};
+
+const COR_PONTO_STATUS: Record<Tom, string> = {
+  ativo: 'bg-green-500',
+  pausado: 'bg-[var(--border-strong)]',
+  atencao: 'bg-amber-500',
+};
+
+/**
+ * Ponto colorido + palavra, em vez do chip de fundo cheio: dentro de uma
+ * tabela de 19 colunas cada retângulo colorido vira ruído, e o chip antigo
+ * ainda quebrava "active" em duas linhas quando a coluna apertava.
+ */
+function Status({ status, nivel }: { status: string | null; nivel: NivelHierarquia }) {
+  const tom = tomStatus(status);
+  return (
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap ${COR_TEXTO_STATUS[tom]}`}>
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${COR_PONTO_STATUS[tom]}`} />
+      {rotuloStatus(status, nivel)}
+    </span>
+  );
+}
+
+/** Quantos eventos do funil cabem na célula antes de virarem "+N". */
+const MAX_CHIPS_FUNIL = 3;
+
+/**
+ * O funil vinha como uma nuvem de chips sem limite, e era ele que esticava
+ * a linha: uma campanha com oito eventos quebrava em quatro fileiras e
+ * empurrava a altura da linha inteira. Agora mostra os três maiores e
+ * resume o resto em "+N", com a lista completa no `title`.
+ */
+function Funil({ eventos }: { eventos: EventoFunil[] }) {
+  if (!eventos.length) return <span className="text-[var(--text-tertiary)]">—</span>;
+
+  const visiveis = eventos.slice(0, MAX_CHIPS_FUNIL);
+  const resto = eventos.length - visiveis.length;
+
   return (
     <span
-      className={`inline-block rounded-[var(--radius-chip)] px-1.5 py-0.5 text-[11px] font-medium ${cor}`}
+      className="flex items-center gap-1"
+      title={eventos.map((e) => `${e.event_name}: ${fmtInt(e.total)}`).join(' · ')}
     >
-      {bruto ? bruto.toLowerCase() : '—'}
+      {visiveis.map((e) => (
+        <span
+          key={e.event_name}
+          className="rounded-[var(--radius-chip)] bg-[var(--bg-field)] px-1.5 py-0.5 text-[11px] whitespace-nowrap"
+        >
+          {e.event_name} <b className="tabular-nums">{fmtInt(e.total)}</b>
+        </span>
+      ))}
+      {resto > 0 ? (
+        <span className="text-[11px] whitespace-nowrap text-[var(--text-tertiary)]">+{resto}</span>
+      ) : null}
     </span>
   );
 }
@@ -152,27 +343,10 @@ export function TabelaCampanhas({
   const itens: Item[] = [];
   achata(linhas, 'campaign', 0, itens);
 
-  const cabecalhos = [
-    'Nome',
-    'Status',
-    'Orçamento',
-    'Gasto',
-    'Impressões',
-    'Alcance',
-    'Frequência',
-    'Cliques',
-    'CTR',
-    'CPC',
-    'CPM',
-    'Leads',
-    'Conversões',
-    'CPL',
-    'CAC',
-    ...(colunas.receita ? ['Receita'] : []),
-    ...(colunas.roas ? ['ROAS'] : []),
-    ...(colunas.roi ? ['ROI'] : []),
-    'Funil de eventos',
-  ];
+  const visiveis = COLUNAS.filter((c) => !c.opcional || colunas[c.opcional]);
+  // Nome + Status + métricas + Funil de eventos.
+  const totalDeColunas = visiveis.length + 3;
+  const totais = somaCampanhas(linhas);
 
   return (
     <div className="space-y-3">
@@ -183,22 +357,27 @@ export function TabelaCampanhas({
       ) : null}
 
       <div className="table-wrap">
-        <table className="tabela-painel" style={{ minWidth: 1400 }}>
+        <table className="tabela-painel tabela-metricas">
           <thead>
             <tr>
-              {cabecalhos.map((c) => (
-                <th key={c}>{c}</th>
+              <th className="col-fixa">Nome</th>
+              <th>Status</th>
+              {visiveis.map((c) => (
+                <th key={c.chave} className="num" title={c.dica}>
+                  {c.rotulo}
+                </th>
               ))}
+              <th>Funil de eventos</th>
             </tr>
           </thead>
           <tbody>
             {itens.map((item) =>
               item.tipo === 'aviso' ? (
-                <tr key={item.chave}>
+                <tr key={item.chave} className="linha-aninhada">
                   <td
-                    colSpan={cabecalhos.length}
+                    colSpan={totalDeColunas}
                     className="text-[var(--text-tertiary)]"
-                    style={{ paddingLeft: item.profundidade * 20 }}
+                    style={{ paddingLeft: 12 + item.profundidade * 22 }}
                   >
                     {item.texto}
                   </td>
@@ -207,15 +386,39 @@ export function TabelaCampanhas({
                 <LinhaTabela
                   key={item.chave}
                   item={item}
-                  colunas={colunas}
+                  colunas={visiveis}
                   aberto={abertos.has(item.chave)}
                   onAlterna={() => alterna(item.chave, item.nivel, item.linha.id)}
                 />
               ),
             )}
           </tbody>
+          {/* Uma campanha só já é o próprio total: a linha repetida só ocupa espaço. */}
+          {linhas.length > 1 ? (
+            <tfoot>
+              <tr>
+                <td className="col-fixa whitespace-nowrap">
+                  Total · {fmtInt(totais.campanhas)} campanhas
+                </td>
+                <td />
+                {visiveis.map((c) => (
+                  <td key={c.chave} className="num">
+                    {c.total(totais)}
+                  </td>
+                ))}
+                <td>
+                  <Funil eventos={totais.funil_eventos} />
+                </td>
+              </tr>
+            </tfoot>
+          ) : null}
         </table>
       </div>
+
+      <p className="text-xs text-[var(--text-tertiary)]">
+        A seta abre os conjuntos de uma campanha e os anúncios de um conjunto. A tabela rola para o
+        lado; a coluna de nome fica fixa.
+      </p>
     </div>
   );
 }
@@ -227,7 +430,7 @@ function LinhaTabela({
   onAlterna,
 }: {
   item: Extract<Item, { tipo: 'linha' }>;
-  colunas: ColunasOpcionais;
+  colunas: ColunaMetrica[];
   aberto: boolean;
   onAlterna: () => void;
 }) {
@@ -235,78 +438,51 @@ function LinhaTabela({
   const podeExpandir = FILHO[item.nivel] !== null;
 
   return (
-    <tr className={item.profundidade > 0 ? 'bg-[var(--bg-field-on-canvas)]' : undefined}>
-      <td style={{ paddingLeft: item.profundidade * 20 }}>
-        <span className="flex items-center gap-1.5">
+    <tr className={item.profundidade > 0 ? 'linha-aninhada' : undefined}>
+      <td className="col-fixa">
+        <span className="flex items-center gap-1.5" style={{ paddingLeft: item.profundidade * 22 }}>
           {podeExpandir ? (
             <button
               type="button"
               onClick={onAlterna}
               aria-expanded={aberto}
               aria-label={aberto ? 'Recolher' : 'Expandir'}
-              className="shrink-0 rounded-[var(--radius-chip)] px-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-field)]"
+              className="grid h-5 w-5 shrink-0 place-items-center rounded-[var(--radius-chip)] text-[var(--text-tertiary)] hover:bg-[var(--bg-field)] hover:text-[var(--text-primary)]"
             >
-              {aberto ? '▾' : '▸'}
+              <Icones.chevron
+                className={`block shrink-0 transition-transform ${aberto ? 'rotate-90' : ''}`}
+                width={13}
+                height={13}
+              />
             </button>
           ) : (
-            <span className="w-[18px] shrink-0" />
+            <span className="w-5 shrink-0" />
           )}
-          <span
-            className={
-              l.nome
-                ? 'max-w-[280px] truncate'
-                : 'max-w-[280px] truncate text-[var(--text-tertiary)]'
-            }
-            title={l.nome ?? undefined}
-          >
-            {l.nome || '(sem nome)'}
+          <span className="min-w-0">
+            <span
+              className={`block max-w-[320px] truncate ${l.nome ? '' : 'text-[var(--text-tertiary)]'}`}
+              title={l.nome ?? undefined}
+            >
+              {l.nome || '(sem nome)'}
+            </span>
+            {item.profundidade > 0 ? (
+              <span className="block text-[11px] text-[var(--text-tertiary)]">
+                {ROTULO_NIVEL[item.nivel]}
+              </span>
+            ) : null}
           </span>
         </span>
       </td>
       <td>
-        <Chip status={l.status} />
+        <Status status={l.status} nivel={item.nivel} />
       </td>
-      <td className="tabular-nums whitespace-nowrap">
-        {l.orcamento === null ? '—' : fmtBRL(l.orcamento)}
-      </td>
-      <td className="tabular-nums whitespace-nowrap">{fmtBRL(l.spend)}</td>
-      <td className="tabular-nums">{fmtInt(l.impressions)}</td>
-      <td className="tabular-nums">{fmtInt(l.reach)}</td>
-      <td className="tabular-nums">{fmtDec(l.frequency, 2)}</td>
-      <td className="tabular-nums">{fmtInt(l.clicks)}</td>
-      <td className="tabular-nums">{fmtPct(l.ctr)}</td>
-      <td className="tabular-nums whitespace-nowrap">{fmtBRL(l.cpc)}</td>
-      <td className="tabular-nums whitespace-nowrap">{fmtBRL(l.cpm)}</td>
-      <td className="tabular-nums">{fmtInt(l.total_leads)}</td>
-      <td className="tabular-nums">{fmtInt(l.total_conversoes)}</td>
-      <td className="tabular-nums whitespace-nowrap">
-        {l.cpl === null ? '—' : fmtBRL(l.cpl)}
-      </td>
-      <td className="tabular-nums whitespace-nowrap">
-        {l.cac === null ? '—' : fmtBRL(l.cac)}
-      </td>
-      {colunas.receita ? (
-        <td className="tabular-nums whitespace-nowrap">{fmtBRL(l.receita)}</td>
-      ) : null}
-      {colunas.roas ? (
-        <td className="tabular-nums">{fmtRoas(l.spend, l.receita)}</td>
-      ) : null}
-      {colunas.roi ? <td className="tabular-nums">{fmtRoi(l.spend, l.receita)}</td> : null}
+      {colunas.map((c) => (
+        <td key={c.chave} className="num">
+          {c.valor(l)}
+        </td>
+      ))}
       <td>
-        {l.funil_eventos.length ? (
-          <span className="flex flex-wrap gap-1">
-            {l.funil_eventos.map((e) => (
-              <span
-                key={e.event_name}
-                className="rounded-[var(--radius-chip)] bg-[var(--bg-field)] px-1.5 py-0.5 text-[11px] whitespace-nowrap"
-              >
-                {e.event_name} <b className="tabular-nums">{fmtInt(e.total)}</b>
-              </span>
-            ))}
-          </span>
-        ) : (
-          <span className="text-[var(--text-tertiary)]">—</span>
-        )}
+        <Funil eventos={l.funil_eventos} />
       </td>
     </tr>
   );
