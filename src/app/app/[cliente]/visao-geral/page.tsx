@@ -10,7 +10,7 @@ import {
   CANAIS,
   type Canal,
 } from '@/lib/periodo';
-import { fmtBRL, fmtInt, fmtDec, fmtPct } from '@/lib/format';
+import { kpisDoEscopo } from '@/lib/kpis';
 import {
   Card,
   KpiCard,
@@ -25,6 +25,7 @@ import { SeletorPeriodo } from '@/components/seletores';
 import { ListaLeads } from '@/components/lista-leads';
 import { SeletorMetricas } from '@/components/seletor-metricas';
 import { BotoesMeta } from '@/components/botoes-meta';
+import { ExportarPdf } from '@/components/exportar-pdf';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Visão geral — Trakeamento' };
@@ -39,159 +40,45 @@ export const metadata: Metadata = { title: 'Visão geral — Trakeamento' };
  * o navegador realmente precisa chamar sozinho (paginação, lazy-load).
  */
 
-/**
- * Métricas que vêm do Meta Ads e não são atribuíveis por canal — não há
- * como ligar uma linha de `meta_insights_daily` a um lead específico.
- * Some na visão de WhatsApp, igual ao painel atual.
- */
-const KPIS_DE_ANUNCIO = new Set([
-  'total_spend',
-  'cpl',
-  'impressions',
-  'reach',
-  'frequency',
-  'clicks',
-  'ctr',
-  'cpc',
-  'cpm',
-  'roas',
-]);
-
-type Kpi = {
-  /** Chave do catálogo de preferências. Não é `key`: o objeto é
-   *  espalhado em `<KpiCard {...k}>`, e `key` ali seria consumido pelo
-   *  React em vez de chegar ao componente. */
-  id: string;
-  rotulo: string;
-  valor: string;
-  dica: string;
-  icone: (typeof Icones)[keyof typeof Icones];
-  atual?: unknown;
-  anterior?: unknown;
-  melhorQuandoCai?: boolean;
-  destaque?: boolean;
-  spark?: number[];
+/** Ícone de cada KPI. Só a tela usa: o PDF não desenha ícone. */
+const ICONES_KPI: Record<string, (typeof Icones)[keyof typeof Icones]> = {
+  total_leads: Icones.users,
+  total_spend: Icones.dollar,
+  cpl: Icones.target,
+  impressions: Icones.eye,
+  reach: Icones.broadcast,
+  frequency: Icones.repeat,
+  clicks: Icones.click,
+  ctr: Icones.percent,
+  cpc: Icones.dollar,
+  cpm: Icones.dollar,
+  conversoes: Icones.check,
+  taxa_conversao: Icones.target,
+  receita: Icones.dollar,
+  roas: Icones.target,
 };
 
-function montaKpis(m: Metricas, serie: number[]): Kpi[] {
+/**
+ * Monta os cards a partir do catálogo compartilhado com o PDF.
+ *
+ * O que é só da tela — ícone, minigráfico e o destaque da taxa alta —
+ * entra aqui; rótulo, formatação e regra de canal vêm de `lib/kpis` para
+ * que a exportação nunca mostre um número diferente do da tela.
+ */
+function montaKpis(m: Metricas, serie: number[], canal: Canal, visiveis: Map<string, boolean>) {
   const cmp = m.comparativo_anterior;
-  return [
-    {
-      id: 'total_leads',
-      icone: Icones.users,
-      rotulo: 'Total de Leads',
-      valor: fmtInt(m.total_leads),
-      dica: 'Total de leads capturados no período selecionado.',
-      atual: m.total_leads,
-      anterior: cmp?.total_leads,
-      spark: serie,
-    },
-    {
-      id: 'total_spend',
-      icone: Icones.dollar,
-      rotulo: 'Gasto (Meta Ads)',
-      valor: fmtBRL(m.total_spend),
-      dica: 'Total investido em anúncios no Meta durante o período selecionado.',
-      atual: m.total_spend,
-      anterior: cmp?.total_spend,
-    },
-    {
-      id: 'cpl',
-      icone: Icones.target,
-      rotulo: 'CPL',
-      valor: m.cpl === null ? '—' : fmtBRL(m.cpl),
-      dica: 'Custo por Lead: gasto total dividido pelo número de leads capturados no período.',
-      atual: m.cpl,
-      anterior: cmp?.cpl,
-      melhorQuandoCai: true,
-    },
-    {
-      id: 'impressions',
-      icone: Icones.eye,
-      rotulo: 'Impressões',
-      valor: fmtInt(m.impressions),
-      dica: 'Total de impressões dos anúncios no Meta durante o período selecionado.',
-    },
-    {
-      id: 'reach',
-      icone: Icones.broadcast,
-      rotulo: 'Alcance',
-      valor: fmtInt(m.reach),
-      dica: 'Soma dos valores diários. Não é deduplicado entre dias quando o período tem mais de um dia — use como aproximação.',
-    },
-    {
-      id: 'frequency',
-      icone: Icones.repeat,
-      rotulo: 'Frequência',
-      valor: fmtDec(m.frequency, 2),
-      dica: 'Média dos valores diários. Aproximado quando o período tem mais de um dia.',
-    },
-    {
-      id: 'clicks',
-      icone: Icones.click,
-      rotulo: 'Cliques',
-      valor: fmtInt(m.clicks),
-      dica: 'Total de cliques nos anúncios no Meta durante o período selecionado.',
-    },
-    {
-      id: 'ctr',
-      icone: Icones.percent,
-      rotulo: 'CTR',
-      valor: fmtPct(m.ctr),
-      dica: 'Click-Through Rate: percentual de cliques em relação às impressões.',
-    },
-    {
-      id: 'cpc',
-      icone: Icones.dollar,
-      rotulo: 'CPC',
-      valor: fmtBRL(m.cpc),
-      dica: 'Custo por Clique médio no período selecionado.',
-    },
-    {
-      id: 'cpm',
-      icone: Icones.dollar,
-      rotulo: 'CPM',
-      valor: fmtBRL(m.cpm),
-      dica: 'Custo por Mil impressões médio no período selecionado.',
-    },
-    {
-      id: 'conversoes',
-      icone: Icones.check,
-      rotulo: 'Conversão',
-      valor: fmtInt(m.total_conversoes),
-      dica: 'Leads que chegaram a uma etapa marcada como conversão em Configurações de eventos, no período selecionado.',
-      atual: m.total_conversoes,
-      anterior: cmp?.total_conversoes,
-    },
-    {
-      id: 'taxa_conversao',
-      icone: Icones.target,
-      rotulo: 'Taxa de Conversão do Funil',
-      valor: m.taxa_conversao === null ? '—' : `${fmtDec(m.taxa_conversao, 1)}%`,
-      dica: `Percentual de leads que chegaram a uma etapa marcada como conversão (${fmtInt(m.total_conversoes)} de ${fmtInt(m.total_leads)} leads).`,
-      destaque: m.taxa_conversao !== null && m.taxa_conversao >= 20,
-      atual: m.taxa_conversao,
-      anterior: cmp?.taxa_conversao,
-    },
-    {
-      id: 'receita',
-      icone: Icones.dollar,
-      rotulo: 'Receita',
-      valor: fmtBRL(m.receita),
-      dica: 'Soma do valor das conversões no período. Depende de o evento carregar o campo "value" corretamente.',
-      atual: m.receita,
-      anterior: cmp?.receita,
-    },
-    {
-      id: 'roas',
-      icone: Icones.target,
-      rotulo: 'ROAS',
-      valor: m.roas === null ? '—' : `${fmtDec(m.roas, 2)}x`,
-      dica: 'Receita dividida pelo Gasto (Meta Ads) no período. Depende de Receita estar configurada corretamente.',
-      atual: m.roas,
-      anterior: cmp?.roas,
-    },
-  ];
+  return kpisDoEscopo(canal, visiveis).map((k) => ({
+    id: k.id,
+    icone: ICONES_KPI[k.id],
+    rotulo: k.rotulo,
+    valor: k.valor(m),
+    dica: k.dica(m),
+    atual: k.atual?.(m),
+    anterior: cmp && k.anterior ? k.anterior(cmp) : undefined,
+    melhorQuandoCai: k.melhorQuandoCai,
+    destaque: k.id === 'taxa_conversao' && m.taxa_conversao !== null && m.taxa_conversao >= 20,
+    spark: k.id === 'total_leads' ? serie : undefined,
+  }));
 }
 
 /** Rótulo do período no título do gráfico, como no painel. */
@@ -267,6 +154,7 @@ export default async function PaginaVisaoGeral({
               visiveis={Object.fromEntries(visiveis)}
             />
             <BotoesMeta cliente={conta.client_db_name} />
+            <ExportarPdf cliente={conta.client_db_name} />
           </>
         }
       />
@@ -306,10 +194,9 @@ function CorpoMetricas({
   const kpis = montaKpis(
     metricas,
     serie.map((p) => p.total),
-  ).filter((k) => {
-    if (periodo.canal === 'whatsapp' && KPIS_DE_ANUNCIO.has(k.id)) return false;
-    return visiveis.get(k.id) !== false;
-  });
+    periodo.canal,
+    visiveis,
+  );
 
   return (
     <>
