@@ -34,6 +34,13 @@ CREATE TABLE IF NOT EXISTS customers (
   crm_contact_id VARCHAR(255),
   meta_lead_id VARCHAR(255),
   current_stage VARCHAR(255),
+  -- Valor do negócio vindo do CRM. O Kommo manda `price` no webhook de
+  -- criação e no de mudança de status, mas só no momento em que ele
+  -- muda: sem persistir aqui, um Purchase disparado numa etapa
+  -- posterior não teria valor nenhum para mandar à Meta. Só é
+  -- sobrescrito quando o webhook traz preço maior que zero, para uma
+  -- mudança de etapa sem preço não zerar o que já estava salvo.
+  crm_value DECIMAL(14,2) NULL,
   first_name VARCHAR(255),
   last_name VARCHAR(255),
   email VARCHAR(255),
