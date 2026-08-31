@@ -64,6 +64,16 @@ export const ORDEM_FUNIL = [
 
 const POSICAO_NO_FUNIL = new Map<string, number>(ORDEM_FUNIL.map((nome, i) => [nome, i]));
 
+/**
+ * Posição do evento na jornada; eventos fora do catálogo vão para o fim.
+ * É o que permite ordenar etapas do cliente (que têm nome livre) pela
+ * ordem real do funil, já que cada etapa carrega o evento Meta que
+ * dispara.
+ */
+export function posicaoNoFunil(eventName: string): number {
+  return POSICAO_NO_FUNIL.get(eventName) ?? ORDEM_FUNIL.length;
+}
+
 /** Reordena eventos pela jornada; empate e desconhecidos, por volume. */
 export function ordenaFunil<T extends { event_name: string; total: number }>(itens: T[]): T[] {
   return [...itens].sort((a, b) => {

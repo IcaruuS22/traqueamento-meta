@@ -2,6 +2,7 @@ import 'server-only';
 import type { BancoCliente } from '@/lib/db/cliente';
 import { LacunasDeEsquema, lacunaDeEsquema } from '@/lib/db/pool';
 import { ordenaFunil } from '@/lib/meta-eventos';
+import { transicoesDoFunil, type MarcoDeEtapa, type Transicao } from '@/lib/transicoes';
 import {
   condicaoTimestamp,
   condicaoData,
@@ -37,7 +38,7 @@ export type Fragmento = { sql: string; params: unknown[] };
 
 export type LeadDia = { dia: string; total: number };
 export type EventoPorNome = { event_name: string; total: number };
-export type Transicao = { from_stage: string; to_stage: string; avg_ms: number; count: number };
+export type { Transicao } from '@/lib/transicoes';
 export type Lead = {
   id: number;
   first_name: string | null;
@@ -328,64 +329,45 @@ export async function ultimosLeads(
 }
 
 /**
- * Tempo médio entre etapas da jornada.
+ * Tempo médio de cada passo do funil.
  *
- * Percorre a timeline de eventos SENT de cada lead em ordem cronológica
- * e mede o intervalo entre cada par de etapas realmente percorridas —
- * não um funil fixo, porque o caminho de cada lead pode pular ou repetir
- * etapas. Agrupa por par (de → para) e tira a média, revelando onde a
- * jornada é mais lenta.
+ * Pega, por lead, a primeira vez que ele alcançou cada etapa, e mede só
+ * os trechos entre etapas vizinhas na ordem do funil. A ordem vem do
+ * evento Meta de cada etapa (`ORDEM_FUNIL`), porque o nome exibido é
+ * livre e as tabelas de mapeamento não guardam posição.
  */
 async function tempoEntreEtapas(db: BancoCliente, f: Fragmento): Promise<Transicao[]> {
-  const linhas = await db.query<{ customer_id: number; created_at: unknown; stage_name: string }>(
-    `SELECT e.customer_id, e.created_at, COALESCE(e.content_name, e.event_name) AS stage_name
+  const linhas = await db.query<{
+    customer_id: number;
+    stage_name: string;
+    event_name: string;
+    ms: string | number | null;
+  }>(
+    `SELECT e.customer_id,
+            COALESCE(e.content_name, e.event_name) AS stage_name,
+            e.event_name,
+            MIN(UNIX_TIMESTAMP(e.created_at)) * 1000 AS ms
        FROM ${db.tabela('meta_capi_events')} e
        JOIN ${db.tabela('customers')} c ON c.id = e.customer_id
       WHERE e.status = 'SENT' ${f.sql}
-      ORDER BY e.customer_id ASC, e.created_at ASC`,
+      GROUP BY e.customer_id, stage_name, e.event_name`,
     f.params,
   );
 
-  const porLead = new Map<number, { ms: number; etapa: string }[]>();
+  const marcos: MarcoDeEtapa[] = [];
   for (const l of linhas) {
-    if (!l.stage_name || !l.created_at) continue;
-    const ms = new Date(l.created_at as string).getTime();
+    if (!l.stage_name || l.ms === null) continue;
+    const ms = Number(l.ms);
     if (!Number.isFinite(ms)) continue;
-    const lista = porLead.get(l.customer_id) ?? [];
-    lista.push({ ms, etapa: l.stage_name });
-    porLead.set(l.customer_id, lista);
+    marcos.push({
+      customer_id: l.customer_id,
+      stage_name: l.stage_name,
+      event_name: l.event_name ?? l.stage_name,
+      ms,
+    });
   }
 
-  const transicoes = new Map<string, Transicao & { totalMs: number }>();
-  for (const eventos of porLead.values()) {
-    for (let i = 1; i < eventos.length; i++) {
-      const de = eventos[i - 1];
-      const para = eventos[i];
-      if (de.etapa === para.etapa) continue;
-      const delta = para.ms - de.ms;
-      if (!(delta >= 0)) continue;
-      const chave = `${de.etapa}||${para.etapa}`;
-      const atual = transicoes.get(chave) ?? {
-        from_stage: de.etapa,
-        to_stage: para.etapa,
-        avg_ms: 0,
-        count: 0,
-        totalMs: 0,
-      };
-      atual.totalMs += delta;
-      atual.count += 1;
-      transicoes.set(chave, atual);
-    }
-  }
-
-  return [...transicoes.values()]
-    .map((t) => ({
-      from_stage: t.from_stage,
-      to_stage: t.to_stage,
-      avg_ms: Math.round(t.totalMs / t.count),
-      count: t.count,
-    }))
-    .sort((a, b) => b.count - a.count);
+  return transicoesDoFunil(marcos);
 }
 
 function montaTotais(
