@@ -60,7 +60,7 @@ export function LinhaUsuario({
             name="papel"
             defaultValue={usuario.role}
             disabled={ehVoceMesmo}
-            className="field w-auto py-1 text-xs"
+            className="field filtro-campo"
           >
             <option value="cliente">Cliente</option>
             <option value="admin">Admin</option>

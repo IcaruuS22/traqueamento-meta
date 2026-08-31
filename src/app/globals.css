@@ -38,10 +38,14 @@
 }
 
 :root {
-  --bg-canvas: #ffffff;
-  --bg-sidebar: #f5f7f9;
-  --bg-field: #eff1f3;
-  --bg-field-on-canvas: #f5f7f9;
+  /* O fundo geral é um off-white levemente azulado, e não branco puro:
+     branco em tela cheia cansa a vista e deixa card, campo e cabeçalho de
+     tabela sem contraste entre si. O branco fica reservado para o que
+     precisa se destacar do fundo — card e item de menu ativo. */
+  --bg-canvas: #f1f4f9;
+  --bg-sidebar: #e8ecf4;
+  --bg-field: #e4e9f1;
+  --bg-field-on-canvas: #e8ecf4;
   --bg-raised: #ffffff;
   --nav-active-bg: #ffffff;
   --brand: #2563eb;
@@ -54,8 +58,8 @@
   --text-secondary: #4e525a;
   --text-tertiary: #9ba0a6;
   --text-on-primary: #ffffff;
-  --border-default: #e2e4e6;
-  --border-strong: #d2d5d9;
+  --border-default: #dbe1ea;
+  --border-strong: #c3ccd9;
   --icon-default: #4e525a;
   --icon-muted: #9ba0a6;
   --chart-line: var(--brand);
@@ -66,12 +70,12 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg-canvas: #0a0f1a;
-    --bg-sidebar: #0e1524;
-    --bg-field: #182236;
-    --bg-field-on-canvas: #111a2b;
-    --bg-raised: #111a2b;
-    --nav-active-bg: #1b2942;
+    --bg-canvas: #05080f;
+    --bg-sidebar: #080d17;
+    --bg-field: #131b2b;
+    --bg-field-on-canvas: #0b1120;
+    --bg-raised: #0b1120;
+    --nav-active-bg: #16223a;
     --brand: #3b82f6;
     --brand-hover: #60a5fa;
     --brand-soft: #17233d;
@@ -82,8 +86,8 @@
     --text-secondary: #93a1b8;
     --text-tertiary: #5c6a82;
     --text-on-primary: #ffffff;
-    --border-default: #1c2740;
-    --border-strong: #2b3a58;
+    --border-default: #18223a;
+    --border-strong: #263553;
     --icon-default: #93a1b8;
     --icon-muted: #5c6a82;
     --chart-line: var(--brand);
@@ -93,12 +97,12 @@
 }
 
 :root[data-theme='dark'] {
-  --bg-canvas: #0a0f1a;
-  --bg-sidebar: #0e1524;
-  --bg-field: #182236;
-  --bg-field-on-canvas: #111a2b;
-  --bg-raised: #111a2b;
-  --nav-active-bg: #1b2942;
+  --bg-canvas: #05080f;
+  --bg-sidebar: #080d17;
+  --bg-field: #131b2b;
+  --bg-field-on-canvas: #0b1120;
+  --bg-raised: #0b1120;
+  --nav-active-bg: #16223a;
   --brand: #3b82f6;
   --brand-hover: #60a5fa;
   --brand-soft: #17233d;
@@ -109,8 +113,8 @@
   --text-secondary: #93a1b8;
   --text-tertiary: #5c6a82;
   --text-on-primary: #ffffff;
-  --border-default: #1c2740;
-  --border-strong: #2b3a58;
+  --border-default: #18223a;
+  --border-strong: #263553;
   --icon-default: #93a1b8;
   --icon-muted: #5c6a82;
   --chart-line: var(--brand);
@@ -182,6 +186,24 @@ body {
   cursor: not-allowed;
 }
 
+/* Campo dentro de uma barra de filtros: mesma casca do `.field`, em
+   tamanho de barra de ferramentas, para os filtros caberem lado a lado no
+   cabeçalho do card em vez de ocuparem uma linha cada.
+
+   A largura precisa vir daqui, e não de um utilitário `w-auto`: `.field`
+   fixa `width: 100%` fora de camada, e CSS sem camada vence utilitário do
+   Tailwind, que mora em `@layer utilities`. */
+.filtro-campo {
+  width: auto;
+  max-width: 100%;
+  height: 32px;
+  padding: 0 0.5rem;
+  font-size: 0.8125rem;
+}
+select.filtro-campo {
+  cursor: pointer;
+}
+
 .btn-primary {
   background: var(--bg-primary);
   color: var(--text-on-primary);
@@ -234,7 +256,7 @@ body {
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg-logo: #0a0f1a;
+    --bg-logo: #05080f;
     --red-50: #2b1418;
     --red-700: #f4a4a0;
     --amber-50: #2c2210;
@@ -244,7 +266,7 @@ body {
   }
 }
 :root[data-theme='dark'] {
-  --bg-logo: #0a0f1a;
+  --bg-logo: #05080f;
   --red-50: #2b1418;
   --red-700: #f4a4a0;
   --amber-50: #2c2210;
@@ -1069,6 +1091,23 @@ body {
   justify-content: center;
   color: var(--brand);
   margin-bottom: 14px;
+}
+/* Tom do ícone por significado da métrica: dinheiro que entra e
+   resultado em verde, custo em âmbar, falha em vermelho. Quem não tem
+   cor própria — volume, alcance, frequência — fica no azul da marca.
+   São os mesmos tokens das etiquetas de status, então valem nos dois
+   temas sem variação nova. */
+.kpi-icon-box.tom-verde {
+  background: var(--green-50);
+  color: var(--green-700);
+}
+.kpi-icon-box.tom-ambar {
+  background: var(--amber-50);
+  color: var(--amber-700);
+}
+.kpi-icon-box.tom-vermelho {
+  background: var(--red-50);
+  color: var(--red-700);
 }
 .kpi-card .label {
   color: var(--text-secondary);

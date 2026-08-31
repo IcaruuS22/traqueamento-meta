@@ -134,11 +134,20 @@ export function Sparkline({ valores }: { valores: number[] }) {
   );
 }
 
+/**
+ * Cor do ícone do card quando a métrica tem uma cor de referência:
+ * verde para dinheiro que entra e resultado, âmbar para custo e espera,
+ * vermelho para falha. Métrica de volume — leads, alcance, frequência —
+ * não tem cor própria e fica no azul da marca, que é o padrão.
+ */
+export type TomKpi = 'verde' | 'ambar' | 'vermelho';
+
 export function KpiCard({
   rotulo,
   valor,
   dica,
   icone,
+  tom,
   atual,
   anterior,
   melhorQuandoCai,
@@ -149,6 +158,7 @@ export function KpiCard({
   valor: string;
   dica?: string;
   icone?: (props?: PropsSvg) => ReactElement;
+  tom?: TomKpi;
   atual?: unknown;
   anterior?: unknown;
   melhorQuandoCai?: boolean;
@@ -159,7 +169,7 @@ export function KpiCard({
   const Icone = icone ?? Icones.target;
   return (
     <div className="kpi-card">
-      <div className="kpi-icon-box">
+      <div className={`kpi-icon-box${tom ? ` tom-${tom}` : ''}`}>
         <Icone />
       </div>
       <p className="label text-label-caps">

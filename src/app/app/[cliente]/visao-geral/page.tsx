@@ -18,6 +18,7 @@ import {
   GraficoDiario,
   TempoEntreEtapas,
   Vazio,
+  type TomKpi,
 } from '@/components/dados';
 import { PageHero } from '@/components/hero';
 import { Icones } from '@/components/icones';
@@ -59,6 +60,24 @@ const ICONES_KPI: Record<string, (typeof Icones)[keyof typeof Icones]> = {
 };
 
 /**
+ * Cor do ícone por significado do KPI. Só o que tem referência óbvia
+ * ganha cor: dinheiro que entra e resultado em verde, custo em âmbar. O
+ * resto — leads, impressões, alcance, frequência, cliques, CTR — fica no
+ * azul padrão, porque pintar tudo transformaria a cor em enfeite e ela
+ * deixaria de significar alguma coisa.
+ */
+const TONS_KPI: Record<string, TomKpi> = {
+  total_spend: 'ambar',
+  cpl: 'ambar',
+  cpc: 'ambar',
+  cpm: 'ambar',
+  conversoes: 'verde',
+  taxa_conversao: 'verde',
+  receita: 'verde',
+  roas: 'verde',
+};
+
+/**
  * Monta os cards a partir do catálogo compartilhado com o PDF.
  *
  * O que é só da tela — ícone, minigráfico e o destaque da taxa alta —
@@ -70,6 +89,7 @@ function montaKpis(m: Metricas, serie: number[], canal: Canal, visiveis: Map<str
   return kpisDoEscopo(canal, visiveis).map((k) => ({
     id: k.id,
     icone: ICONES_KPI[k.id],
+    tom: TONS_KPI[k.id],
     rotulo: k.rotulo,
     valor: k.valor(m),
     dica: k.dica(m),

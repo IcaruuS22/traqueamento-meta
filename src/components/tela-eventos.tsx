@@ -137,6 +137,7 @@ export async function TelaEventos({
           valor={fmtInt(enviados)}
           dica="Eventos aceitos pela API de Conversões da Meta no período."
           icone={Icones.check}
+          tom="verde"
           atual={enviados}
           anterior={total(painel.por_status_anterior, 'SENT')}
         />
@@ -145,6 +146,7 @@ export async function TelaEventos({
           valor={fmtInt(erros)}
           dica="Eventos que a Meta recusou. O motivo aparece na coluna Erro da tabela."
           icone={Icones.info}
+          tom="vermelho"
           atual={erros}
           anterior={total(painel.por_status_anterior, 'ERROR')}
           melhorQuandoCai
@@ -154,6 +156,7 @@ export async function TelaEventos({
           valor={fmtInt(pendentes)}
           dica="Eventos registrados que ainda não foram enviados à Meta."
           icone={Icones.clock}
+          tom="ambar"
           atual={pendentes}
           anterior={total(painel.por_status_anterior, 'PENDING')}
           melhorQuandoCai
@@ -163,6 +166,7 @@ export async function TelaEventos({
           valor={taxa === null ? '—' : `${fmtDec(taxa, 1)}%`}
           dica="Enviados dividido por enviados + com erro. Pendentes e duplicados ficam de fora: nenhum dos dois chegou a ser uma tentativa de envio."
           icone={Icones.percent}
+          tom="verde"
           atual={taxa}
           anterior={taxaAnterior}
         />
@@ -183,7 +187,13 @@ export async function TelaEventos({
         }
       >
         {painel.eventos.length ? (
+          // `key` amarrada ao filtro de propósito: a tabela guarda a
+          // lista em estado de cliente, e React ignora o valor inicial de
+          // `useState` quando só re-renderiza. Sem trocar a chave, mudar
+          // status, busca ou período trazia a lista nova do servidor e a
+          // tela continuava mostrando a antiga.
           <TabelaEventos
+            key={qs.toString()}
             cliente={conta.client_db_name}
             iniciais={painel.eventos}
             busca={qs.toString()}

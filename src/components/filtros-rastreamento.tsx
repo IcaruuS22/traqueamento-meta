@@ -45,7 +45,7 @@ export function FiltrosRastreamento() {
     >
       <select
         aria-label="Fonte do lead"
-        className="field w-auto"
+        className="field filtro-campo"
         value={fonte}
         onChange={(e) => atualiza({ fonte: e.target.value })}
       >
@@ -61,7 +61,7 @@ export function FiltrosRastreamento() {
         type="search"
         aria-label="Buscar por nome, e-mail, telefone, campanha ou anúncio"
         placeholder="Buscar lead ou campanha..."
-        className="field w-auto min-w-[200px]"
+        className="field filtro-campo min-w-[180px]"
         value={termo}
         maxLength={120}
         onChange={(e) => setTermo(e.target.value)}

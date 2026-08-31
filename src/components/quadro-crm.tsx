@@ -153,7 +153,7 @@ export function QuadroCrm({
           <div className="flex flex-wrap items-center gap-2">
             <input
               id="quadro-motivo"
-              className="field w-auto min-w-[240px]"
+              className="field filtro-campo min-w-[220px]"
               list="quadro-motivos-sugeridos"
               placeholder="Escolha ou escreva"
               value={motivo}

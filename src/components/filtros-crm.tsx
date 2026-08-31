@@ -44,7 +44,7 @@ export function FiltrosCrm() {
     >
       <select
         aria-label="Origem do contato"
-        className="field w-auto"
+        className="field filtro-campo"
         value={origem}
         onChange={(e) => atualiza({ origem: e.target.value })}
       >
@@ -60,7 +60,7 @@ export function FiltrosCrm() {
         type="search"
         aria-label="Buscar por nome, e-mail ou telefone"
         placeholder="Buscar contato..."
-        className="field w-auto min-w-[200px]"
+        className="field filtro-campo min-w-[180px]"
         value={termo}
         maxLength={120}
         onChange={(e) => setTermo(e.target.value)}

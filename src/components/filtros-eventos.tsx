@@ -60,7 +60,7 @@ export function FiltrosEventos() {
     >
       <select
         aria-label="Status do evento"
-        className="field w-auto"
+        className="field filtro-campo"
         value={status}
         onChange={(e) => atualiza({ status: e.target.value })}
       >
@@ -75,7 +75,7 @@ export function FiltrosEventos() {
         type="search"
         aria-label="Buscar por nome, e-mail ou telefone"
         placeholder="Buscar lead..."
-        className="field w-auto min-w-[200px]"
+        className="field filtro-campo min-w-[180px]"
         value={termo}
         maxLength={120}
         onChange={(e) => setTermo(e.target.value)}

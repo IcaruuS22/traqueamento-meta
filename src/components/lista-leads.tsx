@@ -141,7 +141,7 @@ export function ListaLeads({
       <div className="flex flex-wrap items-center gap-2">
         <select
           aria-label="Filtrar por etapa"
-          className="field w-auto"
+          className="field filtro-campo"
           value={etapa}
           onChange={(e) => setEtapa(e.target.value)}
         >
@@ -157,7 +157,7 @@ export function ListaLeads({
           type="search"
           aria-label="Filtrar por nome"
           placeholder="Filtrar por nome..."
-          className="field w-auto min-w-[200px]"
+          className="field filtro-campo min-w-[180px]"
           value={nome}
           maxLength={120}
           onChange={(e) => setNome(e.target.value)}

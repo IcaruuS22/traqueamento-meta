@@ -4,7 +4,7 @@ import { buscaPainelRastreamento } from '@/lib/db/rastreamento';
 import { ehFonte, DESCRICAO_FONTE, FONTES, ROTULO_FONTE, type Fonte } from '@/lib/rastreamento';
 import { resolvePeriodo, rotuloPeriodo } from '@/lib/periodo';
 import { fmtInt, fmtDec } from '@/lib/format';
-import { Card, KpiCard, Vazio } from '@/components/dados';
+import { Card, KpiCard, Vazio, type TomKpi } from '@/components/dados';
 import { PageHero } from '@/components/hero';
 import { Icones } from '@/components/icones';
 import { SeletorPeriodo } from '@/components/seletores';
@@ -32,6 +32,16 @@ const ICONE_FONTE = {
   lp_utm: Icones.click,
   outros: Icones.info,
 } as const;
+
+// Mesmo tom da etiqueta daquela fonte na tabela (`CLASSE_FONTE`): o card
+// e a linha falam do mesmo lead, e cor diferente para a mesma coisa faria
+// a tela parecer duas telas.
+const TOM_FONTE: Record<Fonte, TomKpi | undefined> = {
+  ctwa: 'verde',
+  meta_lead_ads: undefined,
+  lp_utm: 'ambar',
+  outros: undefined,
+};
 
 export async function TelaRastreamento({
   cliente,
@@ -114,6 +124,7 @@ export async function TelaRastreamento({
             valor={fmtInt(totalPor(f))}
             dica={DESCRICAO_FONTE[f]}
             icone={ICONE_FONTE[f]}
+            tom={TOM_FONTE[f]}
           />
         ))}
         <KpiCard
@@ -137,7 +148,13 @@ export async function TelaRastreamento({
         }
       >
         {painel.leads.length ? (
+          // `key` amarrada ao filtro de propósito: a tabela guarda a
+          // lista em estado de cliente, e React ignora o valor inicial de
+          // `useState` quando só re-renderiza. Sem trocar a chave, mudar
+          // fonte, busca ou período trazia a lista nova do servidor e a
+          // tela continuava mostrando a antiga.
           <TabelaRastreamento
+            key={qs.toString()}
             cliente={conta.client_db_name}
             iniciais={painel.leads}
             busca={qs.toString()}
