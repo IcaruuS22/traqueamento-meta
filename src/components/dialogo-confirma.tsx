@@ -73,21 +73,21 @@ export function DialogoConfirma({
         aria-describedby="dialogo-confirma-texto"
       >
         <div className="dialogo-confirma-corpo">
-          <h3 id="dialogo-confirma-titulo" className="text-body-medium">
+          <h3 id="dialogo-confirma-titulo" className="dialogo-confirma-titulo">
             {titulo}
           </h3>
-          <p id="dialogo-confirma-texto" className="text-body-small text-[var(--text-secondary)]">
+          <p id="dialogo-confirma-texto" className="dialogo-confirma-texto">
             {texto}
           </p>
         </div>
         <div className="dialogo-confirma-acoes">
-          <button type="button" className="btn btn-secondary btn-sm" onClick={onCancela}>
+          <button type="button" className="btn dialogo-confirma-cancela" onClick={onCancela}>
             {rotuloCancela}
           </button>
           <button
             ref={confirmaRef}
             type="button"
-            className={`btn btn-sm ${perigo ? 'btn-danger' : 'btn-primary'}`}
+            className={`btn ${perigo ? 'dialogo-confirma-perigo' : 'dialogo-confirma-confirma'}`}
             onClick={onConfirma}
           >
             {rotuloConfirma}

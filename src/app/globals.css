@@ -2419,28 +2419,74 @@ select.filtro-campo {
    pergunta de duas linhas: com os 640px do modal de rastreio a frase
    ficaria perdida no meio de uma faixa vazia. */
 .dialogo-confirma {
-  max-width: 420px;
+  max-width: 440px;
+  border-radius: 18px;
 }
 .dialogo-confirma-corpo {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 20px 20px 4px;
+  gap: 10px;
+  padding: 26px 26px 6px;
+}
+/* Título grande: a pergunta é o que se lê primeiro, e no diálogo do
+   navegador ela vinha do mesmo tamanho do resto. */
+.dialogo-confirma-titulo {
+  font-size: 21px;
+  line-height: 27px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  color: var(--text-primary);
+}
+.dialogo-confirma-texto {
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--text-secondary);
 }
 .dialogo-confirma-acoes {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  padding: 16px 20px 20px;
+  gap: 6px;
+  padding: 20px 26px 24px;
 }
-/* No tema escuro o fundo do botão secundário é o mesmo do card, e sem
-   contorno o "Cancelar" desaparece — justamente a saída de quem não quer
-   confirmar. */
-.dialogo-confirma-acoes .btn-secondary {
-  border: 1px solid var(--border-default);
+/* Botões em pílula. O de cancelar é só texto: dar a ele a mesma caixa do
+   de confirmar faria as duas saídas parecerem igualmente esperadas, e a
+   esperada é a que o usuário veio fazer. */
+.dialogo-confirma-acoes .btn {
+  height: 38px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 14px;
 }
-.dialogo-confirma-acoes .btn-secondary:hover {
-  border-color: var(--border-strong);
+.dialogo-confirma-cancela {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.dialogo-confirma-cancela:hover {
+  background: var(--bg-field);
+  color: var(--text-primary);
+}
+.dialogo-confirma-confirma {
+  background: var(--bg-primary);
+  color: var(--text-on-primary);
+  font-weight: 500;
+}
+.dialogo-confirma-confirma:hover {
+  background: var(--bg-primary-hover);
+}
+/* Ação que para entrega ou apaga dado sai em vermelho cheio, não em
+   contorno: é o botão que a pessoa vai apertar, e precisa dizer o que
+   faz antes do clique. */
+.dialogo-confirma-perigo {
+  background: var(--red-700);
+  /* Acompanha o tema: no claro o vermelho é escuro e o texto sai branco;
+     no escuro o vermelho é pálido e o texto sai escuro. Fixar branco
+     deixaria a palavra ilegível no tema escuro. */
+  color: var(--bg-raised);
+  font-weight: 500;
+}
+.dialogo-confirma-perigo:hover {
+  filter: brightness(1.08);
 }
 /* Bolinha de informacao ao lado de um rotulo.
    Existe porque o `title` do navegador demora cerca de um segundo pra
