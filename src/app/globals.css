@@ -2415,6 +2415,111 @@ select.filtro-campo {
   overflow-y: auto;
 }
 
+/* Cartões de integração da tela de Conexão. Vêm antes do formulário:
+   primeiro se escolhe a integração, depois os campos abrem em modal. */
+.conexao-grade {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+.conexao-cartao {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-surface);
+}
+/* A conexão em uso é a única que vale de fato; a borda de destaque diz
+   isso de longe, sem depender da leitura do selo. */
+.conexao-cartao-ativo {
+  border-color: var(--brand-border);
+  box-shadow: inset 0 0 0 1px var(--brand-border);
+}
+.conexao-cabeca {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.conexao-icone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.conexao-titulo {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.conexao-selo {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.conexao-selo-ativo {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.conexao-selo-pronto {
+  background: var(--green-50);
+  color: var(--green-700);
+}
+.conexao-selo-neutro {
+  background: var(--bg-field-on-canvas);
+  color: var(--text-secondary);
+}
+.conexao-selo-alerta {
+  background: var(--amber-50);
+  color: var(--amber-700);
+}
+.conexao-descricao {
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--text-secondary);
+}
+.conexao-requisitos {
+  display: flex;
+  list-style: none;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--text-tertiary);
+}
+/* Marcador desenhado à mão: `list-style` fora do fluxo do flex empurra o
+   texto e desalinha a segunda linha do item. */
+.conexao-requisitos li {
+  padding-left: 14px;
+  position: relative;
+}
+.conexao-requisitos li::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 7px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+/* Empurra o botão para a base para os cartões terminarem na mesma linha
+   mesmo com descrições de alturas diferentes. */
+.conexao-rodape {
+  margin-top: auto;
+  padding-top: 4px;
+}
+
 /* Confirmação (DialogoConfirma). Card estreito porque o conteúdo é uma
    pergunta de duas linhas: com os 640px do modal de rastreio a frase
    ficaria perdida no meio de uma faixa vazia. */
