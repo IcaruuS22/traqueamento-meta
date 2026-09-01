@@ -412,39 +412,3 @@ export async function etapaWhatsappAtiva(db: BancoCliente, etapa: string): Promi
   return Boolean(linha);
 }
 
-/** Salva os campos editáveis do modal. Não toca na etapa. */
-export async function salvaDadosLeadCrm(
-  db: BancoCliente,
-  entrada: {
-    customerId: number;
-    first_name: string | null;
-    last_name: string | null;
-    email: string | null;
-    notes: string | null;
-    tags: string | null;
-    /**
-     * Notas e tags moram em `whatsapp_conversations`. Para um lead de
-     * formulário que nunca conversou, criar a linha só porque o modal
-     * abriu faria ele aparecer na lista de Conversas sem conversa
-     * nenhuma — por isso a escrita só acontece quando há algo a gravar.
-     */
-    gravaConversa: boolean;
-  },
-): Promise<void> {
-  await transacao(async (conn) => {
-    await conn.query(
-      `UPDATE ${db.tabela('customers')}
-          SET first_name = ?, last_name = ?, email = ?
-        WHERE id = ?`,
-      [entrada.first_name, entrada.last_name, entrada.email, entrada.customerId],
-    );
-
-    if (!entrada.gravaConversa) return;
-    // Sem `perda`: salvar nota ou tag não pode mexer no motivo de perda
-    // que alguém registrou ao fechar a conversa.
-    await gravaConversa(conn, db, entrada.customerId, {
-      notes: entrada.notes,
-      tags: entrada.tags,
-    });
-  });
-}

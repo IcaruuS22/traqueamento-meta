@@ -11,7 +11,7 @@ import {
   chaveColuna,
   nomeDoCartao,
 } from '@/lib/crm';
-import { acaoMoverLeadCrm, acaoSalvarLeadCrm } from '@/lib/acoes/crm';
+import { acaoMoverLeadCrm } from '@/lib/acoes/crm';
 import { acaoExcluirLead } from '@/lib/acoes/leads';
 import { ehEtapaDePerda, MOTIVOS_PERDA_SUGERIDOS, TAMANHO_MOTIVO } from '@/lib/funil';
 import { textoDaMensagem } from '@/lib/whatsapp-conversas';
@@ -19,12 +19,15 @@ import { fmtDataHora, ouTraco } from '@/lib/format';
 import { telefoneParaExibir } from '@/lib/exibicao';
 
 /**
- * Modal do lead no CRM: ver tudo e editar o que é do painel.
+ * Modal do lead no CRM: só leitura, com uma exceção.
  *
- * As duas edições não são a mesma coisa e por isso não compartilham
- * botão: mudar a etapa pode disparar evento para a Meta, salvar nome ou
- * nota nunca dispara. A etapa só é editável em contato de WhatsApp —
- * a do lead de formulário é espelho do CRM do cliente.
+ * Nome, e-mail, tags e notas não são editáveis aqui: quem manda nesses
+ * campos é o CRM do cliente, e um formulário no painel criaria duas
+ * versões do mesmo lead — a daqui e a de lá — sem dizer qual vale.
+ *
+ * A etapa continua editável em contato de WhatsApp, porque esse funil é
+ * do painel e não existe no CRM do cliente. A do lead de formulário é
+ * espelho do CRM e por isso segue somente leitura.
  *
  * As mensagens aqui são prévia (últimas 8, sem mídia e sem envio). Para
  * responder, o caminho é a tela de Conversas, que já faz isso com a
@@ -80,7 +83,6 @@ export function ModalLeadCrm({
   const [lead, setLead] = useState<DetalheLeadCrm | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<Aviso | null>(null);
-  const [salvando, setSalvando] = useState(false);
   const [movendo, setMovendo] = useState(false);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
@@ -90,14 +92,6 @@ export function ModalLeadCrm({
   // ranking da tela de Funil.
   const [etapaPendente, setEtapaPendente] = useState<string | null>(null);
   const [motivo, setMotivo] = useState('');
-
-  const [form, setForm] = useState({
-    first_name: '',
-    last_name: '',
-    email: '',
-    notes: '',
-    tags: '',
-  });
 
   useEffect(() => {
     const fecharComEsc = (e: KeyboardEvent) => {
@@ -122,13 +116,6 @@ export function ModalLeadCrm({
       .then((d) => {
         if (!ativo) return;
         setLead(d);
-        setForm({
-          first_name: d.first_name ?? '',
-          last_name: d.last_name ?? '',
-          email: d.email ?? '',
-          notes: d.notes ?? '',
-          tags: d.tags ?? '',
-        });
       })
       .catch((e) => {
         if (ativo) setErro(e instanceof Error ? e.message : 'Falha ao carregar.');
@@ -155,43 +142,6 @@ export function ModalLeadCrm({
     // existe mais: sai do quadro e o modal fecha junto.
     aoExcluir(lead.id);
     aoFechar();
-  }
-
-  async function salvar() {
-    if (!lead) return;
-    setSalvando(true);
-    setAviso(null);
-    const r = await acaoSalvarLeadCrm({
-      cliente,
-      customer_id: lead.id,
-      first_name: form.first_name.trim(),
-      last_name: form.last_name.trim(),
-      email: form.email.trim(),
-      notes: form.notes,
-      tags: form.tags.trim(),
-      tem_conversa: lead.tem_conversa,
-    });
-    setSalvando(false);
-    if (r.ok) {
-      setAviso({ tipo: 'ok', texto: r.sucesso });
-      setLead({
-        ...lead,
-        first_name: form.first_name.trim() || null,
-        last_name: form.last_name.trim() || null,
-        email: form.email.trim() || null,
-        notes: form.notes.trim() || null,
-        tags: form.tags.trim() || null,
-      });
-      aoAtualizar({
-        id: lead.id,
-        first_name: form.first_name.trim() || null,
-        last_name: form.last_name.trim() || null,
-        email: form.email.trim() || null,
-        tags: form.tags.trim() || null,
-      });
-    } else {
-      setAviso({ tipo: 'erro', texto: r.erro });
-    }
   }
 
   async function mudaEtapa(etapa: string, motivoPerda: string | null = null) {
@@ -372,84 +322,20 @@ export function ModalLeadCrm({
               </Secao>
 
               <Secao titulo="Dados do lead">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-[var(--text-tertiary)]" htmlFor="crm-nome">
-                      Nome
-                    </label>
-                    <input
-                      id="crm-nome"
-                      className="field"
-                      value={form.first_name}
-                      maxLength={120}
-                      onChange={(e) => setForm({ ...form, first_name: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-[var(--text-tertiary)]" htmlFor="crm-sobrenome">
-                      Sobrenome
-                    </label>
-                    <input
-                      id="crm-sobrenome"
-                      className="field"
-                      value={form.last_name}
-                      maxLength={120}
-                      onChange={(e) => setForm({ ...form, last_name: e.target.value })}
-                    />
-                  </div>
-                </div>
-                <div className="mt-3">
-                  <label className="mb-1 block text-xs font-medium text-[var(--text-tertiary)]" htmlFor="crm-email">
-                    E-mail
-                  </label>
-                  <input
-                    id="crm-email"
-                    className="field"
-                    type="email"
-                    value={form.email}
-                    maxLength={190}
-                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                <dl className="rastreio-lista">
+                  <Linha rotulo="Nome" valor={ouTraco(lead.first_name)} />
+                  <Linha rotulo="Sobrenome" valor={ouTraco(lead.last_name)} />
+                  <Linha rotulo="E-mail" valor={ouTraco(lead.email)} />
+                  <Linha
+                    rotulo="Telefone"
+                    valor={lead.phone ? telefoneParaExibir(lead.phone) : ''}
                   />
-                </div>
-                <div className="mt-3">
-                  <label className="mb-1 block text-xs font-medium text-[var(--text-tertiary)]" htmlFor="crm-tags">
-                    Tags
-                  </label>
-                  <input
-                    id="crm-tags"
-                    className="field"
-                    placeholder="separadas por vírgula"
-                    value={form.tags}
-                    maxLength={500}
-                    onChange={(e) => setForm({ ...form, tags: e.target.value })}
-                  />
-                </div>
-                <div className="mt-3">
-                  <label className="mb-1 block text-xs font-medium text-[var(--text-tertiary)]" htmlFor="crm-notas">
-                    Notas
-                  </label>
-                  <textarea
-                    id="crm-notas"
-                    className="field"
-                    rows={4}
-                    value={form.notes}
-                    maxLength={10000}
-                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                  />
-                </div>
-                <div className="mt-3 flex items-center gap-3">
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={salvando}
-                    onClick={() => void salvar()}
-                  >
-                    {salvando ? 'Salvando…' : 'Salvar dados'}
-                  </button>
-                  <span className="text-xs text-[var(--text-tertiary)]">
-                    Salvar não envia evento para a Meta.
-                  </span>
-                </div>
+                  <Linha rotulo="Tags" valor={ouTraco(lead.tags)} />
+                  <Linha rotulo="Notas" valor={ouTraco(lead.notes)} />
+                </dl>
+                <p className="mt-2 text-xs text-[var(--text-tertiary)]">
+                  Estes campos vêm do CRM e não são editáveis por aqui.
+                </p>
               </Secao>
 
               <Secao titulo="Conversa">

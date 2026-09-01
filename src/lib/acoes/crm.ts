@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { requireClientAccess } from '@/lib/auth/guard';
 import { ACOES, registraAuditoria } from '@/lib/audit';
 import { buscaMapeamentoEstagio, buscaTelefone } from '@/lib/db/conversas';
-import { etapaWhatsappAtiva, moveEtapaWhatsapp, salvaDadosLeadCrm } from '@/lib/db/crm';
+import { etapaWhatsappAtiva, moveEtapaWhatsapp } from '@/lib/db/crm';
 import { enviaEventoEstagio } from '@/lib/meta-capi';
 import { ehEtapaDePerda, normalizaMotivo, TAMANHO_MOTIVO } from '@/lib/funil';
 
@@ -122,62 +122,3 @@ export async function acaoMoverLeadCrm(
   return { ok: true, sucesso: mensagem + aviso };
 }
 
-const SchemaSalvar = z.object({
-  cliente: z.string().trim().min(1, 'Cliente não informado'),
-  customer_id: z.coerce.number().int().positive(),
-  first_name: z.string().trim().max(120).optional(),
-  last_name: z.string().trim().max(120).optional(),
-  email: z.string().trim().max(190).optional(),
-  notes: z.string().max(10_000).optional(),
-  tags: z.string().trim().max(500).optional(),
-  /** Lead que já tem conversa: notas e tags podem ser gravadas. */
-  tem_conversa: z.boolean().optional(),
-});
-
-export async function acaoSalvarLeadCrm(
-  entrada: z.input<typeof SchemaSalvar>,
-): Promise<ResultadoAcao> {
-  const analise = SchemaSalvar.safeParse(entrada);
-  if (!analise.success) {
-    return { ok: false, erro: analise.error.issues[0]?.message ?? 'Dados inválidos' };
-  }
-  const dados = analise.data;
-
-  const { usuario, conta, db } = await requireClientAccess(dados.cliente);
-
-  const notes = dados.notes?.trim() || null;
-  const tags = dados.tags || null;
-
-  try {
-    await salvaDadosLeadCrm(db, {
-      customerId: dados.customer_id,
-      first_name: dados.first_name || null,
-      last_name: dados.last_name || null,
-      email: dados.email || null,
-      notes,
-      tags,
-      gravaConversa: Boolean(dados.tem_conversa) || notes !== null || tags !== null,
-    });
-  } catch (erro) {
-    console.error('[crm] falha ao salvar lead:', erro);
-    return { ok: false, erro: 'Não foi possível salvar os dados do lead. Tente novamente.' };
-  }
-
-  await registraAuditoria({
-    userId: usuario.id,
-    userEmail: usuario.email,
-    acao: ACOES.CRM_LEAD_SALVO,
-    clientDb: conta.client_db_name,
-    // Notas são conteúdo do lead e já estão na tabela do cliente;
-    // repetir aqui só espalharia dado pessoal por mais um lugar.
-    detalhe: { customer_id: dados.customer_id, com_notas: notes !== null },
-  });
-
-  const base = `/app/${encodeURIComponent(conta.client_db_name)}`;
-  revalidatePath(`${base}/formularios/crm`);
-  revalidatePath(`${base}/whatsapp/crm`);
-  revalidatePath(`${base}/funil`);
-  revalidatePath(`${base}/whatsapp/conversas`);
-
-  return { ok: true, sucesso: 'Dados do lead salvos.' };
-}
