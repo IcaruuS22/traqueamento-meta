@@ -387,27 +387,57 @@ export function TempoEntreEtapas({
  * Espera a série já agrupada por `agrupaSerie` — os dias sem lead entram
  * com zero, porque um gráfico que pula dia vazio comprime o eixo e
  * sugere um volume constante que não existiu.
+ *
+ * O gráfico cabe sempre na largura do card, sem rolagem horizontal: as
+ * colunas dividem o espaço disponível. Rolar era pior do que parecia —
+ * o período de 30 dias mostrava uns 17 dias e escondia o resto atrás de
+ * uma barra de rolagem que ninguém procura num gráfico, então o pico do
+ * mês podia simplesmente não estar na tela.
+ *
+ * O que não cabe é a etiqueta de data: "13/08" precisa de ~28px e a
+ * coluna de um mês tem ~16px. Por isso, em série densa, só uma etiqueta
+ * a cada N colunas é desenhada — o eixo continua legível e as barras
+ * continuam todas lá. O número em cima da barra fica, só menor: dois
+ * dígitos cabem, e é ele que dá o valor exato de cada dia.
  */
 export function GraficoDiario({ serie }: { serie: { label: string; count: number }[] }) {
   if (!serie.length) return <Vazio />;
   const max = Math.max(...serie.map((p) => p.count), 1);
+  // Acima de 16 colunas a etiqueta de data começa a encostar na vizinha.
+  const densa = serie.length > 16;
+  // Uma etiqueta a cada `passo` colunas, mirando ~8 datas no eixo.
+  const passo = densa ? Math.ceil(serie.length / 8) : 1;
+  // Índice da última coluna que recebe etiqueta. É o fim do período, e um
+  // eixo terminando sem data deixa o leitor sem referência — mas só entra
+  // se não for cair colada na etiqueta anterior.
+  const ultimo = serie.length - 1;
+  const ultimoRotulado = ultimo % passo >= Math.ceil(passo / 2) ? ultimo : -1;
 
   return (
-    <div className="chart-bars">
-      {serie.map((p, i) => (
-        <div className="chart-bar-col" key={`${p.label}-${i}`}>
-          <span className="chart-bar-value text-label-score">{p.count}</span>
-          <div className="chart-bar-track">
-            <div
-              className="chart-bar-fill"
-              style={{
-                height: `${p.count > 0 ? Math.max(4, Math.round((p.count / max) * 100)) : 2}%`,
-              }}
-            />
+    <div className={densa ? 'chart-bars chart-bars-densa' : 'chart-bars'}>
+      {serie.map((p, i) => {
+        const mostraLabel = i % passo === 0 || i === ultimoRotulado;
+        return (
+          <div
+            className="chart-bar-col"
+            key={`${p.label}-${i}`}
+            title={`${p.label}: ${p.count}`}
+          >
+            <span className="chart-bar-value text-label-score">{p.count}</span>
+            <div className="chart-bar-track">
+              <div
+                className="chart-bar-fill"
+                style={{
+                  height: `${p.count > 0 ? Math.max(4, Math.round((p.count / max) * 100)) : 2}%`,
+                }}
+              />
+            </div>
+            <span className="chart-bar-label text-body-small">
+              {mostraLabel ? p.label || '—' : ''}
+            </span>
           </div>
-          <span className="chart-bar-label text-body-small">{p.label || '—'}</span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
