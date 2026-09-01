@@ -202,15 +202,13 @@ const COR_PONTO_STATUS: Record<Tom, string> = {
 };
 
 /**
- * Ponto colorido + palavra, em vez do chip de fundo cheio: dentro de uma
- * tabela de 19 colunas cada retângulo colorido vira ruído, e o chip antigo
- * ainda quebrava "active" em duas linhas quando a coluna apertava.
+ * Chave liga/desliga + palavra, igual ao Gerenciador de Anúncios: quando o
+ * status dá para alternar (só ACTIVE e PAUSED — ver `proximoStatus`), a
+ * própria chave é o botão, e a posição dela mostra se a entidade está no ar.
  *
- * Quando o status dá para alternar (só ACTIVE e PAUSED — ver
- * `proximoStatus`), a mesma marca vira botão: clicar liga ou desliga a
- * entidade na Meta. Status que a Meta não deixa alternar por aqui
- * (arquivado, excluído, em processamento) continua sendo texto, porque um
- * botão que não faz nada é pior do que nenhum botão.
+ * Status que a Meta não deixa alternar por aqui (arquivado, excluído, em
+ * processamento) continua sendo ponto colorido + texto, porque uma chave que
+ * não vira é pior do que nenhuma chave.
  */
 function Status({
   status,
@@ -224,31 +222,31 @@ function Status({
   pendente?: boolean;
 }) {
   const tom = tomStatus(status);
-  const conteudo = (
-    <>
-      {pendente ? (
-        <span className="spinner-inline" aria-hidden />
-      ) : (
-        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${COR_PONTO_STATUS[tom]}`} />
-      )}
-      {rotuloStatus(status, nivel)}
-    </>
-  );
+  const rotulo = rotuloStatus(status, nivel);
+  const proximo = onAlterna ? proximoStatus(status) : null;
 
-  if (!onAlterna) {
+  if (!proximo) {
     return (
       <span
         className={`inline-flex items-center gap-1.5 whitespace-nowrap ${COR_TEXTO_STATUS[tom]}`}
       >
-        {conteudo}
+        {pendente ? (
+          <span className="spinner-inline" aria-hidden />
+        ) : (
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${COR_PONTO_STATUS[tom]}`} />
+        )}
+        {rotulo}
       </span>
     );
   }
 
-  const proximo = proximoStatus(status);
+  const ligado = tom === 'ativo';
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={ligado}
+      aria-label={`${rotulo} — ${proximo === 'PAUSED' ? 'pausar' : 'ativar'} na Meta`}
       onClick={onAlterna}
       disabled={pendente}
       title={
@@ -256,9 +254,16 @@ function Status({
           ? 'Pausar na Meta — a entrega para e o gasto também.'
           : 'Ativar na Meta — a entrega recomeça e volta a gastar.'
       }
-      className={`inline-flex items-center gap-1.5 rounded-[var(--radius-chip)] px-1.5 py-0.5 whitespace-nowrap hover:bg-[var(--bg-field)] disabled:opacity-60 ${COR_TEXTO_STATUS[tom]}`}
+      className={`inline-flex items-center gap-2 whitespace-nowrap disabled:cursor-default ${COR_TEXTO_STATUS[tom]}`}
     >
-      {conteudo}
+      {pendente ? (
+        <span className="spinner-inline" aria-hidden />
+      ) : (
+        <span className={`toggle-status ${ligado ? 'toggle-status-ligado' : ''}`} aria-hidden>
+          <span className="toggle-status-knob" />
+        </span>
+      )}
+      {rotulo}
     </button>
   );
 }
@@ -523,9 +528,9 @@ export function TabelaCampanhas({
       </div>
 
       <p className="text-xs text-[var(--text-tertiary)]">
-        A seta abre os conjuntos de uma campanha e os anúncios de um conjunto. Clicar no status
-        liga ou desliga a campanha, o conjunto ou o anúncio direto na Meta. A tabela rola para o
-        lado; a coluna de nome fica fixa.
+        A seta abre os conjuntos de uma campanha e os anúncios de um conjunto. A chave da coluna
+        de status liga ou desliga a campanha, o conjunto ou o anúncio direto na Meta. A tabela
+        rola para o lado; a coluna de nome fica fixa.
       </p>
     </div>
   );
