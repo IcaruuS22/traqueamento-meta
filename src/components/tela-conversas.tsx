@@ -28,6 +28,7 @@ import {
   type LeadConversa,
   type MensagemWhatsapp,
 } from '@/lib/whatsapp-conversas';
+import { telefoneParaExibir } from '@/lib/exibicao';
 
 /**
  * Tela de Conversas — porte da aba "Conversas" do painel antigo, com as
@@ -672,7 +673,8 @@ export function TelaConversas({
                   {nomeExibicao(thread.lead.first_name, thread.lead.last_name, thread.lead.phone)}
                 </div>
                 <div className="text-body-small text-tertiary">
-                  {thread.lead.phone ?? 'sem telefone'} · {rotuloEstagio(thread.lead.status)}
+                  {thread.lead.phone ? telefoneParaExibir(thread.lead.phone) : 'sem telefone'} ·{' '}
+                  {rotuloEstagio(thread.lead.status)}
                 </div>
               </div>
             </div>

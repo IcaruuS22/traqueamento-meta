@@ -16,6 +16,7 @@ import { acaoExcluirLead } from '@/lib/acoes/leads';
 import { ehEtapaDePerda, MOTIVOS_PERDA_SUGERIDOS, TAMANHO_MOTIVO } from '@/lib/funil';
 import { textoDaMensagem } from '@/lib/whatsapp-conversas';
 import { fmtDataHora, ouTraco } from '@/lib/format';
+import { telefoneParaExibir } from '@/lib/exibicao';
 
 /**
  * Modal do lead no CRM: ver tudo e editar o que é do painel.
@@ -243,7 +244,7 @@ export function ModalLeadCrm({
             <h3 className="truncate text-[15px] font-semibold">{nome}</h3>
             <p className="truncate text-body-small text-tertiary">
               <span className={`origem-tag ${CLASSE_ORIGEM[origem]}`}>{ROTULO_ORIGEM[origem]}</span>{' '}
-              {lead?.phone ? `· ${lead.phone}` : ''}
+              {lead?.phone ? `· ${telefoneParaExibir(lead.phone)}` : ''}
             </p>
           </div>
           <button

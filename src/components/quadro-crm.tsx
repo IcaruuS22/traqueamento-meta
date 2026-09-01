@@ -14,6 +14,7 @@ import { acaoMoverLeadCrm } from '@/lib/acoes/crm';
 import { ehEtapaDePerda, MOTIVOS_PERDA_SUGERIDOS, TAMANHO_MOTIVO } from '@/lib/funil';
 import { ModalLeadCrm } from '@/components/modal-lead-crm';
 import { fmtDataHora, ouTraco } from '@/lib/format';
+import { telefoneParaExibir } from '@/lib/exibicao';
 
 /**
  * Quadro do CRM.
@@ -343,7 +344,9 @@ function CartaoLeadCrm({
           <div className="lead-name" title={nome}>
             {nome}
           </div>
-          <div className="lead-meta">{ouTraco(cartao.phone ?? cartao.email)}</div>
+          <div className="lead-meta">
+            {ouTraco(cartao.phone ? telefoneParaExibir(cartao.phone) : cartao.email)}
+          </div>
         </div>
         {cartao.mensagens_nao_lidas > 0 ? (
           <span className="badge-nao-lidas" title="Mensagens não lidas">

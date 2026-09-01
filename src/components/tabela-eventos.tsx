@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { EventoRecente } from '@/lib/db/eventos';
 import { fmtDataHora, fmtBRL, ouTraco } from '@/lib/format';
+import { nomeParaExibir, telefoneParaExibir } from '@/lib/exibicao';
 
 /**
  * Tabela de "Últimos eventos" com "Carregar mais".
@@ -34,7 +35,7 @@ function Status({ valor }: { valor: string }) {
 
 /** Nome completo, e-mail como segunda opção — igual ao painel antigo. */
 function nomeDoLead(e: EventoRecente): string {
-  const nome = `${e.lead_first_name ?? ''} ${e.lead_last_name ?? ''}`.trim();
+  const nome = nomeParaExibir(e.lead_first_name, e.lead_last_name);
   return nome || String(e.lead_email ?? '').trim() || '—';
 }
 
@@ -118,7 +119,7 @@ export function TabelaEventos({
                   {nomeDoLead(e)}
                   {e.lead_phone ? (
                     <span className="block text-[11px] text-[var(--text-tertiary)]">
-                      {e.lead_phone}
+                      {telefoneParaExibir(e.lead_phone)}
                     </span>
                   ) : null}
                 </td>

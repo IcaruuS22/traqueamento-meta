@@ -6,6 +6,8 @@
  * `lib/meta-eventos.ts` e `lib/metricas-catalogo.ts`.
  */
 
+import { nomeParaExibir, telefoneParaExibir } from '@/lib/exibicao';
+
 /** Janela da Meta para responder livremente, em segundos. */
 export const JANELA_24H_SEGUNDOS = 24 * 60 * 60;
 
@@ -223,8 +225,8 @@ export function nomeExibicao(
   ultimo: string | null | undefined,
   telefone: string | null | undefined,
 ): string {
-  const nome = `${primeiro ?? ''} ${ultimo ?? ''}`.trim();
-  return nome || telefone || 'Sem nome';
+  const nome = nomeParaExibir(primeiro, ultimo);
+  return nome || telefoneParaExibir(telefone) || 'Sem nome';
 }
 
 /** Até duas iniciais para o círculo do avatar. */

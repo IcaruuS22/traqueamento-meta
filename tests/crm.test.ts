@@ -242,15 +242,15 @@ describe('nomeDoCartao', () => {
   test('cai para e-mail e depois telefone antes de desistir', () => {
     assert.equal(
       nomeDoCartao({ first_name: 'Ana', last_name: 'Silva', email: 'a@b.c', phone: '11' }),
-      'Ana Silva',
+      'ANA SILVA',
     );
     assert.equal(
       nomeDoCartao({ first_name: null, last_name: null, email: 'a@b.c', phone: '11' }),
       'a@b.c',
     );
     assert.equal(
-      nomeDoCartao({ first_name: null, last_name: null, email: '', phone: '5511999' }),
-      '5511999',
+      nomeDoCartao({ first_name: null, last_name: null, email: '', phone: '5511987654321' }),
+      '+55 (11) 98765-4321',
     );
     assert.equal(
       nomeDoCartao({ first_name: null, last_name: null, email: null, phone: null }),

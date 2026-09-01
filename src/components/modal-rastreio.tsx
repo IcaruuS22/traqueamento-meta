@@ -14,6 +14,7 @@ import {
 } from '@/lib/rastreamento';
 import { fmtBRL, fmtDataHora, ouTraco } from '@/lib/format';
 import { Dica } from './dica';
+import { nomeParaExibir, telefoneParaExibir } from '@/lib/exibicao';
 
 /**
  * Modal "Rastreio do contato" — tudo o que se sabe sobre a origem de um lead.
@@ -39,7 +40,7 @@ type Resposta = {
 };
 
 function nomeDoLead(c: { first_name: string | null; last_name: string | null; email: string | null }) {
-  const nome = `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim();
+  const nome = nomeParaExibir(c.first_name, c.last_name);
   return nome || String(c.email ?? '').trim() || 'Contato sem nome';
 }
 
@@ -180,7 +181,7 @@ export function ModalRastreio({
             <h3 className="truncate text-[15px] font-semibold">Rastreio do contato</h3>
             <p className="truncate text-body-small text-tertiary">
               {nome}
-              {c?.phone ? ` · ${c.phone}` : ''}
+              {c?.phone ? ` · ${telefoneParaExibir(c.phone)}` : ''}
             </p>
           </div>
           <button

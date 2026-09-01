@@ -11,6 +11,7 @@ import {
 } from '@/lib/rastreamento';
 import { fmtDataHora, ouTraco } from '@/lib/format';
 import { ModalRastreio } from '@/components/modal-rastreio';
+import { nomeParaExibir, telefoneParaExibir } from '@/lib/exibicao';
 
 /**
  * Tabela de Rastreamento com "Carregar mais" e o modal de detalhe.
@@ -24,7 +25,7 @@ import { ModalRastreio } from '@/components/modal-rastreio';
 const POR_PAGINA = 30;
 
 function nomeDoLead(l: LinhaRastreio): string {
-  const nome = `${l.first_name ?? ''} ${l.last_name ?? ''}`.trim();
+  const nome = nomeParaExibir(l.first_name, l.last_name);
   return nome || String(l.email ?? '').trim() || 'Contato sem nome';
 }
 
@@ -88,7 +89,7 @@ export function TabelaRastreamento({
                   {nomeDoLead(l)}
                   {l.phone || l.email ? (
                     <span className="block text-[11px] text-[var(--text-tertiary)]">
-                      {l.phone || l.email}
+                      {l.phone ? telefoneParaExibir(l.phone) : l.email}
                     </span>
                   ) : null}
                 </td>

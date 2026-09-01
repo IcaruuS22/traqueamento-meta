@@ -17,6 +17,7 @@
  */
 
 import { rotuloEstagio } from '@/lib/whatsapp-conversas';
+import { nomeParaExibir, telefoneParaExibir } from '@/lib/exibicao';
 
 export const ORIGENS = ['form', 'whatsapp'] as const;
 export type OrigemLead = (typeof ORIGENS)[number];
@@ -112,8 +113,8 @@ export function nomeDoCartao(c: {
   email: string | null;
   phone: string | null;
 }): string {
-  const nome = `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim();
-  return nome || (c.email ?? '').trim() || (c.phone ?? '').trim() || 'Contato sem nome';
+  const nome = nomeParaExibir(c.first_name, c.last_name);
+  return nome || (c.email ?? '').trim() || telefoneParaExibir(c.phone) || 'Contato sem nome';
 }
 
 /** Chave de coluna a partir do funil e do valor gravado. */

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { ColunaKanban } from '@/lib/db/kanban';
 import type { Lead } from '@/lib/db/metricas';
 import { fmtDataHora, fmtDecorrido, ouTraco } from '@/lib/format';
+import { nomeParaExibir, telefoneParaExibir } from '@/lib/exibicao';
 
 /**
  * Board do CRM.
@@ -69,7 +70,7 @@ export function QuadroKanban({ colunas }: { colunas: ColunaKanban[] }) {
 }
 
 function CartaoLead({ lead }: { lead: Lead }) {
-  const nome = `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim();
+  const nome = nomeParaExibir(lead.first_name, lead.last_name);
   return (
     <div className="lead-card">
       <div className="lead-name" title={nome || undefined}>
@@ -78,7 +79,7 @@ function CartaoLead({ lead }: { lead: Lead }) {
       <div className="lead-meta">
         {ouTraco(lead.email)}
         <br />
-        {ouTraco(lead.phone)}
+        {ouTraco(telefoneParaExibir(lead.phone))}
       </div>
       <div className="lead-meta">
         Gerado: {fmtDataHora(lead.created_at)}

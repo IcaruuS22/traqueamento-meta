@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Lead } from '@/lib/db/metricas';
 import { fmtDataHora, fmtDecorrido, ouTraco } from '@/lib/format';
+import { nomeParaExibir, telefoneParaExibir } from '@/lib/exibicao';
 
 /**
  * Tabela "Últimos leads" com filtros e "Carregar mais".
@@ -190,10 +191,10 @@ export function ListaLeads({
             {leads.map((l) => (
               <tr key={l.id}>
                 <td>
-                  {ouTraco(`${l.first_name ?? ''} ${l.last_name ?? ''}`.trim())}
+                  {ouTraco(nomeParaExibir(l.first_name, l.last_name))}
                 </td>
                 <td>{ouTraco(l.email)}</td>
-                <td>{ouTraco(l.phone)}</td>
+                <td>{ouTraco(telefoneParaExibir(l.phone))}</td>
                 <td>{ouTraco(l.current_stage)}</td>
                 <td className="whitespace-nowrap">{fmtDataHora(l.created_at)}</td>
                 <td className="whitespace-nowrap">
