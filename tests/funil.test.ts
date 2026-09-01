@@ -1,6 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ehEtapaDePerda, normalizaMotivo } from '../src/lib/funil';
+import { faixaDoEstagio } from '../src/lib/whatsapp-conversas';
 
 /**
  * Testes do motivo de perda — o texto que o time digita ao fechar uma
@@ -23,5 +24,18 @@ describe('motivo e etapa de perda', () => {
     assert.equal(ehEtapaDePerda('ganho'), false);
     assert.equal(ehEtapaDePerda('perdido_frio'), false);
     assert.equal(ehEtapaDePerda(null), false);
+  });
+
+  // O cliente cadastra o estágio com a inicial maiúscula ("Perdido") e a
+  // classificação por IA grava assim também. O MySQL compara sem
+  // diferenciar caixa, então a listagem sempre acertou; antes daqui o
+  // JavaScript discordava e a conversa fechada ficava em "Em aberto".
+  test('caixa e espaço do estágio não mudam a decisão', () => {
+    assert.equal(ehEtapaDePerda('Perdido'), true);
+    assert.equal(ehEtapaDePerda('  PERDIDO '), true);
+    assert.equal(faixaDoEstagio('Ganho'), 'ganho');
+    assert.equal(faixaDoEstagio('Perdido'), 'perdido');
+    assert.equal(faixaDoEstagio('Lead'), 'aberto');
+    assert.equal(faixaDoEstagio(null), 'aberto');
   });
 });

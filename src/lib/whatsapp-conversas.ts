@@ -41,6 +41,20 @@ export const TIPO_MIDIA_LABEL: Record<string, string> = {
 export const ESTAGIO_GANHO = 'ganho';
 export const ESTAGIO_PERDIDO = 'perdido';
 
+/**
+ * Estágio pronto para comparar com as constantes acima.
+ *
+ * O nome do estágio é digitado pelo cliente em "Configuração de Eventos"
+ * e também é escrito pela classificação por IA, que capitaliza ("Ganho",
+ * "Perdido"). O MySQL compara sem diferenciar maiúscula, então o filtro
+ * da listagem sempre acertou; o JavaScript não, e a conversa fechada
+ * caía em "Em aberto" e nunca pedia motivo de perda. Comparar
+ * normalizado é o que faz os dois lados concordarem.
+ */
+export function normalizaEstagio(estagio: string | null | undefined): string {
+  return (estagio ?? '').trim().toLowerCase();
+}
+
 /** Faixa da lista de conversas. Substitui o filtro por estágio solto. */
 export type FaixaConversa = 'aberto' | 'ganho' | 'perdido';
 
@@ -58,8 +72,9 @@ export function ehFaixa(valor: unknown): valor is FaixaConversa {
 
 /** Em qual faixa um estágio cai. Tudo que não fecha está em aberto. */
 export function faixaDoEstagio(estagio: string | null | undefined): FaixaConversa {
-  if (estagio === ESTAGIO_GANHO) return 'ganho';
-  if (estagio === ESTAGIO_PERDIDO) return 'perdido';
+  const valor = normalizaEstagio(estagio);
+  if (valor === ESTAGIO_GANHO) return 'ganho';
+  if (valor === ESTAGIO_PERDIDO) return 'perdido';
   return 'aberto';
 }
 

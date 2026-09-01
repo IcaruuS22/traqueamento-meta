@@ -1,4 +1,4 @@
-import { ESTAGIO_PERDIDO } from '@/lib/whatsapp-conversas';
+import { ESTAGIO_PERDIDO, normalizaEstagio } from '@/lib/whatsapp-conversas';
 
 /**
  * Motivo de perda — as regras que os dois lados usam.
@@ -43,5 +43,5 @@ export function normalizaMotivo(valor: unknown): string | null {
 
 /** A etapa de destino é a que fecha a conversa como perdida? */
 export function ehEtapaDePerda(etapa: string | null | undefined): boolean {
-  return (etapa ?? '').trim() === ESTAGIO_PERDIDO;
+  return normalizaEstagio(etapa) === ESTAGIO_PERDIDO;
 }
