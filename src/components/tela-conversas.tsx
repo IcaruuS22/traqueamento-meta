@@ -637,8 +637,14 @@ export function TelaConversas({
                       {c.ultima_mensagem_direcao === 'outbound' ? 'Você: ' : ''}
                       {textoDaMensagem(c.ultima_mensagem_tipo, c.ultima_mensagem) || '—'}
                     </span>
-                    <span className="crm-list-item-top" style={{ marginTop: 2 }}>
-                      <span className="crm-list-item-time">{rotuloEstagio(c.status)}</span>
+                    <span className="crm-list-item-top" style={{ marginTop: 4 }}>
+                      {(c.status ?? '').trim() ? (
+                        <span className="crm-list-item-estagio" title="Estágio do funil">
+                          {rotuloEstagio(c.status)}
+                        </span>
+                      ) : (
+                        <span />
+                      )}
                       {c.unread_count > 0 ? (
                         <span className="crm-unread-badge">{c.unread_count}</span>
                       ) : null}

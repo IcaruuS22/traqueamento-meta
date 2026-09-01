@@ -1944,6 +1944,25 @@ select.filtro-campo {
   text-overflow: ellipsis;
   margin-top: 2px;
 }
+/* Estágio do funil no item da lista de conversas. Era texto solto com o
+   mesmo estilo do horário, o que fazia o nome do estágio ("Lead") parecer
+   uma afirmação sobre a conversa em vez de um rótulo de coluna do funil.
+   Como badge, lê-se como estado — que é o que ele é. */
+.crm-list-item-estagio {
+  align-self: flex-start;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--bg-field-on-canvas);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
 .crm-unread-badge {
   min-width: 18px;
   height: 18px;

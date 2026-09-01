@@ -18,24 +18,57 @@ const MAX_ANALISES_POR_CICLO = 25;
 // Teto por cliente na própria query (aplicado antes do teto global).
 const MAX_PENDENTES_POR_CLIENTE = 25;
 
+// Quanto tempo a conversa precisa ficar parada antes de ser analisada.
+//
+// Era 60s. Um lead que manda cinco mensagens seguidas ao longo de quatro
+// minutos gerava três análises da mesma conversa, e o estágio do funil
+// não muda a cada mensagem — as duas primeiras eram cota gasta para
+// chegar na mesma conclusão. Com 300s a rajada inteira vira uma análise
+// só, com o histórico já completo, que é inclusive a classificação
+// melhor: a IA lê a conversa fechada em vez de um pedaço dela.
+//
+// O custo é latência: o estágio (e o evento CAPI que ele dispara) sai até
+// cinco minutos depois da última mensagem, e não até um. Para atribuição
+// na Meta isso é irrelevante — o `event_time` enviado é o do momento do
+// disparo, e a janela de atribuição é de dias.
+const DEBOUNCE_SEGUNDOS = 300;
+
+// Estágios que encerram a conversa. Conversa que já fechou não volta para
+// a fila da IA: a venda já foi classificada e o evento de conversão já
+// foi enviado, então reanalisar só gasta cota e arrisca disparar um
+// segundo evento por cima do primeiro.
+//
+// Consequência que é preciso conhecer: lead que volta a falar depois de
+// marcado como ganho ou perdido NÃO é reclassificado sozinho. A conversa
+// sobe na lista com o badge de não-lidas e quem atende move o estágio na
+// mão. Preferir isso ao contrário — deixar a IA reabrir sozinha uma
+// venda fechada — é a escolha barata: o erro humano aqui custa um
+// clique, o erro da IA custa um evento errado na Meta.
+//
+// Os dois nomes são fixos no produto (ver `ESTAGIO_GANHO` /
+// `ESTAGIO_PERDIDO` em `src/lib/whatsapp-conversas.ts`); os demais
+// estágios o cliente cria à vontade e todos continuam sendo analisados.
+const ESTAGIOS_TERMINAIS = ['ganho', 'perdido'];
+
 // Analisar só conversa que veio de anúncio.
 //
-// `false` (valor atual): a IA classifica toda conversa de WhatsApp, tenha
-// ela vindo de anúncio ou não. É o que se quer enquanto o sistema está em
-// teste — as conversas de teste entram pelo número direto, sem
-// `ctwa_clid`, e com o filtro ligado nenhuma delas seria analisada.
+// `true` (valor atual, produção): só entram na fila as conversas cuja
+// primeira mensagem trouxe referência de anúncio (`referral_ctwa_clid` ou
+// `referral_ad_id`) — as do "Clique para WhatsApp". A conversão só tem
+// para onde ser atribuída quando existe click-id, então classificar
+// conversa de cliente antigo, de indicação ou de contato direto gastava
+// cota da Groq sem alimentar campanha nenhuma. É de longe o maior corte
+// de volume disponível: a maioria das conversas de um número comercial
+// não vem de anúncio.
 //
-// `true` (produção): só entram na fila as conversas cuja primeira
-// mensagem trouxe referência de anúncio (`referral_ctwa_clid` ou
-// `referral_ad_id`) — as do "Clique para WhatsApp". É a configuração
-// certa em produção por dois motivos: a conversão só tem para onde ser
-// atribuída quando existe click-id, e classificar conversa de cliente
-// antigo ou de indicação gasta cota da Groq sem alimentar campanha
-// nenhuma.
+// `false`: a IA classifica toda conversa de WhatsApp. Serve para testar
+// o fluxo pelo número direto — a conversa de teste não tem `ctwa_clid` e
+// com o filtro ligado nunca seria analisada. Não deixe em `false` com
+// clientes reais rodando.
 //
-// Trocar para `true` e reimportar o workflow é a única mudança
-// necessária; nada mais no fluxo depende disso.
-const SO_CONVERSAS_DE_ANUNCIO = false;
+// Trocar o valor e reimportar o workflow é a única mudança necessária;
+// nada mais no fluxo depende disso.
+const SO_CONVERSAS_DE_ANUNCIO = true;
 
 // =======================================================
 // Node graph builder (mesmo padrão de fábricas dos outros workflows —
@@ -129,7 +162,7 @@ const SANITIZA_DB = "replace(/[^A-Za-z0-9_]/g, '')";
 // =======================================================
 addNode({
   parameters: {
-    content: "## Classificação automática por IA (Groq)\n\n**O que este workflow faz:** a cada minuto, varre conversas de WhatsApp que ficaram paradas (sem mensagem nova) por 60s+ e ainda não foram analisadas desde a última mensagem, manda o histórico pra Groq classificar o estágio do funil, e aplica a mudança automaticamente — se o novo estágio tiver evento Meta configurado e ativo em `whatsapp_event_map`, dispara o CAPI na hora, sem intervenção humana (mesmo mecanismo de `whatsapp-lead-salvar`, ver `Painel Administrativo - Dashboard Clientes.json`).\n\n**Configuração necessária no n8n (uma única vez):**\n1. Abra o node **\"Chama Groq API Classificacao\"** e CONFIRA qual credencial está selecionada no campo Header Auth. Este arquivo é exportado com um id de credencial que não existe no seu n8n, e na importação o n8n amarra o node à primeira credencial Header Auth que encontrar — que costuma ser outra coisa. Sintoma: a Groq responde HTTP 401 `invalid_api_key` em toda rodada e nenhuma conversa é classificada. Selecione a mesma credencial Groq já usada no workflow do Painel Administrativo, ou crie uma Header Auth com Name `Authorization` e Value `Bearer SUA_CHAVE` (o `Bearer ` na frente faz parte do valor).\n2. Depois de importar, **ATIVE este workflow** (toggle no canto superior direito do n8n) — sem isso o Schedule Trigger nunca dispara.\n\n**Escopo da análise:** hoje o workflow classifica TODA conversa de WhatsApp. Em produção, troque `SO_CONVERSAS_DE_ANUNCIO` para `true` em `build_whatsapp_ai_classification_workflow.js`, regere o JSON e reimporte: a IA passa a analisar apenas conversas vindas de anúncio (com `ctwa_clid` ou `ad_id`), que são as únicas cuja conversão tem para onde ser atribuída na Meta.\n\n**Atenção:** classificação automática pode errar e mudar um estágio (inclusive marcar uma \"venda\"/conversão) de forma equivocada, o que manda um evento errado pra Meta CAPI. O campo `ai_last_reason` fica gravado em `whatsapp_conversations` pra auditoria — revise periodicamente pela aba Conversas do painel, que mostra a última classificação e o motivo dado pela IA.\n\n**Por que não existe loop dentro de loop aqui:** as consultas por cliente (estágios, conversas pendentes) rodam de uma vez só para todos os clientes — o node MySQL executa a query uma vez por item de entrada e junta os resultados, e cada linha carrega a coluna `client_db` pra não se perder de qual cliente veio. Há UM único loop, sobre a fila final de conversas. Loop aninhado no n8n não reinicia o contador do loop interno: ele ficaria marcado como concluído depois do primeiro cliente e todos os demais seriam pulados em silêncio.",
+    content: "## Classificação automática por IA (Groq)\n\n**O que este workflow faz:** a cada minuto, varre conversas de WhatsApp vindas de anúncio que ficaram paradas (sem mensagem nova) por 5 minutos e ainda não foram analisadas desde a última mensagem, manda o histórico pra Groq classificar o estágio do funil, e aplica a mudança automaticamente — se o novo estágio tiver evento Meta configurado e ativo em `whatsapp_event_map`, dispara o CAPI na hora, sem intervenção humana (mesmo mecanismo de `whatsapp-lead-salvar`, ver `Painel Administrativo - Dashboard Clientes.json`).\n\n**Configuração necessária no n8n (uma única vez):**\n1. Abra o node **\"Chama Groq API Classificacao\"** e CONFIRA qual credencial está selecionada no campo Header Auth. Este arquivo é exportado com um id de credencial que não existe no seu n8n, e na importação o n8n amarra o node à primeira credencial Header Auth que encontrar — que costuma ser outra coisa. Sintoma: a Groq responde HTTP 401 `invalid_api_key` em toda rodada e nenhuma conversa é classificada. Selecione a mesma credencial Groq já usada no workflow do Painel Administrativo, ou crie uma Header Auth com Name `Authorization` e Value `Bearer SUA_CHAVE` (o `Bearer ` na frente faz parte do valor).\n2. Depois de importar, **ATIVE este workflow** (toggle no canto superior direito do n8n) — sem isso o Schedule Trigger nunca dispara.\n\n**Escopo da análise (três filtros, todos para economizar cota da Groq):** (1) só conversas vindas de anúncio, com `ctwa_clid` ou `ad_id` — as únicas cuja conversão tem para onde ser atribuída na Meta. Para testar pelo número direto, troque `SO_CONVERSAS_DE_ANUNCIO` para `false` em `build_whatsapp_ai_classification_workflow.js`, regere o JSON e reimporte. (2) a conversa precisa estar parada há 5 minutos (`DEBOUNCE_SEGUNDOS`), para uma rajada de mensagens virar uma análise só em vez de três. (3) conversa já em `ganho` ou `perdido` (`ESTAGIOS_TERMINAIS`) não volta para a fila — lead que voltar a falar depois de fechado aparece com badge de não-lidas e o estágio é movido na mão, a IA não reabre venda fechada sozinha.\n\n**Atenção:** classificação automática pode errar e mudar um estágio (inclusive marcar uma \"venda\"/conversão) de forma equivocada, o que manda um evento errado pra Meta CAPI. O campo `ai_last_reason` fica gravado em `whatsapp_conversations` pra auditoria — revise periodicamente pela aba Conversas do painel, que mostra a última classificação e o motivo dado pela IA.\n\n**Por que não existe loop dentro de loop aqui:** as consultas por cliente (estágios, conversas pendentes) rodam de uma vez só para todos os clientes — o node MySQL executa a query uma vez por item de entrada e junta os resultados, e cada linha carrega a coluna `client_db` pra não se perder de qual cliente veio. Há UM único loop, sobre a fila final de conversas. Loop aninhado no n8n não reinicia o contador do loop interno: ele ficaria marcado como concluído depois do primeiro cliente e todos os demais seriam pulados em silêncio.",
     height: 600,
     width: 580,
     color: 4
@@ -226,14 +259,24 @@ const FILTRO_ANUNCIO = SO_CONVERSAS_DE_ANUNCIO
     + " AND (mref.referral_ctwa_clid IS NOT NULL OR mref.referral_ad_id IS NOT NULL))"
   : "";
 
+// COALESCE porque `status` pode vir vazio em conversa nunca classificada,
+// e `NOT IN` com NULL descartaria a linha — justamente a que mais precisa
+// ser analisada.
+const FILTRO_TERMINAIS = ESTAGIOS_TERMINAIS.length
+  ? " AND COALESCE(wc.status, '') NOT IN ("
+    + ESTAGIOS_TERMINAIS.map(function (e) { return "'" + e + "'"; }).join(", ")
+    + ")"
+  : "";
+
 const mysqlConversasPendentes = mysqlNode({
   name: "Busca Conversas Pendentes IA",
   position: [-80, 560],
   query: "=SELECT '{{ $json.client_db_name." + SANITIZA_DB + " }}' AS client_db, wc.customer_id, wc.status AS estagio_atual, c.phone"
     + " FROM `{{ $json.client_db_name." + SANITIZA_DB + " }}`.`whatsapp_conversations` wc"
     + " JOIN `{{ $json.client_db_name." + SANITIZA_DB + " }}`.`customers` c ON c.id = wc.customer_id"
-    + " WHERE wc.last_inbound_at IS NOT NULL AND wc.last_inbound_at <= NOW() - INTERVAL 60 SECOND"
+    + " WHERE wc.last_inbound_at IS NOT NULL AND wc.last_inbound_at <= NOW() - INTERVAL " + DEBOUNCE_SEGUNDOS + " SECOND"
     + " AND (wc.ai_last_analyzed_at IS NULL OR wc.ai_last_analyzed_at < wc.last_inbound_at)"
+    + FILTRO_TERMINAIS
     + FILTRO_ANUNCIO
     + " ORDER BY wc.last_inbound_at ASC LIMIT " + MAX_PENDENTES_POR_CLIENTE
 });
