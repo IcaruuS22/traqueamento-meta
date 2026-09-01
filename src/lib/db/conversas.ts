@@ -96,6 +96,80 @@ export async function listaConversas(
   };
 }
 
+/**
+ * Assinatura barata do estado das conversas, para a espera longa.
+ *
+ * A tela precisa saber se algo mudou muitas vezes por minuto, e repetir
+ * `listaConversas` (200 linhas, três subconsultas por linha) nessa
+ * frequência sairia caro à toa. Aqui é uma leitura agregada só de
+ * `whatsapp_conversations`, sem `JOIN`: enquanto o texto do cursor for
+ * igual, não existe mensagem, estágio, nota nem contador novo para
+ * buscar. Quando muda, a tela recarrega a lista de verdade uma vez.
+ *
+ * `updated_at` entra por causa do que não mexe em `last_message_at`:
+ * estágio, notas e tags salvos por outra pessoa, e o `unread_count`
+ * zerado ao abrir a conversa em outra aba.
+ *
+ * Com `customerId`, o cursor ganha também o estado da conversa aberta —
+ * o último `id` de mensagem, o total e quantas mídias ainda estão sendo
+ * baixadas —, que é o que faz a bolha trocar "Baixando arquivo…" pelo
+ * arquivo assim que o download termina.
+ */
+export async function cursorConversas(
+  db: BancoCliente,
+  customerId?: number | null,
+): Promise<string> {
+  const lacunas = new LacunasDeEsquema();
+
+  const geral = await lacunas.ou(
+    db.queryOne<{
+      total: number | string;
+      nao_lidas: number | string;
+      ultima: number | string;
+      tocada: number | string;
+    }>(
+      `SELECT COUNT(*) AS total,
+              COALESCE(SUM(unread_count), 0) AS nao_lidas,
+              COALESCE(MAX(UNIX_TIMESTAMP(last_message_at)), 0) AS ultima,
+              COALESCE(MAX(UNIX_TIMESTAMP(updated_at)), 0) AS tocada
+         FROM ${db.tabela('whatsapp_conversations')}`,
+      [],
+    ),
+    null,
+  );
+
+  const partes = [
+    geral ? `${geral.total}:${geral.nao_lidas}:${geral.ultima}:${geral.tocada}` : 'sem-tabela',
+  ];
+
+  if (customerId) {
+    const msgs = db.tabela('whatsapp_messages');
+    // `media_status` é migração separada; sem ela o cursor perde só a
+    // parte do download, e a conversa continua sendo acompanhada.
+    const consulta = (pendentes: string) =>
+      db.queryOne<{ ultima: number | string | null; total: number | string; pendentes: number | string }>(
+        `SELECT COALESCE(MAX(id), 0) AS ultima,
+                COUNT(*) AS total,
+                ${pendentes} AS pendentes
+           FROM ${msgs}
+          WHERE customer_id = ?`,
+        [customerId],
+      );
+
+    const linha = await lacunas.ou(
+      consulta("COALESCE(SUM(media_status = 'pendente'), 0)").catch((erro) => {
+        if (!lacunaDeEsquema(erro)) throw erro;
+        return consulta('0');
+      }),
+      null,
+    );
+
+    partes.push(linha ? `${linha.ultima}:${linha.total}:${linha.pendentes}` : 'sem-tabela');
+  }
+
+  return partes.join('|');
+}
+
 type LinhaLead = Omit<LeadConversa, 'segundos_desde_inbound'> & {
   segundos_desde_inbound: number | string | null;
 };
@@ -124,13 +198,21 @@ async function leMensagens(
 ): Promise<MensagemWhatsapp[]> {
   const base = 'id, created_at, direction, message_type, message_text';
   const comMidia = `${base}, media_mime, media_filename, media_size, media_seconds, media_status`;
+  // O teto pega as mensagens mais NOVAS, não as mais antigas: com
+  // `ORDER BY id ASC LIMIT 300` direto, uma conversa que passasse de 300
+  // mensagens ficaria congelada nas 300 primeiras e nunca mais mostraria
+  // o que acabou de chegar. A ordenação crescente da tela é reposta na
+  // consulta de fora.
   const consulta = (campos: string) =>
     db.query<MensagemWhatsapp>(
-      `SELECT ${campos}
-         FROM ${msgs}
-        WHERE customer_id = ?
-        ORDER BY id ASC
-        LIMIT ${LIMITE_MENSAGENS}`,
+      `SELECT * FROM (
+         SELECT ${campos}
+           FROM ${msgs}
+          WHERE customer_id = ?
+          ORDER BY id DESC
+          LIMIT ${LIMITE_MENSAGENS}
+       ) recentes
+       ORDER BY id ASC`,
       [customerId],
     );
 

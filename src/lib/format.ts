@@ -46,15 +46,44 @@ export function ouTraco(valor: string | null | undefined): string {
   return v || '—';
 }
 
+/** "2026-05-10" — dia de calendário, não instante. */
+const SO_DATA = /^\d{4}-\d{2}-\d{2}$/;
+/** A string já diz o fuso: "...Z", "...+00:00", "...-03:00". */
+const COM_FUSO = /(?:[zZ]|[+-]\d{2}:?\d{2})$/;
+
 /**
  * Converte o que o MySQL devolve (Date, string ou epoch) em ms UTC.
  * `null` quando não dá para interpretar.
+ *
+ * O MySQL do VPS roda em UTC (`@@system_time_zone = UTC`), então todo
+ * TIMESTAMP gravado com `NOW()`/`CURRENT_TIMESTAMP` — pelo app, pelo n8n
+ * ou pelo webhook do WhatsApp — está em UTC. A string chega sem fuso
+ * ("2026-09-01 00:07:00"), e `new Date()` sobre string sem fuso adota o
+ * fuso de quem está lendo: no navegador em São Paulo dava um valor, no
+ * servidor da Vercel (UTC) dava outro, três horas adiante. O resultado
+ * era a hora do WhatsApp aparecendo adiantada em 3h no navegador — e
+ * mais uma origem de divergência entre servidor e cliente na hidratação.
+ * Marcar a string como UTC deixa a leitura igual dos dois lados; a
+ * conversão para São Paulo continua sendo feita por quem formata.
+ *
+ * Data pura ("2026-05-10") é outra coisa: não é instante, é dia de
+ * calendário — vem do filtro de período e dos rótulos de gráfico. Ela é
+ * ancorada na meia-noite de São Paulo, senão `fmtData` devolveria o dia
+ * anterior ao escolhido.
  */
 function paraMs(valor: unknown): number | null {
   if (valor === null || valor === undefined || valor === '') return null;
   if (valor instanceof Date) return valor.getTime();
   if (typeof valor === 'number') return valor > 1e12 ? valor : valor * 1000;
-  const ms = new Date(String(valor).replace(' ', 'T')).getTime();
+
+  const texto = String(valor).trim();
+  if (SO_DATA.test(texto)) {
+    const dia = Date.parse(`${texto}T00:00:00Z`);
+    return Number.isFinite(dia) ? dia + SP_OFFSET_MS : null;
+  }
+
+  const iso = texto.replace(' ', 'T');
+  const ms = Date.parse(COM_FUSO.test(iso) ? iso : `${iso}Z`);
   return Number.isFinite(ms) ? ms : null;
 }
 

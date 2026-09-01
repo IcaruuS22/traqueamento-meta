@@ -18,6 +18,25 @@ const MAX_ANALISES_POR_CICLO = 25;
 // Teto por cliente na própria query (aplicado antes do teto global).
 const MAX_PENDENTES_POR_CLIENTE = 25;
 
+// Analisar só conversa que veio de anúncio.
+//
+// `false` (valor atual): a IA classifica toda conversa de WhatsApp, tenha
+// ela vindo de anúncio ou não. É o que se quer enquanto o sistema está em
+// teste — as conversas de teste entram pelo número direto, sem
+// `ctwa_clid`, e com o filtro ligado nenhuma delas seria analisada.
+//
+// `true` (produção): só entram na fila as conversas cuja primeira
+// mensagem trouxe referência de anúncio (`referral_ctwa_clid` ou
+// `referral_ad_id`) — as do "Clique para WhatsApp". É a configuração
+// certa em produção por dois motivos: a conversão só tem para onde ser
+// atribuída quando existe click-id, e classificar conversa de cliente
+// antigo ou de indicação gasta cota da Groq sem alimentar campanha
+// nenhuma.
+//
+// Trocar para `true` e reimportar o workflow é a única mudança
+// necessária; nada mais no fluxo depende disso.
+const SO_CONVERSAS_DE_ANUNCIO = false;
+
 // =======================================================
 // Node graph builder (mesmo padrão de fábricas dos outros workflows —
 // cada builder duplica seus próprios helpers em vez de importar de um
@@ -110,7 +129,7 @@ const SANITIZA_DB = "replace(/[^A-Za-z0-9_]/g, '')";
 // =======================================================
 addNode({
   parameters: {
-    content: "## Classificação automática por IA (Groq)\n\n**O que este workflow faz:** a cada minuto, varre conversas de WhatsApp que ficaram paradas (sem mensagem nova) por 60s+ e ainda não foram analisadas desde a última mensagem, manda o histórico pra Groq classificar o estágio do funil, e aplica a mudança automaticamente — se o novo estágio tiver evento Meta configurado e ativo em `whatsapp_event_map`, dispara o CAPI na hora, sem intervenção humana (mesmo mecanismo de `whatsapp-lead-salvar`, ver `Painel Administrativo - Dashboard Clientes.json`).\n\n**Configuração necessária no n8n (uma única vez):**\n1. Mesma credencial Groq (\"Header Auth\", header `Authorization: Bearer SUA_CHAVE`) já usada no workflow do Painel Administrativo — se você já configurou lá, reaproveite a mesma credencial aqui no node **\"Chama Groq API Classificacao\"**.\n2. Depois de importar, **ATIVE este workflow** (toggle no canto superior direito do n8n) — sem isso o Schedule Trigger nunca dispara.\n\n**Atenção:** classificação automática pode errar e mudar um estágio (inclusive marcar uma \"venda\"/conversão) de forma equivocada, o que manda um evento errado pra Meta CAPI. O campo `ai_last_reason` fica gravado em `whatsapp_conversations` pra auditoria — revise periodicamente pela aba Conversas do painel, que mostra a última classificação e o motivo dado pela IA.\n\n**Por que não existe loop dentro de loop aqui:** as consultas por cliente (estágios, conversas pendentes) rodam de uma vez só para todos os clientes — o node MySQL executa a query uma vez por item de entrada e junta os resultados, e cada linha carrega a coluna `client_db` pra não se perder de qual cliente veio. Há UM único loop, sobre a fila final de conversas. Loop aninhado no n8n não reinicia o contador do loop interno: ele ficaria marcado como concluído depois do primeiro cliente e todos os demais seriam pulados em silêncio.",
+    content: "## Classificação automática por IA (Groq)\n\n**O que este workflow faz:** a cada minuto, varre conversas de WhatsApp que ficaram paradas (sem mensagem nova) por 60s+ e ainda não foram analisadas desde a última mensagem, manda o histórico pra Groq classificar o estágio do funil, e aplica a mudança automaticamente — se o novo estágio tiver evento Meta configurado e ativo em `whatsapp_event_map`, dispara o CAPI na hora, sem intervenção humana (mesmo mecanismo de `whatsapp-lead-salvar`, ver `Painel Administrativo - Dashboard Clientes.json`).\n\n**Configuração necessária no n8n (uma única vez):**\n1. Mesma credencial Groq (\"Header Auth\", header `Authorization: Bearer SUA_CHAVE`) já usada no workflow do Painel Administrativo — se você já configurou lá, reaproveite a mesma credencial aqui no node **\"Chama Groq API Classificacao\"**.\n2. Depois de importar, **ATIVE este workflow** (toggle no canto superior direito do n8n) — sem isso o Schedule Trigger nunca dispara.\n\n**Escopo da análise:** hoje o workflow classifica TODA conversa de WhatsApp. Em produção, troque `SO_CONVERSAS_DE_ANUNCIO` para `true` em `build_whatsapp_ai_classification_workflow.js`, regere o JSON e reimporte: a IA passa a analisar apenas conversas vindas de anúncio (com `ctwa_clid` ou `ad_id`), que são as únicas cuja conversão tem para onde ser atribuída na Meta.\n\n**Atenção:** classificação automática pode errar e mudar um estágio (inclusive marcar uma \"venda\"/conversão) de forma equivocada, o que manda um evento errado pra Meta CAPI. O campo `ai_last_reason` fica gravado em `whatsapp_conversations` pra auditoria — revise periodicamente pela aba Conversas do painel, que mostra a última classificação e o motivo dado pela IA.\n\n**Por que não existe loop dentro de loop aqui:** as consultas por cliente (estágios, conversas pendentes) rodam de uma vez só para todos os clientes — o node MySQL executa a query uma vez por item de entrada e junta os resultados, e cada linha carrega a coluna `client_db` pra não se perder de qual cliente veio. Há UM único loop, sobre a fila final de conversas. Loop aninhado no n8n não reinicia o contador do loop interno: ele ficaria marcado como concluído depois do primeiro cliente e todos os demais seriam pulados em silêncio.",
     height: 600,
     width: 580,
     color: 4
@@ -197,6 +216,16 @@ connect(mysqlEstagios.name, codeReemiteContas.name);
 // node devolve 0 itens e o workflow termina aqui, sem chamar a Groq e
 // sem nada pendurado. Por isso NÃO leva alwaysOutputData.
 // =======================================================
+// EXISTS e não JOIN: a referência de anúncio está em uma mensagem
+// qualquer da conversa (normalmente a primeira), e um JOIN devolveria a
+// conversa repetida uma vez por mensagem. `idx_whatsapp_messages_customer_id`
+// atende o filtro.
+const FILTRO_ANUNCIO = SO_CONVERSAS_DE_ANUNCIO
+  ? " AND EXISTS (SELECT 1 FROM `{{ $json.client_db_name." + SANITIZA_DB + " }}`.`whatsapp_messages` mref"
+    + " WHERE mref.customer_id = wc.customer_id"
+    + " AND (mref.referral_ctwa_clid IS NOT NULL OR mref.referral_ad_id IS NOT NULL))"
+  : "";
+
 const mysqlConversasPendentes = mysqlNode({
   name: "Busca Conversas Pendentes IA",
   position: [-80, 560],
@@ -205,6 +234,7 @@ const mysqlConversasPendentes = mysqlNode({
     + " JOIN `{{ $json.client_db_name." + SANITIZA_DB + " }}`.`customers` c ON c.id = wc.customer_id"
     + " WHERE wc.last_inbound_at IS NOT NULL AND wc.last_inbound_at <= NOW() - INTERVAL 60 SECOND"
     + " AND (wc.ai_last_analyzed_at IS NULL OR wc.ai_last_analyzed_at < wc.last_inbound_at)"
+    + FILTRO_ANUNCIO
     + " ORDER BY wc.last_inbound_at ASC LIMIT " + MAX_PENDENTES_POR_CLIENTE
 });
 connect(codeReemiteContas.name, mysqlConversasPendentes.name);
@@ -347,9 +377,25 @@ const codeMontaPrompt = codeNode({ name: "Monta Prompt Classificacao IA", positi
 connect(mysqlHistorico.name, codeMontaPrompt.name);
 
 // Mesmo node HTTP genérico usado em build_admin_panel_workflow.js pra
-// chamar a Groq — max_tokens bem menor porque a saída aqui é só um
-// JSON curto, e response_format json_object força a API a devolver JSON
+// chamar a Groq. response_format json_object força a API a devolver JSON
 // válido em vez de texto solto (reduz o caso "não consegui interpretar").
+//
+// max_tokens 1200, e não 300 como antes: `openai/gpt-oss-120b` é modelo
+// de raciocínio, e os tokens de raciocínio saem do mesmo orçamento da
+// resposta. Numa conversa curta cabia; passando de ~15 mensagens o
+// raciocínio consumia os 300 sozinho, a resposta saía vazia e a Groq
+// devolvia HTTP 400 `json_validate_failed`. Como 400 não é falha
+// transitória, o bloco G marcava a conversa como analisada com
+// classificação NULL — e ela só voltava para a fila na próxima mensagem
+// do lead. Era isso que deixava `ai_last_reason` = "A IA retornou erro
+// definitivo nesta rodada" em conversa nenhuma classificada. Medido nas
+// conversas reais: 322 tokens de saída no pior caso, 1200 dá folga.
+//
+// `reasoning_effort: 'low'` cortaria o gasto pela metade, mas testado
+// nas mesmas conversas ele erra a leitura de compra fechada ("Ganho"
+// vira "Lead qualificado") — e é justamente o estágio de conversão que
+// dispara Purchase na Meta. Custo de token é mais barato que evento
+// errado.
 const httpGroq = addNode({
   parameters: {
     method: "POST",
@@ -360,7 +406,7 @@ const httpGroq = addNode({
     headerParameters: { parameters: [{ name: "Content-Type", value: "application/json" }] },
     sendBody: true,
     specifyBody: "json",
-    jsonBody: "={{ JSON.stringify({ model: $json.groq_model, messages: [ { role: 'system', content: $json.system_prompt }, { role: 'user', content: $json.user_prompt } ], temperature: 0.2, max_tokens: 300, response_format: { type: 'json_object' } }) }}",
+    jsonBody: "={{ JSON.stringify({ model: $json.groq_model, messages: [ { role: 'system', content: $json.system_prompt }, { role: 'user', content: $json.user_prompt } ], temperature: 0.2, max_tokens: 1200, response_format: { type: 'json_object' } }) }}",
     options: {}
   },
   type: "n8n-nodes-base.httpRequest",

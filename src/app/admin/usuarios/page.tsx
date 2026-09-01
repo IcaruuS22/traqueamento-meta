@@ -5,6 +5,7 @@ import { listaConvitesPendentes, listaUsuarios } from '@/lib/auth/usuarios';
 import { ConviteForm } from './convite-form';
 import { LinhaUsuario } from './linha-usuario';
 import { PageHero } from '@/components/hero';
+import { fmtData } from '@/lib/format';
 
 export const metadata: Metadata = { title: 'Usuários — Trakeamento' };
 export const dynamic = 'force-dynamic';
@@ -96,7 +97,7 @@ export default async function PaginaUsuarios() {
                   {(c.client_db_names ?? []).length} cliente(s)
                 </span>
                 <span className="text-xs text-[var(--text-tertiary)]">
-                  expira em {new Date(c.expires_at).toLocaleDateString('pt-BR')}
+                  expira em {fmtData(c.expires_at)}
                 </span>
               </li>
             ))}

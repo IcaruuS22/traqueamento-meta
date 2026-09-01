@@ -31,12 +31,26 @@ import {
  * Tela de Conversas — porte da aba "Conversas" do painel antigo, com as
  * mesmas três colunas: lista, thread e dados do lead.
  *
- * Atualização por polling, como no painel antigo e pelo mesmo motivo
- * (ver PLANO_IMPLEMENTACAO.md): lista a cada 10s, conversa aberta a cada
- * 5s, e nada enquanto a aba do navegador estiver oculta. Comparar uma
- * assinatura do que chegou antes de trocar o estado evita dois
- * problemas: re-render inútil de 200 linhas e, principalmente,
- * sobrescrever um campo que a pessoa está digitando no painel da direita.
+ * A atualização é por espera longa em `/api/conversas/novidades`: a tela
+ * manda o cursor que já tem e a resposta fica pendurada até o banco
+ * mudar, então mensagem nova aparece em cerca de um segundo em vez dos 5
+ * a 10 do polling antigo. Quem escreve as mensagens é o n8n, em outro
+ * processo, então não existe evento em memória para empurrar daqui — e
+ * um canal de push exigiria pub/sub externo mais uma conexão viva, que é
+ * a infraestrutura que este projeto decidiu não ter (ver
+ * PLANO_IMPLEMENTACAO.md).
+ *
+ * Três detalhes que vieram do sintoma relatado ("só aparece ao atualizar
+ * a página"): a espera é interrompida enquanto a aba está oculta, mas
+ * voltar para a aba, para a janela ou para a rede recarrega na hora — o
+ * `setInterval` antigo era estrangulado pelo navegador em segundo plano
+ * e não tinha nenhuma volta dessas; e um intervalo lento de segurança
+ * cobre o caso de a espera longa morrer sem avisar.
+ *
+ * Comparar uma assinatura do que chegou antes de trocar o estado evita
+ * dois problemas: re-render inútil de 200 linhas e, principalmente,
+ * sobrescrever um campo que a pessoa está digitando no painel da
+ * direita.
  *
  * Duas diferenças em relação ao painel antigo:
  *
@@ -53,9 +67,34 @@ import {
  * ninguém usava e escondia o que importa (o que ainda está aberto).
  */
 
-const INTERVALO_LISTA_MS = 10_000;
-const INTERVALO_THREAD_MS = 5_000;
+/** Rede de segurança: só age se a espera longa parar de responder. */
+const INTERVALO_SEGURANCA_MS = 30_000;
+/** Espera antes de reabrir a conexão que falhou, para não virar laço quente. */
+const ESPERA_APOS_ERRO_MS = 5_000;
+/** Piso entre duas recargas seguidas — `focus` e `visibilitychange` disparam juntos. */
+const MIN_ENTRE_CARGAS_MS = 1_000;
 const DEBOUNCE_BUSCA_MS = 300;
+
+const pausa = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Resolve quando a aba volta a ficar visível (ou quando o ciclo é
+ * encerrado). Segurar a espera longa com a aba oculta manteria uma função
+ * do servidor de pé para ninguém olhar.
+ */
+function esperaVisivel(sinal: AbortSignal): Promise<void> {
+  if (!document.hidden || sinal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const fim = () => {
+      if (document.hidden && !sinal.aborted) return;
+      document.removeEventListener('visibilitychange', fim);
+      sinal.removeEventListener('abort', fim);
+      resolve();
+    };
+    document.addEventListener('visibilitychange', fim);
+    sinal.addEventListener('abort', fim);
+  });
+}
 
 type ThreadCarregada = {
   lead: LeadConversa;
@@ -262,14 +301,10 @@ export function TelaConversas({
   }, [cliente, faixa, buscaAtiva]);
 
   useEffect(() => {
-    // Filtro ou busca mudaram: recarrega na hora e reinicia o ciclo.
+    // Filtro ou busca mudaram: recarrega na hora. A atualização contínua
+    // fica com o ciclo de espera longa, mais abaixo.
     sigLista.current = null;
     void carregaLista();
-    const t = setInterval(() => {
-      if (document.hidden) return;
-      void carregaLista();
-    }, INTERVALO_LISTA_MS);
-    return () => clearInterval(t);
   }, [carregaLista]);
 
   // ---------------------------------------------------------------
@@ -319,12 +354,94 @@ export function TelaConversas({
   useEffect(() => {
     if (selecionado === null) return;
     void carregaThread(selecionado);
-    const t = setInterval(() => {
-      if (document.hidden) return;
-      void carregaThread(selecionado);
-    }, INTERVALO_THREAD_MS);
-    return () => clearInterval(t);
   }, [selecionado, carregaThread]);
+
+  // ---------------------------------------------------------------
+  // Espera longa: é ela que faz a tela andar sozinha
+  // ---------------------------------------------------------------
+
+  // Os carregadores trocam de identidade a cada filtro digitado. Guardar
+  // o mais recente em ref deixa o ciclo abaixo depender só do cliente e
+  // da conversa aberta — sem isso, cada letra da busca derrubaria a
+  // conexão pendurada e abriria outra.
+  const refLista = useRef(carregaLista);
+  const refThread = useRef(carregaThread);
+  const refSelecionado = useRef(selecionado);
+  useEffect(() => {
+    refLista.current = carregaLista;
+    refThread.current = carregaThread;
+    refSelecionado.current = selecionado;
+  }, [carregaLista, carregaThread, selecionado]);
+
+  const ultimaCarga = useRef(0);
+  const atualiza = useCallback(async (forcado = false) => {
+    const quando = Date.now();
+    if (!forcado && quando - ultimaCarga.current < MIN_ENTRE_CARGAS_MS) return;
+    ultimaCarga.current = quando;
+    const aberta = refSelecionado.current;
+    await Promise.all([
+      refLista.current(),
+      aberta === null ? Promise.resolve() : refThread.current(aberta),
+    ]);
+  }, []);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    // O cursor mistura a lista com a conversa aberta: ao trocar de
+    // conversa ele muda de formato, e o valor antigo acusaria uma
+    // mudança que não houve.
+    let cursor: string | null = null;
+    let vivo = true;
+
+    async function ciclo() {
+      while (vivo) {
+        await esperaVisivel(ctrl.signal);
+        if (!vivo) return;
+        try {
+          const params = new URLSearchParams({ client_db: cliente });
+          if (cursor !== null) params.set('cursor', cursor);
+          if (selecionado !== null) params.set('customer_id', String(selecionado));
+          const r = await fetch(`/api/conversas/novidades?${params.toString()}`, {
+            signal: ctrl.signal,
+          });
+          const corpo = await r.json();
+          if (!vivo) return;
+          if (!r.ok || !corpo?.ok) throw new Error(corpo?.erro || 'Falha ao aguardar novidades.');
+          const novo = String(corpo.data.cursor);
+          const mudou = cursor !== null && novo !== cursor;
+          cursor = novo;
+          if (mudou) await atualiza(true);
+        } catch {
+          if (!vivo) return;
+          // Rede caída, sessão expirada ou a função cortada no meio da
+          // espera. A lista continua na tela; a próxima volta tenta de novo.
+          await pausa(ESPERA_APOS_ERRO_MS);
+        }
+      }
+    }
+    void ciclo();
+
+    // A aba em segundo plano não fica pendurada na espera, então voltar
+    // para ela precisa recarregar na hora — é exatamente o caso em que a
+    // tela parecia só atualizar com F5.
+    const aoVoltar = () => {
+      if (!document.hidden) void atualiza();
+    };
+    document.addEventListener('visibilitychange', aoVoltar);
+    window.addEventListener('focus', aoVoltar);
+    window.addEventListener('online', aoVoltar);
+
+    const seguranca = setInterval(aoVoltar, INTERVALO_SEGURANCA_MS);
+
+    return () => {
+      vivo = false;
+      ctrl.abort();
+      clearInterval(seguranca);
+      document.removeEventListener('visibilitychange', aoVoltar);
+      window.removeEventListener('focus', aoVoltar);
+      window.removeEventListener('online', aoVoltar);
+    };
+  }, [cliente, selecionado, atualiza]);
 
   // Rola para a última mensagem quando a conversa muda ou chega mensagem.
   useEffect(() => {
