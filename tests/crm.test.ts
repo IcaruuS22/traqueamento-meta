@@ -12,7 +12,7 @@ import {
 } from '../src/lib/crm';
 
 /**
- * Testes do quadro do CRM unificado.
+ * Testes do quadro do CRM.
  *
  * A consulta é coberta pelos testes de integração; o que se garante aqui
  * é a regra que decide o que aparece na tela — de qual funil é cada
@@ -177,7 +177,7 @@ describe('origem do card', () => {
   });
 });
 
-describe('filtro de origem', () => {
+describe('funil da tela', () => {
   test('deixa passar só o funil pedido', () => {
     const linhas = [
       linha({ id: 1, meta_lead_id: '99', current_stage: '142' }),
@@ -194,9 +194,26 @@ describe('filtro de origem', () => {
     assert.equal(montaQuadro(ETAPAS_FORM, ETAPAS_WPP, linhas, null).total, 2);
   });
 
-  test('as colunas dos dois funis continuam na tela mesmo com filtro', () => {
-    const { colunas } = montaQuadro(ETAPAS_FORM, ETAPAS_WPP, [], 'whatsapp');
-    assert.ok(colunas.some((c) => c.origem === 'form'));
+  test('as colunas do outro funil ficam de fora', () => {
+    // São duas telas, uma por funil. Coluna do outro funil nunca vai
+    // receber card aqui, e ainda traria a regra de arrastar dele junto.
+    const wpp = montaQuadro(ETAPAS_FORM, ETAPAS_WPP, [], 'whatsapp').colunas;
+    assert.equal(wpp.some((c) => c.origem === 'form'), false);
+    assert.equal(wpp.filter((c) => c.origem === 'whatsapp').length, 2);
+    assert.equal(wpp.every((c) => c.origem !== 'whatsapp' || c.aceita_solta), true);
+
+    const form = montaQuadro(ETAPAS_FORM, ETAPAS_WPP, [], 'form').colunas;
+    assert.equal(form.some((c) => c.origem === 'whatsapp'), false);
+    assert.equal(form.filter((c) => c.origem === 'form').length, 2);
+    assert.equal(form.every((c) => !c.aceita_solta), true);
+  });
+
+  test('sem etapa cadastrada no funil da tela, o quadro se diz vazio', () => {
+    // Cliente que só cadastrou o funil do Kommo abre a tela do WhatsApp:
+    // o aviso tem de falar de `whatsapp_event_map`, não mostrar as
+    // colunas do outro funil como se estivesse tudo certo.
+    const { tem_etapas } = montaQuadro(ETAPAS_FORM, [], [], 'whatsapp');
+    assert.equal(tem_etapas, false);
   });
 
   test('origem fora da whitelist não é aceita como filtro', () => {

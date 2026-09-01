@@ -5,9 +5,9 @@ export const dynamic = 'force-dynamic';
 /**
  * Rota antiga do Kanban de Formulários.
  *
- * O quadro virou uma tela só em `/crm`, com os leads de formulário e os
- * contatos de WhatsApp juntos. A rota fica de pé porque link antigo,
- * favorito e histórico do navegador continuam apontando para cá.
+ * O quadro passou a viver em `/formularios/crm`. A rota fica de pé
+ * porque link antigo, favorito e histórico do navegador continuam
+ * apontando para cá.
  */
 export default async function PaginaKanbanRedirecionada({
   params,
@@ -20,7 +20,7 @@ export default async function PaginaKanbanRedirecionada({
   const busca = await searchParams;
 
   // Período escolhido acompanha o redirecionamento; o filtro de canal
-  // não, porque o quadro novo é dos dois canais.
+  // não, porque a rota de destino já é a do canal.
   const qs = new URLSearchParams();
   for (const chave of ['range', 'date_from', 'date_to'] as const) {
     const v = busca[chave];
@@ -28,6 +28,6 @@ export default async function PaginaKanbanRedirecionada({
     if (valor) qs.set(chave, valor);
   }
 
-  const destino = `/app/${encodeURIComponent(cliente)}/crm`;
+  const destino = `/app/${encodeURIComponent(cliente)}/formularios/crm`;
   redirect(qs.toString() ? `${destino}?${qs.toString()}` : destino);
 }

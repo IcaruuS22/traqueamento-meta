@@ -2,10 +2,13 @@
 
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
-import { ORIGENS, ROTULO_ORIGEM } from '@/lib/crm';
 
 /**
- * Filtros de origem e busca do CRM.
+ * Busca do CRM.
+ *
+ * Não tem mais seletor de origem: cada quadro é de um funil só, e a rota
+ * já diz qual. Um seletor aqui deixaria a tela "CRM — Formulários"
+ * mostrando contato de WhatsApp, contra o próprio rótulo.
  *
  * Mesmo padrão das outras telas: o estado mora na URL, sobrevive ao F5 e
  * mantém a tela como Server Component.
@@ -17,7 +20,6 @@ export function FiltrosCrm() {
   const searchParams = useSearchParams();
   const [pendente, startTransition] = useTransition();
 
-  const origem = searchParams.get('origem') ?? '';
   const busca = searchParams.get('search') ?? '';
 
   const [termo, setTermo] = useState(busca);
@@ -42,20 +44,6 @@ export function FiltrosCrm() {
         atualiza({ search: termo.trim() });
       }}
     >
-      <select
-        aria-label="Origem do contato"
-        className="field filtro-campo"
-        value={origem}
-        onChange={(e) => atualiza({ origem: e.target.value })}
-      >
-        <option value="">Formulário e WhatsApp</option>
-        {ORIGENS.map((o) => (
-          <option key={o} value={o}>
-            Só {ROTULO_ORIGEM[o]}
-          </option>
-        ))}
-      </select>
-
       <input
         type="search"
         aria-label="Buscar por nome, e-mail ou telefone"
@@ -73,12 +61,12 @@ export function FiltrosCrm() {
         Buscar
       </button>
 
-      {origem || busca ? (
+      {busca ? (
         <button
           type="button"
           onClick={() => {
             setTermo('');
-            atualiza({ origem: null, search: null });
+            atualiza({ search: null });
           }}
           className="text-xs text-[var(--text-tertiary)] underline underline-offset-2"
         >

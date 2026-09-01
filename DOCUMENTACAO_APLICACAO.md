@@ -693,3 +693,47 @@ Até aqui o app só **lia** da Meta (métricas, hierarquia de campanhas) e escre
 - **A ida à Meta não foi testada de ponta a ponta**: o único jeito seria pausar ou ativar uma campanha real de um cliente em produção.
 
 **Precisa reimportar no n8n**: nada. A alteração é toda do app.
+
+## 31. Evento de WhatsApp só para lead de anúncio, largura das telas de quadro e CRM separado por canal
+
+Três mudanças do app na mesma sessão. A primeira muda o que chega na Meta; as outras duas são de tela.
+
+### 31.1 Evento de etapa do WhatsApp só sai para lead que veio de anúncio
+
+Antes: só o evento `Contact` (primeira mensagem) exigia atribuição — o webhook da Evolution já barrava a mensagem sem `referral_ctwa_clid`. O evento de **mudança de etapa** não exigia nada: um contato que chegou por indicação, por lista antiga ou pelo número no rodapé do site virava conversão na Conversions API assim que alguém o movia no funil. Efeito prático: o Gerenciador de Eventos contava conversão que anúncio nenhum produziu, e a comparação entre o que o anúncio entregou e o que a Meta registrou ficava inflada.
+
+- **`src/lib/capi-politica.ts`** (novo) — `exigeAnuncioWhatsapp(nodeEnv, variavel)`, a decisão pura. Fica em módulo separado de `env.ts` porque `env.ts` começa com `import 'server-only'`, e o executor de testes (`tsx --test`) não consegue carregar esse módulo. Mesmo motivo de `lib/crm.ts` existir ao lado de `lib/db/crm.ts`.
+
+  Sem a variável definida, o padrão é **por ambiente**: liga em produção, desliga em desenvolvimento — quem testa o funil manda mensagem do próprio celular, sem passar por anúncio, e um bloqueio aqui só atrapalharia. Só o texto literal `'true'` liga a regra, então erro de digitação deixa a regra desligada em vez de matar evento legítimo.
+
+- **`META_CAPI_EXIGE_ANUNCIO`** (nova, opcional) — inverte o padrão nos dois sentidos, sem novo deploy: `true` liga também em desenvolvimento, `false` desliga em produção.
+
+- **`leadVeioDeAnuncio`** em `src/lib/db/conversas.ts` — duas evidências valem: o carimbo de referral (`referral_ctwa_clid` ou `referral_ad_id`) em alguma mensagem de `whatsapp_messages`, **ou** os ids `meta_ad_id`/`meta_adset_id`/`meta_campaign_id` em `customers`. A segunda existe para não barrar o lead que entrou por anúncio de formulário e depois migrou para o WhatsApp: ele veio de campanha, só não veio pelo caminho do WhatsApp. Só a consulta de `whatsapp_messages` tem tolerância a lacuna de esquema; a de `customers` não, porque essa tabela existe em todo cliente.
+
+- **A trava mora dentro de `enviaEventoEstagio`** (`src/lib/meta-capi.ts`), não em cada tela que muda etapa — mesmo raciocínio de `requireClientAccess` viver no guard: hoje são duas telas (o quadro do CRM e o painel do lead em Conversas), amanhã são três, e a barreira em um lugar só não tem como ser esquecida na terceira.
+
+- **Evento barrado não vira linha em `meta_capi_events`**: nada foi enviado, e registrar ali daria a entender que foi. O motivo aparece na resposta da ação ("evento não enviado: lead não veio de anúncio") e na auditoria.
+
+### 31.2 Telas de quadro e de tabela usam a janela toda
+
+`.main-content` limita o painel a 1360px, o que é certo para texto corrido — linha longa demais cansa de ler. O quadro do CRM e a tabela de Campanhas não são texto corrido: são colunas de largura fixa (270px no quadro) e 19 colunas na tabela. O limite só empurrava coluna para a rolagem horizontal com tela vazia sobrando dos dois lados.
+
+Modificador `.main-content--larga` em `globals.css`, aplicado pela casca conforme a rota (`TELAS_LARGAS` em `casca-painel.tsx`), ao lado de onde o rótulo da migalha já é decidido. Nada muda nas outras telas.
+
+### 31.3 O CRM virou dois: um em Formulários, outro em WhatsApp
+
+O quadro único juntava os dois funis lado a lado, e eles não se falam: a etapa do lead de formulário é espelho do Kommo e o card **não** arrasta; a do contato de WhatsApp é do painel e arrasta, e arrastar dispara o evento de conversão da etapa. No mesmo quadro, as duas regras ficavam misturadas sem nada dizendo qual valia em qual coluna — quem arrastava um card de formulário descobria a regra ao errar.
+
+- **`/app/[cliente]/formularios/crm`** e **`/app/[cliente]/whatsapp/crm`** — cada uma com seu item no menu, dentro da seção do canal. O CRM saiu de "Geral".
+- **`src/components/tela-crm.tsx`** (novo) — o corpo é um só, parametrizado pela origem; o que muda entre as duas telas é o texto e qual funil aparece. O modal do lead, o filtro de período e a busca são os mesmos.
+- **`montaQuadro` passou a cortar coluna, não só card**: com um quadro por funil, deixar as colunas do outro funil de pé encheria a tela de coluna que nunca receberia nada — e traria junto a regra de arrastar do outro funil.
+- **O seletor de origem saiu do filtro.** A rota já diz o funil; um seletor ali deixaria a tela "CRM — Formulários" mostrando contato de WhatsApp, contra o próprio rótulo.
+- **Rotas antigas continuam de pé**: `/app/[cliente]/crm` redireciona conforme o `?origem=` que era o filtro (sem ele, vai para Formulários), e `/app/[cliente]/formularios/kanban` passou a apontar para `/formularios/crm`. Link antigo, favorito e histórico do navegador continuam funcionando. O link "abrir no CRM" da tela de Conversas passou a apontar direto para o quadro do WhatsApp.
+
+### 31.4 Verificação
+
+- `npx tsc --noEmit` limpo; `npm test` 123/123 (7 casos novos para `exigeAnuncioWhatsapp`, mais os do corte de coluna por funil).
+- No preview: os dois quadros abrem com as colunas do seu próprio funil e nenhuma do outro, a migalha mostra "CRM (Formulários)" e "CRM (WhatsApp)", e os três redirecionamentos antigos caem no lugar certo preservando período, busca e `?lead=`.
+- **O bloqueio do evento não foi testado contra a Meta de verdade** — em desenvolvimento ele nasce desligado de propósito. O que está coberto por teste é a decisão de ligar ou não; o efeito dela é uma linha só dentro de `enviaEventoEstagio`.
+
+**Precisa reimportar no n8n**: nada. As três alterações são do app.

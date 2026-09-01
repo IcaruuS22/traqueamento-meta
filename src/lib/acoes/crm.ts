@@ -105,7 +105,8 @@ export async function acaoMoverLeadCrm(
   });
 
   const base = `/app/${encodeURIComponent(conta.client_db_name)}`;
-  revalidatePath(`${base}/crm`);
+  revalidatePath(`${base}/formularios/crm`);
+  revalidatePath(`${base}/whatsapp/crm`);
   revalidatePath(`${base}/funil`);
   revalidatePath(`${base}/whatsapp/conversas`);
 
@@ -173,7 +174,8 @@ export async function acaoSalvarLeadCrm(
   });
 
   const base = `/app/${encodeURIComponent(conta.client_db_name)}`;
-  revalidatePath(`${base}/crm`);
+  revalidatePath(`${base}/formularios/crm`);
+  revalidatePath(`${base}/whatsapp/crm`);
   revalidatePath(`${base}/funil`);
   revalidatePath(`${base}/whatsapp/conversas`);
 

@@ -63,9 +63,6 @@ function secoesDoCliente(cliente: string): SecaoNav[] {
           icone: IconesNav.metricas,
           canal: 'geral',
         },
-        // O CRM é um só e vive aqui, não dentro de Formulários: ele
-        // junta lead de formulário e contato de WhatsApp no mesmo quadro.
-        { href: `${base}/crm`, rotulo: 'CRM', icone: IconesNav.kanban },
         { href: `${base}/campanhas`, rotulo: 'Campanhas', icone: IconesNav.campanhas },
         {
           href: `${base}/rastreamento`,
@@ -84,6 +81,11 @@ function secoesDoCliente(cliente: string): SecaoNav[] {
           icone: IconesNav.metricas,
           canal: 'form',
         },
+        // São dois CRMs, um por canal, porque são dois funis: a etapa do
+        // lead de formulário é espelho do Kommo e o card não arrasta; a do
+        // contato de WhatsApp é do painel e arrasta. No mesmo quadro, as
+        // duas regras ficavam lado a lado sem nada dizendo qual valia onde.
+        { href: `${base}/formularios/crm`, rotulo: 'CRM', icone: IconesNav.kanban },
         {
           href: `${base}/formularios/config`,
           rotulo: 'Configuração de Eventos',
@@ -104,6 +106,7 @@ function secoesDoCliente(cliente: string): SecaoNav[] {
         // Ordem pedida: o dia a dia é a conversa, então ela vem primeiro.
         // Conexão e cadastro de eventos são configuração, feita uma vez.
         { href: `${base}/whatsapp/conversas`, rotulo: 'Conversas', icone: IconesNav.conversas },
+        { href: `${base}/whatsapp/crm`, rotulo: 'CRM', icone: IconesNav.kanban },
         {
           href: `${base}/visao-geral?channel=whatsapp`,
           rotulo: 'Métricas',
@@ -133,16 +136,16 @@ function secoesDoCliente(cliente: string): SecaoNav[] {
  * do painel.
  *
  * O limite padrão existe para não esticar texto corrido: linha longa
- * demais cansa de ler. O quadro do CRM e a tabela de Campanhas não são
- * texto corrido, são colunas de largura fixa — as do quadro têm 270px, e
- * a tabela tem 19 colunas. Limitar essas duas a 1360px não melhora
+ * demais cansa de ler. Os quadros do CRM e a tabela de Campanhas não
+ * são texto corrido, são colunas de largura fixa — as dos quadros têm
+ * 270px, e a tabela tem 19 colunas. Limitar essas telas a 1360px não melhora
  * leitura nenhuma: só empurra coluna para a rolagem horizontal enquanto
  * sobra tela vazia dos dois lados.
  *
  * A chave é o resto da rota depois do cliente, a mesma que `rotuloDaTela`
  * usa.
  */
-const TELAS_LARGAS = new Set(['crm', 'campanhas']);
+const TELAS_LARGAS = new Set(['formularios/crm', 'whatsapp/crm', 'campanhas']);
 
 function rotuloDaTela(resto: string, canal: string): string {
   switch (resto) {
@@ -155,8 +158,8 @@ function rotuloDaTela(resto: string, canal: string): string {
       return 'Campanhas';
     case 'rastreamento':
       return 'Rastreamento';
-    case 'crm':
-      return 'CRM';
+    case 'formularios/crm':
+      return 'CRM (Formulários)';
     case 'formularios/config':
       return 'Configuração de Eventos';
     case 'formularios/eventos':
@@ -169,6 +172,8 @@ function rotuloDaTela(resto: string, canal: string): string {
       return 'Configuração de Eventos (WhatsApp)';
     case 'whatsapp/conversas':
       return 'Conversas';
+    case 'whatsapp/crm':
+      return 'CRM (WhatsApp)';
     case 'whatsapp/eventos':
       return 'Últimos Eventos (WhatsApp)';
     case 'whatsapp/ia':

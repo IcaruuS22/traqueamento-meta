@@ -172,7 +172,11 @@ export function montaQuadro(
     colunas.push(coluna);
   };
 
-  for (const e of etapasForm) {
+  // `origemFiltrada` corta coluna, não só card: com um quadro por funil,
+  // deixar as colunas do outro funil de pé encheria a tela de coluna
+  // vazia que nunca vai receber nada — e, pior, de coluna com a regra de
+  // arrastar do outro funil.
+  for (const e of origemFiltrada === 'whatsapp' ? [] : etapasForm) {
     const valor = (e.status_id ?? '').trim();
     if (!valor) continue;
     registra({
@@ -185,7 +189,7 @@ export function montaQuadro(
     });
   }
 
-  for (const e of etapasWhatsapp) {
+  for (const e of origemFiltrada === 'form' ? [] : etapasWhatsapp) {
     const valor = (e.estagio ?? '').trim();
     if (!valor) continue;
     registra({

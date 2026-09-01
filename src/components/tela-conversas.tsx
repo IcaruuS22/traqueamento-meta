@@ -854,7 +854,7 @@ export function TelaConversas({
                   Ver rastreio completo
                 </button>
                 <Link
-                  href={`/app/${encodeURIComponent(cliente)}/crm?lead=${thread.lead.customer_id}`}
+                  href={`/app/${encodeURIComponent(cliente)}/whatsapp/crm?lead=${thread.lead.customer_id}`}
                   className="btn btn-secondary btn-sm"
                 >
                   Ver no CRM
