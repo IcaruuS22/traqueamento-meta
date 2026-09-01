@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Alerta } from '@/components/form';
+import { DialogoConfirma } from '@/components/dialogo-confirma';
 
 /**
  * Botões "Atualizar dados da Meta" e "Importar histórico".
@@ -40,6 +41,7 @@ export function BotoesMeta({
   const router = useRouter();
   const [estado, setEstado] = useState<Estado>(null);
   const [acao, setAcao] = useState<'sync' | 'historico' | null>(null);
+  const [confirmaImportacao, setConfirmaImportacao] = useState(false);
   const [pendente, iniciar] = useTransition();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -89,6 +91,18 @@ export function BotoesMeta({
 
   return (
     <div className="acoes-estado">
+      <DialogoConfirma
+        aberto={confirmaImportacao}
+        titulo="Importar 90 dias de métricas?"
+        texto="A importação varre até 90 dias na conta do Meta e pode levar alguns minutos."
+        rotuloConfirma="Importar"
+        onConfirma={() => {
+          setConfirmaImportacao(false);
+          chama('historico');
+        }}
+        onCancela={() => setConfirmaImportacao(false)}
+      />
+
       <button
         type="button"
         onClick={() => chama('sync')}
@@ -103,16 +117,10 @@ export function BotoesMeta({
       {mostrarImportacao ? (
         <button
           type="button"
-          onClick={() => {
-            // Confirmação porque a importação ocupa a conta do Meta por
-            // minutos e reescreve 90 dias de métricas; o painel antigo
-            // também perguntava, com `window.confirm`.
-            const ok = window.confirm(
-              'Importar até 90 dias de métricas do Meta Ads para este cliente? ' +
-                'A importação pode levar alguns minutos.',
-            );
-            if (ok) chama('historico');
-          }}
+          // Confirmação porque a importação ocupa a conta do Meta por
+          // minutos e reescreve 90 dias de métricas; o painel antigo
+          // também perguntava, com `window.confirm`.
+          onClick={() => setConfirmaImportacao(true)}
           disabled={ocupado}
           aria-busy={ocupado && acao === 'historico'}
           className="btn-ghost btn-largura-fixa disabled:opacity-50"

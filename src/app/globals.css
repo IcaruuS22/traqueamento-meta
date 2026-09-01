@@ -2414,6 +2414,34 @@ select.filtro-campo {
   padding: 18px;
   overflow-y: auto;
 }
+
+/* Confirmação (DialogoConfirma). Card estreito porque o conteúdo é uma
+   pergunta de duas linhas: com os 640px do modal de rastreio a frase
+   ficaria perdida no meio de uma faixa vazia. */
+.dialogo-confirma {
+  max-width: 420px;
+}
+.dialogo-confirma-corpo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px 20px 4px;
+}
+.dialogo-confirma-acoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 20px 20px;
+}
+/* No tema escuro o fundo do botão secundário é o mesmo do card, e sem
+   contorno o "Cancelar" desaparece — justamente a saída de quem não quer
+   confirmar. */
+.dialogo-confirma-acoes .btn-secondary {
+  border: 1px solid var(--border-default);
+}
+.dialogo-confirma-acoes .btn-secondary:hover {
+  border-color: var(--border-strong);
+}
 /* Bolinha de informacao ao lado de um rotulo.
    Existe porque o `title` do navegador demora cerca de um segundo pra
    aparecer, some sozinho e nao abre no toque -- e o texto que ela guarda

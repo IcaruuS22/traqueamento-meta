@@ -3,10 +3,12 @@ import test from 'node:test';
 
 import { nomeParaExibir, telefoneParaExibir } from '../src/lib/exibicao';
 
-test('nome e sobrenome saem em maiúscula', () => {
-  assert.equal(nomeParaExibir('Icaro', 'Costa'), 'ICARO COSTA');
-  assert.equal(nomeParaExibir('joão', 'gonçalves'), 'JOÃO GONÇALVES');
-  assert.equal(nomeParaExibir('Ana', null), 'ANA');
+test('só a primeira letra de cada nome fica maiúscula', () => {
+  assert.equal(nomeParaExibir('Icaro', 'Costa'), 'Icaro Costa');
+  assert.equal(nomeParaExibir('joão', 'gonçalves'), 'João Gonçalves');
+  assert.equal(nomeParaExibir('MARIA DA SILVA', 'SOUZA'), 'Maria da Silva Souza');
+  assert.equal(nomeParaExibir('ana-maria', "d'ávila"), "Ana-Maria D'Ávila");
+  assert.equal(nomeParaExibir('Ana', null), 'Ana');
   assert.equal(nomeParaExibir(null, null), '');
   assert.equal(nomeParaExibir('  ', ' '), '');
 });

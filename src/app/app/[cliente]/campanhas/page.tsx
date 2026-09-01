@@ -114,7 +114,7 @@ export default async function PaginaCampanhas({
       ) : null}
 
       <p className="mb-4 text-body-small text-tertiary">
-        {rotuloPeriodo(periodo)} · campanhas pausadas sem gasto no período ficam de fora
+        {rotuloPeriodo(periodo)} · ativas e pausadas, ordenadas pelas ativas primeiro
       </p>
 
       <Card>

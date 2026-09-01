@@ -9,7 +9,16 @@
  */
 
 /**
- * Nome e sobrenome como o painel mostra: tudo em maiúscula.
+ * Palavras que ficam em minúscula no meio do nome. "Maria da Silva", e
+ * não "Maria Da Silva" — a preposição não é nome próprio. No começo do
+ * nome ela é maiúscula, porque aí é a primeira letra.
+ */
+const PARTICULAS = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'di', 'du', 'del', 'van', 'von']);
+
+/**
+ * Nome e sobrenome como o painel mostra: primeira letra de cada nome em
+ * maiúscula, o resto em minúscula. Serve tanto para o que chega todo em
+ * caixa alta do CRM quanto para o que chega todo em minúscula.
  *
  * Devolve string vazia quando não há nome, para quem chama decidir o que
  * colocar no lugar — cada tela tem uma alternativa diferente (e-mail,
@@ -19,7 +28,20 @@ export function nomeParaExibir(
   primeiro: string | null | undefined,
   ultimo: string | null | undefined,
 ): string {
-  return `${primeiro ?? ''} ${ultimo ?? ''}`.trim().toLocaleUpperCase('pt-BR');
+  const bruto = `${primeiro ?? ''} ${ultimo ?? ''}`.trim();
+  if (!bruto) return '';
+  return bruto
+    .split(/\s+/)
+    .map((palavra, i) => {
+      const minuscula = palavra.toLocaleLowerCase('pt-BR');
+      if (i > 0 && PARTICULAS.has(minuscula)) return minuscula;
+      // Nome composto por hífen tem duas iniciais ("Ana-Maria"), e a
+      // primeira letra pode não ser a primeira posição ("D'Ávila").
+      return minuscula.replace(/(^|[-'’])(\p{L})/gu, (_, antes, letra: string) =>
+        `${antes}${letra.toLocaleUpperCase('pt-BR')}`,
+      );
+    })
+    .join(' ');
 }
 
 /**

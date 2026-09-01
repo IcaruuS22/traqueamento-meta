@@ -13,6 +13,7 @@ import {
 import { acaoAlterarStatus } from '@/lib/acoes/campanhas';
 import { Icones } from '@/components/icones';
 import { Alerta } from '@/components/form';
+import { DialogoConfirma } from '@/components/dialogo-confirma';
 import { fmtBRL, fmtInt, fmtDec, fmtPct, fmtRoas, fmtRoi } from '@/lib/format';
 
 /**
@@ -328,18 +329,37 @@ export function TabelaCampanhas({
   // mudar.
   const [statusLocal, setStatusLocal] = useState<Record<string, string>>({});
   const [mudando, setMudando] = useState<string | null>(null);
+  // A confirmação da chave liga/desliga fica em estado, e não em
+  // `window.confirm`, porque o diálogo do navegador abre no topo da
+  // janela, fora do lugar onde a pessoa está olhando, e com o domínio
+  // antes da pergunta.
+  const [confirmacao, setConfirmacao] = useState<{
+    chave: string;
+    nivel: NivelHierarquia;
+    id: string;
+    proximo: NonNullable<ReturnType<typeof proximoStatus>>;
+  } | null>(null);
   const [, iniciaMudanca] = useTransition();
 
   function alteraStatus(chave: string, nivel: NivelHierarquia, id: string, atual: string | null) {
     const proximo = proximoStatus(atual);
     if (!proximo || mudando) return;
 
-    const pergunta =
-      proximo === 'PAUSED'
-        ? `Pausar ${ROTULO_NIVEL[nivel].toLowerCase()} na Meta? A entrega para imediatamente.`
-        : `Ativar ${ROTULO_NIVEL[nivel].toLowerCase()} na Meta? A entrega recomeça e a conta volta a gastar.`;
-    if (!window.confirm(pergunta)) return;
+    setConfirmacao({ chave, nivel, id, proximo });
+  }
 
+  function aplicaStatus({
+    chave,
+    nivel,
+    id,
+    proximo,
+  }: {
+    chave: string;
+    nivel: NivelHierarquia;
+    id: string;
+    proximo: NonNullable<ReturnType<typeof proximoStatus>>;
+  }) {
+    setConfirmacao(null);
     setErro(null);
     setAviso(null);
     setMudando(chave);
@@ -455,6 +475,24 @@ export function TabelaCampanhas({
 
   return (
     <div className="space-y-3">
+      <DialogoConfirma
+        aberto={confirmacao !== null}
+        titulo={
+          confirmacao?.proximo === 'PAUSED'
+            ? `Pausar ${ROTULO_NIVEL[confirmacao.nivel].toLowerCase()} na Meta?`
+            : `Ativar ${confirmacao ? ROTULO_NIVEL[confirmacao.nivel].toLowerCase() : ''} na Meta?`
+        }
+        texto={
+          confirmacao?.proximo === 'PAUSED'
+            ? 'A entrega para imediatamente, e o gasto também.'
+            : 'A entrega recomeça e a conta volta a gastar.'
+        }
+        rotuloConfirma={confirmacao?.proximo === 'PAUSED' ? 'Pausar' : 'Ativar'}
+        perigo={confirmacao?.proximo === 'PAUSED'}
+        onConfirma={() => confirmacao && aplicaStatus(confirmacao)}
+        onCancela={() => setConfirmacao(null)}
+      />
+
       {erro ? <Alerta tipo="erro">{erro}</Alerta> : null}
       {aviso ? <Alerta tipo="sucesso">{aviso}</Alerta> : null}
 

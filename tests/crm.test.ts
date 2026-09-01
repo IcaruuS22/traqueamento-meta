@@ -242,7 +242,7 @@ describe('nomeDoCartao', () => {
   test('cai para e-mail e depois telefone antes de desistir', () => {
     assert.equal(
       nomeDoCartao({ first_name: 'Ana', last_name: 'Silva', email: 'a@b.c', phone: '11' }),
-      'ANA SILVA',
+      'Ana Silva',
     );
     assert.equal(
       nomeDoCartao({ first_name: null, last_name: null, email: 'a@b.c', phone: '11' }),
