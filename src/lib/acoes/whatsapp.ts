@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { requireClientAccess } from '@/lib/auth/guard';
 import { ACOES, registraAuditoria } from '@/lib/audit';
 import { buscaConfigWhatsapp, salvaConfigWhatsapp } from '@/lib/db/whatsapp';
+import { normalizaModoCapi } from '@/lib/capi-politica';
 import type { EstadoFormulario } from '@/lib/auth/actions';
 
 /**
@@ -25,6 +26,10 @@ const schema = z.object({
   cloud_waba_id: z.string().trim().max(64).optional(),
   cloud_access_token: z.string().trim().max(512).optional(),
   meta_test_event_code: z.string().trim().max(64).optional(),
+  capi_modo: z.string().trim().max(16).optional(),
+  capi_dataset_id: z.string().trim().max(64).optional(),
+  capi_test_event_code: z.string().trim().max(64).optional(),
+  capi_access_token: z.string().trim().max(512).optional(),
 });
 
 export async function acaoSalvarConexaoWhatsapp(
@@ -50,12 +55,44 @@ export async function acaoSalvarConexaoWhatsapp(
     return { erro: 'Token de acesso obrigatório na primeira configuração.' };
   }
 
+  // O modo passa pelo normalizador em vez de um enum do zod: valor
+  // desconhecido vira 'teste', e não um erro de formulário. Recusar o
+  // salvamento inteiro por causa do select deixaria a conexão no modo
+  // anterior, que pode ser 'producao'.
+  const modo = normalizaModoCapi(dados.capi_modo);
+  const datasetMensagens = dados.capi_dataset_id || null;
+
+  if (modo === 'producao' && !datasetMensagens) {
+    return {
+      erro:
+        'Para enviar em produção, informe o dataset do pixel de mensagens. ' +
+        'Os eventos de WhatsApp nunca usam o pixel dos formulários.',
+    };
+  }
+  if (modo === 'teste' && datasetMensagens && !dados.capi_test_event_code) {
+    return {
+      erro:
+        'No modo teste o Test Event Code do WhatsApp é obrigatório: sem ele a ' +
+        'Meta trata o evento como conversão real.',
+    };
+  }
+
   try {
     await salvaConfigWhatsapp(conta.client_db_name, {
       cloud_phone_number_id: dados.cloud_phone_number_id,
       cloud_waba_id: dados.cloud_waba_id ?? null,
       cloud_access_token: token,
       meta_test_event_code: dados.meta_test_event_code ?? null,
+      // Sem as colunas no catálogo não há onde gravar; a tela já mostra o
+      // aviso da migração no lugar dos campos.
+      capi: atual.capi.disponivel
+        ? {
+            modo,
+            dataset_id: datasetMensagens,
+            test_event_code: dados.capi_test_event_code || null,
+            access_token: dados.capi_access_token ?? '',
+          }
+        : undefined,
     });
   } catch (erro) {
     console.error('[whatsapp] falha ao salvar conexão:', erro);
@@ -71,8 +108,11 @@ export async function acaoSalvarConexaoWhatsapp(
       cloud_phone_number_id: dados.cloud_phone_number_id,
       cloud_waba_id: dados.cloud_waba_id || null,
       meta_test_event_code: dados.meta_test_event_code || null,
-      // O valor do token não entra no log de jeito nenhum.
+      capi_modo: atual.capi.disponivel ? modo : null,
+      capi_dataset_id: datasetMensagens,
+      // Nenhum dos dois tokens entra no log de jeito nenhum.
       token_alterado: Boolean(token),
+      capi_token_alterado: Boolean(dados.capi_access_token),
     },
   });
 

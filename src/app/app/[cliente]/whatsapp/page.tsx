@@ -50,6 +50,7 @@ export default async function PaginaWhatsapp({
           cloud_waba_id: config.cloud_waba_id,
           meta_test_event_code: config.meta_test_event_code,
           token_cadastrado: config.token_cadastrado,
+          capi: config.capi,
         }}
       />
       <p className="mt-4 text-body-small text-tertiary">

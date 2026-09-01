@@ -1,6 +1,7 @@
 import 'server-only';
 import { queryOne, execute, transacao, LacunasDeEsquema } from '@/lib/db/pool';
 import { sanitizaNomeBanco } from '@/lib/db/cliente';
+import { normalizaModoCapi, type ModoCapiWhatsapp } from '@/lib/capi-politica';
 
 /**
  * Configuração do WhatsApp Cloud API de um cliente — porte de
@@ -42,6 +43,8 @@ export type ConfigWhatsapp = {
   token_cadastrado: boolean;
   /** Vem de `ad_accounts`, não de `whatsapp_accounts`. */
   meta_test_event_code: string | null;
+  /** Pixel de mensagens: destino dos eventos de WhatsApp. */
+  capi: ConfigCapiWhatsapp;
   /** Conexão ativa. `cloud` para tudo que existia antes da Evolution. */
   provider: ProvedorWhatsapp;
   evolution: ConfigEvolution;
@@ -62,6 +65,31 @@ export type ConfigWhatsapp = {
  * existe. O que ela precisa exibir é o endereço do servidor e o estado
  * da instância, e nada disso é segredo.
  */
+/**
+ * Destino dos eventos de WhatsApp, separado do pixel dos formulários.
+ *
+ * `disponivel` é falso enquanto `migracao_whatsapp_pixel_mensagens.sql`
+ * não rodou naquele banco. Nesse estado nenhum evento sai — ver
+ * `buscaCredenciaisCapiWhatsapp` —, e a tela mostra o que falta em vez
+ * de um formulário que gravaria em coluna inexistente.
+ */
+export type ConfigCapiWhatsapp = {
+  modo: ModoCapiWhatsapp;
+  dataset_id: string | null;
+  test_event_code: string | null;
+  /** Nunca o valor — só se existe. */
+  token_cadastrado: boolean;
+  disponivel: boolean;
+};
+
+const CAPI_INDISPONIVEL: ConfigCapiWhatsapp = {
+  modo: 'teste',
+  dataset_id: null,
+  test_event_code: null,
+  token_cadastrado: false,
+  disponivel: false,
+};
+
 export type ConfigEvolution = {
   base_url: string | null;
   instancia: string | null;
@@ -91,6 +119,13 @@ type LinhaConta = {
   tem_token: number;
 };
 
+type LinhaCapi = {
+  capi_modo: string | null;
+  capi_dataset_id: string | null;
+  capi_test_event_code: string | null;
+  tem_capi_token: number;
+};
+
 type LinhaEvolution = {
   provider: string | null;
   evolution_base_url: string | null;
@@ -112,7 +147,11 @@ export async function buscaConfigWhatsapp(clientDb: string): Promise<ConfigWhats
   // Evolution pode ser interativo, sem confundir com uma lacuna vinda de
   // outra tabela.
   const lacunasEvolution = new LacunasDeEsquema();
-  const [conta, adAccount, evolucao] = await Promise.all([
+  // Pelo mesmo motivo, as colunas do pixel de mensagens saem em consulta
+  // e coletor próprios: quem ainda não rodou
+  // `migracao_whatsapp_pixel_mensagens.sql` continua vendo a conexão.
+  const lacunasCapi = new LacunasDeEsquema();
+  const [conta, adAccount, evolucao, capi] = await Promise.all([
     lacunas.ou(
       queryOne<LinhaConta>(
         `SELECT cloud_phone_number_id, cloud_waba_id, status, updated_at,
@@ -146,6 +185,17 @@ export async function buscaConfigWhatsapp(clientDb: string): Promise<ConfigWhats
       ),
       null,
     ),
+    lacunasCapi.ou(
+      queryOne<LinhaCapi>(
+        `SELECT capi_modo, capi_dataset_id, capi_test_event_code,
+                (capi_access_token IS NOT NULL AND capi_access_token <> '') AS tem_capi_token
+           FROM trakeamento_controle.whatsapp_accounts
+          WHERE client_db_name = ?
+          LIMIT 1`,
+        [nome],
+      ),
+      null,
+    ),
   ]);
 
   const provider: ProvedorWhatsapp = evolucao?.provider === 'evolution' ? 'evolution' : 'cloud';
@@ -161,6 +211,16 @@ export async function buscaConfigWhatsapp(clientDb: string): Promise<ConfigWhats
     updated_at: conta?.updated_at ?? null,
     token_cadastrado: Boolean(conta?.tem_token),
     meta_test_event_code: adAccount?.meta_test_event_code ?? null,
+    capi:
+      lacunasCapi.lista().length > 0
+        ? CAPI_INDISPONIVEL
+        : {
+            modo: normalizaModoCapi(capi?.capi_modo),
+            dataset_id: capi?.capi_dataset_id ?? null,
+            test_event_code: capi?.capi_test_event_code ?? null,
+            token_cadastrado: Boolean(capi?.tem_capi_token),
+            disponivel: true,
+          },
     provider,
     evolution: evolucao
       ? {
@@ -173,7 +233,11 @@ export async function buscaConfigWhatsapp(clientDb: string): Promise<ConfigWhats
         }
       : EVOLUTION_VAZIA,
     evolution_disponivel: lacunasEvolution.lista().length === 0,
-    lacunas_de_esquema: [...lacunas.lista(), ...lacunasEvolution.lista()].sort(),
+    lacunas_de_esquema: [
+      ...lacunas.lista(),
+      ...lacunasEvolution.lista(),
+      ...lacunasCapi.lista(),
+    ].sort(),
   };
 }
 
@@ -183,6 +247,16 @@ export type EntradaConfigWhatsapp = {
   /** Vazio significa "não alterar" — nunca "apagar". */
   cloud_access_token: string;
   meta_test_event_code: string | null;
+  /** Ausente quando a migração do pixel de mensagens ainda não rodou. */
+  capi?: EntradaCapiWhatsapp;
+};
+
+export type EntradaCapiWhatsapp = {
+  modo: ModoCapiWhatsapp;
+  dataset_id: string | null;
+  test_event_code: string | null;
+  /** Mesma regra do token da Cloud API: vazio é "manter". */
+  access_token: string;
 };
 
 /**
@@ -235,7 +309,79 @@ export async function salvaConfigWhatsapp(
         WHERE client_db_name = ?`,
       [testCode, nome],
     );
+
+    // Fora da transação não dá: modo e dataset são o par que decide para
+    // onde a conversão vai. Gravar "producao" e perder o dataset mandaria
+    // evento valendo para lugar nenhum, ou pior, para o dataset antigo.
+    if (entrada.capi) {
+      await conn.query(
+        `UPDATE trakeamento_controle.whatsapp_accounts
+            SET capi_modo = ?,
+                capi_dataset_id = ?,
+                capi_test_event_code = ?,
+                capi_access_token = COALESCE(NULLIF(?, ''), capi_access_token)
+          WHERE client_db_name = ?`,
+        [
+          entrada.capi.modo,
+          entrada.capi.dataset_id,
+          entrada.capi.test_event_code,
+          entrada.capi.access_token,
+          nome,
+        ],
+      );
+    }
   });
+}
+
+/**
+ * Credenciais do pixel de mensagens, para quem vai enviar o evento.
+ *
+ * Só para uso interno do servidor: devolve o token em texto puro e
+ * nenhuma rota, ação ou log pode entregar este objeto inteiro.
+ *
+ * Banco sem a migração devolve `null`, e `meta-capi.ts` trata isso como
+ * "não envia". É fail-closed de propósito: a alternativa — cair no
+ * dataset dos formulários enquanto a coluna não existe — é exatamente o
+ * comportamento que esta mudança existe para acabar.
+ *
+ * `access_token` vazio cai no token de `ad_accounts`, que serve quando
+ * os dois datasets estão na mesma conta de negócios. A queda é só do
+ * token; o dataset nunca cai.
+ */
+export async function buscaCredenciaisCapiWhatsapp(clientDb: string): Promise<{
+  modo: ModoCapiWhatsapp;
+  dataset_id: string | null;
+  test_event_code: string | null;
+  access_token: string | null;
+} | null> {
+  const nome = sanitizaNomeBanco(clientDb);
+  if (!nome) return null;
+
+  const lacunas = new LacunasDeEsquema();
+  const linha = await lacunas.ou(
+    queryOne<{
+      capi_modo: string | null;
+      capi_dataset_id: string | null;
+      capi_test_event_code: string | null;
+      capi_access_token: string | null;
+    }>(
+      `SELECT capi_modo, capi_dataset_id, capi_test_event_code, capi_access_token
+         FROM trakeamento_controle.whatsapp_accounts
+        WHERE client_db_name = ?
+        LIMIT 1`,
+      [nome],
+    ),
+    null,
+  );
+
+  if (lacunas.lista().length > 0) return null;
+
+  return {
+    modo: normalizaModoCapi(linha?.capi_modo),
+    dataset_id: linha?.capi_dataset_id || null,
+    test_event_code: linha?.capi_test_event_code || null,
+    access_token: linha?.capi_access_token || null,
+  };
 }
 
 // -------------------------------------------------------------------

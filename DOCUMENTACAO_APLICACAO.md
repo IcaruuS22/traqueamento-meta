@@ -802,3 +802,83 @@ Só existia "Excluir conversa", que apaga as mensagens e deixa o contato de pé 
 - **Não há lixeira.** As mensagens também não voltam pelo webhook: o `wa_message_id` reenviado é descartado pelo `INSERT IGNORE`. Por isso as duas telas pedem confirmação antes de chamar.
 
 Verificação: `npx tsc --noEmit` limpo, `npm test` 144/144 e `next build` sem erro. Não verificado no navegador: a tela exige sessão autenticada contra dados de produção.
+
+---
+
+## 35. Pixel de mensagens: eventos de WhatsApp saem do pixel dos formulários
+
+### O problema
+
+Todo evento de WhatsApp saía pelo dataset do cliente em
+`ad_accounts.meta_pixel_dataset_id` — o mesmo pixel dos leads de
+formulário, porque era o único que existia. Na prática, conversa de
+WhatsApp virava conversão no pixel do site, misturada com os leads de
+Instant Form. E o `meta_test_event_code`, por ser da mesma linha, não
+dava para ligar em um funil sem marcar o outro como teste junto.
+
+Vale para os dois caminhos: o app (webhook da Evolution e mudança de
+etapa nas telas de Conversas e CRM) e o workflow n8n da Cloud API.
+
+### O que mudou
+
+`whatsapp_accounts` passa a ter destino próprio:
+
+| Coluna | Papel |
+|---|---|
+| `capi_modo` | `desligado` \| `teste` \| `producao`. Padrão `teste`. |
+| `capi_dataset_id` | Dataset do pixel de mensagens. **Sem ele nada sai.** |
+| `capi_access_token` | Token da CAPI desse dataset. Vazio cai no token de `ad_accounts`. |
+| `capi_test_event_code` | Código de teste só do WhatsApp. |
+
+Migração: `WhatsApp/migracao_whatsapp_pixel_mensagens.sql`, no banco
+central `trakeamento_controle`.
+
+A decisão está em `decideEnvioCapiWhatsapp`, em `src/lib/capi-politica.ts`
+— função pura, com teste. Três regras:
+
+- `desligado` não envia;
+- **sem `capi_dataset_id` não envia, em modo nenhum.** Não existe queda
+  para o dataset dos formulários: essa queda é o bug que a mudança
+  desfaz;
+- `teste` sem `capi_test_event_code` não envia, porque a Meta trataria o
+  evento como real — "teste sem código" entregaria exatamente o que o
+  modo promete evitar.
+
+Só o **token** ainda cai para `ad_accounts.meta_access_token`: um mesmo
+token de System User atende os dois datasets quando estão na mesma conta
+de negócios, e obrigar a recadastrá-lo não protegeria nada. O dataset
+nunca cai.
+
+### Fail-closed antes da migração
+
+Banco que ainda não rodou o SQL não tem as colunas.
+`buscaCredenciaisCapiWhatsapp` devolve `null` nesse caso e nenhum evento
+de WhatsApp é enviado — a alternativa, continuar caindo no dataset dos
+formulários enquanto a coluna não existe, é o comportamento que se quer
+acabar. O mesmo vale no n8n: sem as colunas, `Decide Disparo CAPI` não
+libera.
+
+### Onde se configura
+
+Tela **Conexão do WhatsApp**, bloco "Pixel de mensagens (Conversions
+API)". O `Test Event Code` que já existia acima continua na tela, mas
+agora só vale para os eventos de formulário enviados pelo n8n — a dica do
+campo diz isso.
+
+O modo nasce em `teste`. Depois da migração nenhum evento de WhatsApp
+conta como conversão real até alguém escolher `producao` na tela.
+Intencional: o comportamento anterior mandava para o pixel errado, e
+voltar a mandar sozinho seria repetir o problema com outro destino.
+
+### O que ainda é do usuário
+
+- Rodar `migracao_whatsapp_pixel_mensagens.sql` nos bancos centrais.
+- Criar o pixel/dataset de mensagens no Gerenciador de Eventos e cadastrar
+  o ID na tela de Conexão.
+- Reimportar `WhatsApp/WhatsApp Cloud API - Webhook.json` no n8n, se o
+  cliente usa a conexão Cloud API.
+
+Verificação: `tsc --noEmit` limpo, 151/151 testes, `next build` limpo,
+`node build_whatsapp_cloud_workflow.js` regenerou o JSON com 33 nós. Não
+verificado em navegador — as telas exigem sessão autenticada contra dados
+reais de produção.

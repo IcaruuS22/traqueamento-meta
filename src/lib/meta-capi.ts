@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import type { BancoCliente } from '@/lib/db/cliente';
 import { buscaCredenciaisCliente } from '@/lib/db/cliente';
 import { leadVeioDeAnuncio } from '@/lib/db/conversas';
+import { buscaCredenciaisCapiWhatsapp } from '@/lib/db/whatsapp';
+import { decideEnvioCapiWhatsapp } from '@/lib/capi-politica';
 import { env } from '@/lib/env';
 
 /**
@@ -29,6 +31,50 @@ export const VERSAO_GRAPH_CAPI = 'v25.0';
 export const VERSAO_GRAPH_CLOUD = 'v20.0';
 
 const TIMEOUT_MS = 15_000;
+
+/**
+ * Para onde o evento de WhatsApp vai, e se vai.
+ *
+ * Todo evento que sai daqui é de WhatsApp — os leads de formulário são
+ * enviados pelo n8n, não por este app —, então o destino é sempre o
+ * dataset de mensagens em `whatsapp_accounts`, nunca
+ * `ad_accounts.meta_pixel_dataset_id`. Antes ele caia nesse último por
+ * não haver outro, e conversa de WhatsApp virava conversão no pixel do
+ * site, misturada com os leads de formulário.
+ *
+ * O token é a única coisa que ainda cai para `ad_accounts`: um mesmo
+ * token de System User atende os dois datasets quando eles estão na
+ * mesma conta de negócios, e obrigar a recadastrá-lo não protegeria
+ * nada. O dataset nunca cai.
+ */
+type Destino =
+  | { ok: true; dataset_id: string; access_token: string; test_event_code: string | null }
+  | { ok: false; motivo: string };
+
+async function destinoWhatsapp(clientDb: string): Promise<Destino> {
+  const capi = await buscaCredenciaisCapiWhatsapp(clientDb);
+  if (!capi) {
+    return {
+      ok: false,
+      motivo:
+        'catálogo sem as colunas do pixel de mensagens — rode ' +
+        'migracao_whatsapp_pixel_mensagens.sql',
+    };
+  }
+
+  const decisao = decideEnvioCapiWhatsapp(capi);
+  if (!decisao.envia) return { ok: false, motivo: decisao.motivo };
+
+  const token = capi.access_token || (await buscaCredenciaisCliente(clientDb))?.meta_access_token;
+  if (!token) return { ok: false, motivo: 'sem token de acesso para a CAPI' };
+
+  return {
+    ok: true,
+    dataset_id: capi.dataset_id as string,
+    access_token: token,
+    test_event_code: decisao.test_event_code,
+  };
+}
 
 export type EventoEstagio = {
   customerId: number;
@@ -82,10 +128,8 @@ export async function enviaEventoEstagio(
     return { enviado: false, motivo: 'lead não veio de anúncio' };
   }
 
-  const credenciais = await buscaCredenciaisCliente(clientDb);
-  if (!credenciais?.meta_pixel_dataset_id || !credenciais.meta_access_token) {
-    return { enviado: false, motivo: 'cliente sem dataset ou token da Meta' };
-  }
+  const destino = await destinoWhatsapp(clientDb);
+  if (!destino.ok) return { enviado: false, motivo: destino.motivo };
 
   const eventTime = Math.floor(Date.now() / 1000);
   const eventId = `whatsapp_estagio_${evento.customerId}_${evento.estagio}_${Date.now()}`;
@@ -108,14 +152,14 @@ export async function enviaEventoEstagio(
       },
     ],
   };
-  if (credenciais.meta_test_event_code) {
-    payload.test_event_code = credenciais.meta_test_event_code;
+  if (destino.test_event_code) {
+    payload.test_event_code = destino.test_event_code;
   }
 
   const url = new URL(
-    `https://graph.facebook.com/${VERSAO_GRAPH_CAPI}/${credenciais.meta_pixel_dataset_id}/events`,
+    `https://graph.facebook.com/${VERSAO_GRAPH_CAPI}/${destino.dataset_id}/events`,
   );
-  url.searchParams.set('access_token', credenciais.meta_access_token);
+  url.searchParams.set('access_token', destino.access_token);
 
   let resposta: unknown;
   let erro: string | null = null;
@@ -180,10 +224,8 @@ export async function enviaEventoContatoWhatsapp(
   db: BancoCliente,
   evento: EventoContatoWhatsapp,
 ): Promise<ResultadoCapi> {
-  const credenciais = await buscaCredenciaisCliente(clientDb);
-  if (!credenciais?.meta_pixel_dataset_id || !credenciais.meta_access_token) {
-    return { enviado: false, motivo: 'cliente sem dataset ou token da Meta' };
-  }
+  const destino = await destinoWhatsapp(clientDb);
+  if (!destino.ok) return { enviado: false, motivo: destino.motivo };
 
   const eventTime = Math.floor(Date.now() / 1000);
   const eventId = `whatsapp_contact_${evento.wa_message_id}`;
@@ -202,14 +244,14 @@ export async function enviaEventoContatoWhatsapp(
   }
 
   const payload: Record<string, unknown> = { data: [dado] };
-  if (credenciais.meta_test_event_code) {
-    payload.test_event_code = credenciais.meta_test_event_code;
+  if (destino.test_event_code) {
+    payload.test_event_code = destino.test_event_code;
   }
 
   const url = new URL(
-    `https://graph.facebook.com/${VERSAO_GRAPH_CAPI}/${credenciais.meta_pixel_dataset_id}/events`,
+    `https://graph.facebook.com/${VERSAO_GRAPH_CAPI}/${destino.dataset_id}/events`,
   );
-  url.searchParams.set('access_token', credenciais.meta_access_token);
+  url.searchParams.set('access_token', destino.access_token);
 
   let resposta: unknown;
   let erro: string | null = null;

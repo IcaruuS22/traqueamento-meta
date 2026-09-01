@@ -455,8 +455,28 @@ connect(codeMontaUpsertConversa.name, mysqlUpsertConversa.name);
 const DECIDE_CAPI_CODE = `const ctwaClid = $('Monta Insert Mensagem').item.json.referral_ctwa_clid || '';
 const jaEnviado = !!$('Monta Insert Mensagem').item.json.whatsapp_contact_capi_sent_at;
 const customerId = $('Monta Insert Mensagem').item.json.customer_id;
-const deveDisparar = (ctwaClid && !jaEnviado && customerId) ? '1' : '0';
-return [{ json: { deve_disparar_flag: deveDisparar, customer_id: customerId } }];
+const info = $('Decide Processamento').item.json;
+
+// Destino: o pixel de MENSAGENS (whatsapp_accounts.capi_*), nunca o
+// dataset dos formularios. Antes o evento saia por
+// ad_accounts.meta_pixel_dataset_id, e conversa virava conversao no
+// pixel do site. Sem dataset de mensagens o evento nao sai -- nao ha
+// queda para o dataset antigo.
+const modo = (info.capi_modo === 'desligado' || info.capi_modo === 'producao') ? info.capi_modo : 'teste';
+const dataset = info.capi_dataset_id || '';
+const codigoTeste = info.capi_test_event_code || '';
+// Modo teste sem codigo enviaria o evento valendo -- exatamente o que o
+// modo promete evitar. Entao nao envia.
+const modoLibera = modo === 'producao' ? !!dataset : (modo === 'teste' && !!dataset && !!codigoTeste);
+
+const deveDisparar = (ctwaClid && !jaEnviado && customerId && modoLibera) ? '1' : '0';
+return [{ json: {
+  deve_disparar_flag: deveDisparar,
+  customer_id: customerId,
+  capi_dataset_id: dataset,
+  capi_access_token: info.capi_access_token || info.meta_access_token || '',
+  capi_test_event_code: modo === 'teste' ? codigoTeste : ''
+} }];
 `;
 const codeDecideCapi = codeNode({ name: "Decide Disparo CAPI", position: [2224, 320], code: DECIDE_CAPI_CODE });
 connect(mysqlUpsertConversa.name, codeDecideCapi.name, { outIndex: 0 });
@@ -478,9 +498,9 @@ connect(codeDecideCapi.name, ifDeveDispararCapi.name);
 // F) Dispara o evento "Contact" para a Meta CAPI
 // (action_source: business_messaging — schema de Business Messaging,
 // distinto do action_source: system_generated usado nos leads de
-// Instant Form. Validar o formato exato na Test Events tool da Meta
-// durante os primeiros testes, por isso o disparo entra sempre com
-// test_event_code enquanto ad_accounts.meta_test_event_code existir.)
+// Instant Form. O destino e o pixel de MENSAGENS -- whatsapp_accounts
+// .capi_dataset_id --, e o modo em capi_modo decide se o evento sai
+// desligado, com test_event_code, ou valendo.)
 // =======================================================
 const cryptoTelefoneWhatsapp = cryptoNode({
   name: "Crypto Telefone WhatsApp",
@@ -517,8 +537,9 @@ if (msg.referral_ad_id) {
   };
 }
 
-if (info.meta_test_event_code) {
-  payload.test_event_code = info.meta_test_event_code;
+const decisao = $('Decide Disparo CAPI').item.json;
+if (decisao.capi_test_event_code) {
+  payload.test_event_code = decisao.capi_test_event_code;
 }
 
 return [{ json: payload }];
@@ -529,8 +550,8 @@ connect(cryptoTelefoneWhatsapp.name, codeMontaPayloadCapi.name);
 const httpEnviaCapi = httpNode({
   name: "Envia Evento CAPI WhatsApp",
   position: [3120, 240],
-  url: "=https://graph.facebook.com/v25.0/{{ $('Decide Processamento').item.json.meta_pixel_dataset_id }}/events",
-  query: [{ name: "access_token", value: "={{ $('Decide Processamento').item.json.meta_access_token }}" }],
+  url: "=https://graph.facebook.com/v25.0/{{ $('Decide Disparo CAPI').item.json.capi_dataset_id }}/events",
+  query: [{ name: "access_token", value: "={{ $('Decide Disparo CAPI').item.json.capi_access_token }}" }],
   jsonBody: "={{ JSON.stringify($json) }}",
   onError: "continueErrorOutput"
 });

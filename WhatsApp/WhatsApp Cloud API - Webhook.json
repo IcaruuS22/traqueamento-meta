@@ -455,7 +455,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctwaClid = $('Monta Insert Mensagem').item.json.referral_ctwa_clid || '';\nconst jaEnviado = !!$('Monta Insert Mensagem').item.json.whatsapp_contact_capi_sent_at;\nconst customerId = $('Monta Insert Mensagem').item.json.customer_id;\nconst deveDisparar = (ctwaClid && !jaEnviado && customerId) ? '1' : '0';\nreturn [{ json: { deve_disparar_flag: deveDisparar, customer_id: customerId } }];\n"
+        "jsCode": "const ctwaClid = $('Monta Insert Mensagem').item.json.referral_ctwa_clid || '';\nconst jaEnviado = !!$('Monta Insert Mensagem').item.json.whatsapp_contact_capi_sent_at;\nconst customerId = $('Monta Insert Mensagem').item.json.customer_id;\nconst info = $('Decide Processamento').item.json;\n\n// Destino: o pixel de MENSAGENS (whatsapp_accounts.capi_*), nunca o\n// dataset dos formularios. Antes o evento saia por\n// ad_accounts.meta_pixel_dataset_id, e conversa virava conversao no\n// pixel do site. Sem dataset de mensagens o evento nao sai -- nao ha\n// queda para o dataset antigo.\nconst modo = (info.capi_modo === 'desligado' || info.capi_modo === 'producao') ? info.capi_modo : 'teste';\nconst dataset = info.capi_dataset_id || '';\nconst codigoTeste = info.capi_test_event_code || '';\n// Modo teste sem codigo enviaria o evento valendo -- exatamente o que o\n// modo promete evitar. Entao nao envia.\nconst modoLibera = modo === 'producao' ? !!dataset : (modo === 'teste' && !!dataset && !!codigoTeste);\n\nconst deveDisparar = (ctwaClid && !jaEnviado && customerId && modoLibera) ? '1' : '0';\nreturn [{ json: {\n  deve_disparar_flag: deveDisparar,\n  customer_id: customerId,\n  capi_dataset_id: dataset,\n  capi_access_token: info.capi_access_token || info.meta_access_token || '',\n  capi_test_event_code: modo === 'teste' ? codigoTeste : ''\n} }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -516,7 +516,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const info = $('Decide Processamento').item.json;\nconst msg = $('Extrai Metadados Cloud API').item.json;\nconst phHash = $('Crypto Telefone WhatsApp').item.json.crypto_ph;\n\nconst payload = {\n  data: [\n    {\n      event_name: 'Contact',\n      event_time: Math.floor(Date.now() / 1000),\n      action_source: 'business_messaging',\n      messaging_channel: 'whatsapp',\n      event_id: 'whatsapp_contact_' + msg.wa_message_id,\n      user_data: {\n        ph: [phHash],\n        ctwa_clid: msg.referral_ctwa_clid\n      }\n    }\n  ]\n};\n\nif (msg.referral_ad_id) {\n  payload.data[0].attribution_data = {\n    ad_id: String(msg.referral_ad_id),\n    attribution_share: 1\n  };\n}\n\nif (info.meta_test_event_code) {\n  payload.test_event_code = info.meta_test_event_code;\n}\n\nreturn [{ json: payload }];\n"
+        "jsCode": "const info = $('Decide Processamento').item.json;\nconst msg = $('Extrai Metadados Cloud API').item.json;\nconst phHash = $('Crypto Telefone WhatsApp').item.json.crypto_ph;\n\nconst payload = {\n  data: [\n    {\n      event_name: 'Contact',\n      event_time: Math.floor(Date.now() / 1000),\n      action_source: 'business_messaging',\n      messaging_channel: 'whatsapp',\n      event_id: 'whatsapp_contact_' + msg.wa_message_id,\n      user_data: {\n        ph: [phHash],\n        ctwa_clid: msg.referral_ctwa_clid\n      }\n    }\n  ]\n};\n\nif (msg.referral_ad_id) {\n  payload.data[0].attribution_data = {\n    ad_id: String(msg.referral_ad_id),\n    attribution_share: 1\n  };\n}\n\nconst decisao = $('Decide Disparo CAPI').item.json;\nif (decisao.capi_test_event_code) {\n  payload.test_event_code = decisao.capi_test_event_code;\n}\n\nreturn [{ json: payload }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -530,13 +530,13 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://graph.facebook.com/v25.0/{{ $('Decide Processamento').item.json.meta_pixel_dataset_id }}/events",
+        "url": "=https://graph.facebook.com/v25.0/{{ $('Decide Disparo CAPI').item.json.capi_dataset_id }}/events",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
             {
               "name": "access_token",
-              "value": "={{ $('Decide Processamento').item.json.meta_access_token }}"
+              "value": "={{ $('Decide Disparo CAPI').item.json.capi_access_token }}"
             }
           ]
         },
