@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { requireClientAccessPagina } from '@/lib/auth/guard';
 import { buscaMetricas, primeiroLeadEm, type Metricas } from '@/lib/db/metricas';
 import { visibilidadeMetricas } from '@/lib/db/prefs';
+import { buscaOrcamentoDoMes } from '@/lib/db/orcamento';
 import {
   resolvePeriodo,
   preencheDias,
@@ -11,6 +12,7 @@ import {
   type Canal,
 } from '@/lib/periodo';
 import { kpisDoEscopo } from '@/lib/kpis';
+import type { Orcamento } from '@/lib/orcamento';
 import {
   Card,
   KpiCard,
@@ -27,6 +29,7 @@ import { ListaLeads } from '@/components/lista-leads';
 import { SeletorMetricas } from '@/components/seletor-metricas';
 import { BotoesMeta } from '@/components/botoes-meta';
 import { ExportarPdf } from '@/components/exportar-pdf';
+import { OrcamentoMensal } from '@/components/orcamento-mensal';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Visão geral — Trakeamento' };
@@ -146,10 +149,13 @@ export default async function PaginaVisaoGeral({
   // entre si, então vão juntas em vez de em série. As métricas ficam
   // resolvidas antes do JSX — o corpo é um Server Component síncrono que só
   // recebe os dados prontos, sem promise cruzando fronteira de componente.
-  const [metricas, visiveis, minimo] = await Promise.all([
+  const [metricas, visiveis, minimo, orcamento] = await Promise.all([
     buscaMetricas(db, periodo),
     visibilidadeMetricas(conta.client_db_name),
     primeiroLeadEm(db),
+    // Sempre do mês corrente, sem olhar o período da tela: o fee é
+    // mensal, e compará-lo com o gasto de sete dias não diria nada.
+    buscaOrcamentoDoMes(conta.client_db_name, db),
   ]);
 
   // Período e canal acompanham a paginação de "Últimos leads"; o resto da
@@ -181,6 +187,7 @@ export default async function PaginaVisaoGeral({
 
       <CorpoMetricas
         metricas={metricas}
+        orcamento={orcamento}
         periodo={periodo}
         visiveis={visiveis}
         cliente={conta.client_db_name}
@@ -199,12 +206,14 @@ export default async function PaginaVisaoGeral({
  */
 function CorpoMetricas({
   metricas,
+  orcamento,
   periodo,
   visiveis,
   cliente,
   qsLeads,
 }: {
   metricas: Metricas;
+  orcamento: Orcamento;
   periodo: ReturnType<typeof resolvePeriodo>;
   visiveis: Map<string, boolean>;
   cliente: string;
@@ -253,6 +262,8 @@ function CorpoMetricas({
           <GraficoDiario serie={agrupaSerie(serie)} />
         </Card>
       </div>
+
+      <OrcamentoMensal orcamento={orcamento} />
 
       <Card titulo="Tempo médio entre etapas" className="mt-4">
         <TempoEntreEtapas itens={metricas.tempo_medio_entre_etapas} />

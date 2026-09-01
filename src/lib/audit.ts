@@ -34,6 +34,7 @@ export const ACOES = {
   EVENTO_MAPEAMENTO_EXCLUIDO: 'evento_mapeamento_excluido',
   METRICAS_PREFS_SALVAS: 'metricas_prefs_salvas',
   CLIENTE_CRIADO: 'cliente_criado',
+  CLIENTE_FEE_ALTERADO: 'cliente_fee_alterado',
   CLIENTE_EXCLUIDO: 'cliente_excluido',
   SYNC_DISPARADA: 'sync_disparada',
   BACKFILL_DISPARADO: 'backfill_disparado',

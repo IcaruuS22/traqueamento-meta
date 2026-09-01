@@ -12,6 +12,8 @@
  * senão a Evolution reenvia a mesma notificação em laço.
  */
 
+import { normalizaTelefone } from '@/lib/telefone';
+
 /** Tipos que a tela de conversas já sabe rotular (`TIPO_MIDIA_LABEL`). */
 const TIPOS_POR_CHAVE: Record<string, string> = {
   conversation: 'text',
@@ -215,14 +217,18 @@ function extraiMidia(
   return null;
 }
 
-/** Telefone como `whatsapp_messages.phone` já guarda: só dígitos. */
+/**
+ * Telefone como `whatsapp_messages.phone` já guarda: só dígitos, com o
+ * 55 na frente — o mesmo tratamento que o fluxo do n8n aplica, via
+ * `normalizaTelefone`.
+ */
 export function telefoneDoJid(jid: unknown): string | null {
   if (typeof jid !== 'string' || !jid) return null;
   // A Evolution manda `5511999999999@s.whatsapp.net`. Grupos vêm com
   // `@g.us` e status com `status@broadcast` — nenhum dos dois é conversa
   // de lead, e quem chama descarta pelo `null`.
   if (!jid.includes('@s.whatsapp.net')) return null;
-  const digitos = jid.split('@')[0]?.split(':')[0]?.replace(/\D/g, '') ?? '';
+  const digitos = normalizaTelefone(jid.split('@')[0]?.split(':')[0]);
   return digitos || null;
 }
 
@@ -278,4 +284,20 @@ export function leEstadoConexao(data: unknown): string | null {
   const d = data as { state?: unknown; connection?: unknown } | null;
   const estado = texto(d?.state) ?? texto(d?.connection);
   return estado;
+}
+
+/**
+ * Número do aparelho conectado, quando o evento de conexão o traz.
+ *
+ * Nem toda versão da Evolution manda — por isso a tela de conexão também
+ * o busca em `fetchInstances`. Aproveitar o que vem no webhook faz o
+ * número chegar ao catálogo sem depender de alguém abrir a tela, e é
+ * dele que sai o filtro que impede o próprio número de virar lead.
+ */
+export function leNumeroConexao(data: unknown): string | null {
+  const d = data as { wuid?: unknown; ownerJid?: unknown; owner?: unknown } | null;
+  const jid = texto(d?.wuid) ?? texto(d?.ownerJid) ?? texto(d?.owner);
+  if (!jid) return null;
+  const digitos = normalizaTelefone(jid.split('@')[0]?.split(':')[0]);
+  return digitos || null;
 }

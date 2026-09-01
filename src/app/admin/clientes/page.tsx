@@ -2,8 +2,10 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requireAdmin } from '@/lib/auth/guard';
 import { contaVinculosPorCliente, listaAdAccounts } from '@/lib/db/cliente';
+import { leFeesMensais } from '@/lib/db/orcamento';
 import { PageHero } from '@/components/hero';
 import { ExcluirCliente } from './excluir-cliente';
+import { FeeMensal } from './fee-mensal';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Clientes — Trakeamento' };
@@ -18,7 +20,11 @@ export const metadata: Metadata = { title: 'Clientes — Trakeamento' };
 export default async function PaginaClientesAdmin() {
   await requireAdmin();
 
-  const [clientes, vinculos] = await Promise.all([listaAdAccounts(), contaVinculosPorCliente()]);
+  const [clientes, vinculos, fees] = await Promise.all([
+    listaAdAccounts(),
+    contaVinculosPorCliente(),
+    leFeesMensais(),
+  ]);
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -73,6 +79,11 @@ export default async function PaginaClientesAdmin() {
                   Abrir painel
                 </Link>
               </div>
+
+              <FeeMensal
+                banco={cliente.client_db_name}
+                fee={fees.get(cliente.client_db_name) ?? null}
+              />
 
               <ExcluirCliente nome={cliente.account_name} banco={cliente.client_db_name} />
             </div>

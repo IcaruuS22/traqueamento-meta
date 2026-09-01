@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS ad_accounts (
   meta_access_token VARCHAR(512),
   kommo_access_token TEXT,
   content_category VARCHAR(255),
+  -- Valor mensal combinado com o cliente para mídia. NULL = não
+  -- combinado. Alimenta o indicador de ritmo de gasto da aba Métricas.
+  monthly_fee DECIMAL(12,2) NULL DEFAULT NULL,
   client_db_name VARCHAR(64),
   status VARCHAR(50) DEFAULT 'ACTIVE',
   -- Lock/cooldown da sincronização sob demanda (substitui o cron de 6h):

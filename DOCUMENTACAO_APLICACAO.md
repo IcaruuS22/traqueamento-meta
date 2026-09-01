@@ -749,3 +749,42 @@ O card mostrava o nome da campanha inteiro no rodapé ("2. ACRESCE ENERGIA - JUL
 Verificação: `npx tsc --noEmit` limpo, `npm test` 125/125, e no preview os cards de Formulários aparecem com "Meta Ads" + "Formulário" lado a lado, sem campanha e sem "etapa travada".
 
 **Precisa reimportar no n8n**: nada.
+
+## 33. Telefone do WhatsApp, valor da IA e fee mensal
+
+Três frentes independentes, no mesmo ciclo.
+
+### 33.1 Tratamento de número igual ao do n8n
+
+O app gravava o telefone da Evolution como vinha do JID, só tirando o que não era dígito; o fluxo do n8n normaliza com o 55 na frente (`normalizePhone` em `build_event_workflow.js`, `normalizeWhatsappPhone` em `build_whatsapp_cloud_workflow.js`). Duas regras diferentes escrevendo na mesma coluna significam o mesmo lead com dois formatos, dependendo de por onde a mensagem entrou.
+
+- **`src/lib/telefone.ts`** (novo) — `normalizaTelefone` repete a regra do n8n; `chaveTelefone` e `mesmoTelefone` isolam a comparação pelos 10 últimos dígitos, que é a mesma cauda do `RIGHT(..., 10)` já usado em `encontraOuCriaLead`. Número curto demais para ter DDD exige igualdade inteira: comparar cauda ali daria falso positivo entre pessoas diferentes.
+- **`telefoneDoJid`** passou a devolver o número já normalizado.
+
+### 33.2 O número do próprio painel não vira mais lead
+
+A conversa da instância consigo mesma (o "recado para mim mesmo", e o que a Evolution sincroniza ao conectar) entrava no CRM como um lead que ninguém pode atender, porque do outro lado está o próprio atendente.
+
+- **`buscaContaPorInstanciaEvolution`** passou a trazer `evolution_number`, e a rota de webhook descarta a mensagem cujo telefone bate com ele (`mesmoTelefone`). A resposta devolve `ignoradas_proprias` junto de `gravadas`.
+- **`leNumeroConexao`** (novo, em `evolution-payload.ts`) lê o número do evento `connection.update` quando a versão da Evolution o manda, para o catálogo ter o valor sem depender de alguém abrir a tela de conexão.
+- **Lead já criado não some sozinho**: o filtro vale daí para frente. O que já está no banco sai pelo botão "Excluir conversa" na tela de Conversas, ou por SQL.
+
+### 33.3 Valor da IA: o preço quase sempre é dito pelo atendente
+
+O prompt de classificação mandava preencher `valor` "quando o valor estiver explícito nas mensagens — dito pelo lead ou confirmado por ele". Na conversa real o preço é dito pelo **atendente** ("O valor é R$19,90") e o lead confirma pelo ato ("Pronto, pagamento realizado!"). A IA lia a regra ao pé da letra e devolvia `null` — estava certa quanto ao prompt e errada quanto ao negócio.
+
+- **`WhatsApp/build_whatsapp_ai_classification_workflow.js`**: a regra passou a dizer que o preço quase sempre vem do atendente e que vale como aceite qualquer confirmação do lead, inclusive pelo ato. `null` continua para preço recusado, ainda sem resposta, ou número que não é dinheiro.
+- **Duas pendências fora do app** para o valor chegar à tela: `WhatsApp/migracao_whatsapp_ia_valor.sql` (coluna `ai_last_value`) ainda não rodou nos bancos de produção, e o workflow precisa ser reimportado no n8n com a credencial da Groq reamarrada.
+
+### 33.4 Fee mensal e indicador de ritmo de gasto
+
+- **`ad_accounts.monthly_fee`** (`Banco de Dados/migracao_fee_mensal.sql`, mais o template e a instalação limpa) — valor mensal combinado, no catálogo central junto do resto do cadastro comercial. NULL = não combinado.
+- **`src/lib/orcamento.ts`** (novo, puro) — compara gasto do mês com o fee e devolve projeção de fechamento, diária praticada, diária necessária e a recomendação. Faixa de 10% em torno do ritmo ideal conta como "no alvo": sem ela o indicador oscilaria entre "aumentar" e "reduzir" todo dia.
+- **`src/lib/db/orcamento.ts`** — fee do catálogo, gasto de `meta_insights_daily` no nível `campaign` (somar os três níveis multiplicaria o mesmo real). Toleram esquema defasado: sem a migração, o card pede o cadastro em vez de derrubar a página.
+- **`src/components/orcamento-mensal.tsx`** — card na aba Métricas, **sempre do mês corrente**, mesmo com a tela filtrada por outro período: o fee é mensal, e compará-lo com o gasto de sete dias não diria nada.
+- **A edição fica na administração** (`/admin/clientes`), não na tela do cliente: quem olha o painel precisa ver o teto e o ritmo, mas mudar o teto é decisão de contrato. Toda alteração entra no log de auditoria (`cliente_fee_alterado`).
+- **O indicador recomenda, não age.** Não existe ajuste automático de orçamento de campanha aqui.
+
+Verificação: `npx tsc --noEmit` limpo, `npm test` 139/139 (15 casos novos, entre telefone e orçamento) e `next build` sem erro.
+
+**Precisa reimportar no n8n**: `WhatsApp/WhatsApp IA - Classificacao Automatica.json`, por causa do prompt.

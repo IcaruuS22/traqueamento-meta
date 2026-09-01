@@ -418,6 +418,11 @@ export type ContaPorInstancia = {
   evolution_base_url: string | null;
   evolution_api_key: string | null;
   evolution_instance: string | null;
+  /**
+   * Número do aparelho que atendeu o QR. Serve para o webhook reconhecer
+   * a conversa do painel consigo mesmo e não transformá-la em lead.
+   */
+  evolution_number: string | null;
 };
 
 export async function buscaContaPorInstanciaEvolution(
@@ -428,7 +433,8 @@ export async function buscaContaPorInstanciaEvolution(
 
   return queryOne<ContaPorInstancia>(
     `SELECT client_db_name, evolution_webhook_token,
-            evolution_base_url, evolution_api_key, evolution_instance
+            evolution_base_url, evolution_api_key, evolution_instance,
+            evolution_number
        FROM trakeamento_controle.whatsapp_accounts
       WHERE evolution_instance = ? AND provider = 'evolution' AND status = 'ACTIVE'
       LIMIT 1`,

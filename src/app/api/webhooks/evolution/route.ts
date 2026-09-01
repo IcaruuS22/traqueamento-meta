@@ -16,7 +16,8 @@ import {
   reservaContactCapi,
 } from '@/lib/db/evolution-ingestao';
 import { baixaMidia } from '@/lib/evolution';
-import { leEstadoConexao, leMensagemUpsert } from '@/lib/evolution-payload';
+import { leEstadoConexao, leMensagemUpsert, leNumeroConexao } from '@/lib/evolution-payload';
+import { mesmoTelefone } from '@/lib/telefone';
 import type { ContaPorInstancia } from '@/lib/db/whatsapp';
 import { enviaEventoContatoWhatsapp } from '@/lib/meta-capi';
 import type { BancoCliente as TipoBancoCliente } from '@/lib/db/cliente';
@@ -203,7 +204,8 @@ export async function POST(req: Request): Promise<NextResponse> {
   try {
     if (evento === 'connection.update') {
       const estado = leEstadoConexao(payload.data);
-      if (estado) await atualizaEstadoEvolution(conta.client_db_name, estado, null);
+      const numero = leNumeroConexao(payload.data);
+      if (estado) await atualizaEstadoEvolution(conta.client_db_name, estado, numero);
       return NextResponse.json({ ok: true, tratado: 'connection.update' });
     }
 
@@ -222,9 +224,20 @@ export async function POST(req: Request): Promise<NextResponse> {
     const db = new BancoCliente(adAccount.client_db_name);
 
     let gravadas = 0;
+    let ignoradasProprias = 0;
     for (const item of itens) {
       const msg = leMensagemUpsert(item);
       if (!msg) continue;
+
+      // Conversa do painel com o próprio número (o "recado para mim
+      // mesmo" do WhatsApp, e o que a Evolution sincroniza ao conectar).
+      // Sem isto, o número conectado aparece no CRM como se fosse um
+      // lead — e, pior, um lead que ninguém pode atender, porque do
+      // outro lado da conversa está o próprio atendente.
+      if (conta.evolution_number && mesmoTelefone(msg.telefone, conta.evolution_number)) {
+        ignoradasProprias += 1;
+        continue;
+      }
 
       const customerId = await encontraOuCriaLead(db, {
         telefone: msg.telefone,
@@ -242,7 +255,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       await disparaContato(conta.client_db_name, db, customerId, msg);
     }
 
-    return NextResponse.json({ ok: true, gravadas });
+    return NextResponse.json({ ok: true, gravadas, ignoradas_proprias: ignoradasProprias });
   } catch (erro) {
     // O detalhe fica no log; a resposta não devolve mensagem de MySQL,
     // que carregaria nome de banco e estrutura de tabela.

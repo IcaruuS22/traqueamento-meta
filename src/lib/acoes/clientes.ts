@@ -6,6 +6,8 @@ import { requireAdmin } from '@/lib/auth/guard';
 import { ACOES, registraAuditoria } from '@/lib/audit';
 import { buscaAdAccount, conflitoDeAdAccount, criaAdAccount, removeAdAccount } from '@/lib/db/cliente';
 import { apagaBancoDoCliente, criaBancoDoCliente } from '@/lib/db/provisiona';
+import { salvaFeeMensal } from '@/lib/db/orcamento';
+import { lacunaDeEsquema } from '@/lib/db/pool';
 import { confirmacaoDeExclusaoBate, geraNomeBanco } from '@/lib/nomes-banco';
 import type { EstadoFormulario } from '@/lib/auth/actions';
 
@@ -239,5 +241,79 @@ export async function acaoExcluirCliente(
         ? ` ${removidos.vinculos} ${removidos.vinculos === 1 ? 'usuário perdeu o vínculo' : 'usuários perderam o vínculo'}.`
         : '') +
       aviso,
+  };
+}
+
+/**
+ * Fee (budget) mensal combinado com o cliente.
+ *
+ * Fica com o administrador, e não na tela de métricas do cliente, porque
+ * é dado comercial: quem olha o painel precisa ver o teto e o ritmo, mas
+ * mudar o teto é decisão de contrato. Campo vazio limpa o valor — cliente
+ * sem fee combinado volta ao indicador neutro.
+ */
+const schemaFee = z.object({
+  client_db: z.string().trim().min(1).max(64),
+  monthly_fee: z
+    .string()
+    .trim()
+    .max(20)
+    // Aceita "3.500,00" e "3500.00": o campo é digitado por pessoa, e o
+    // separador varia com o teclado e com o hábito de quem digita.
+    .transform((v) => v.replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.')),
+});
+
+export async function acaoSalvarFeeMensal(
+  _estado: EstadoFormulario,
+  form: FormData,
+): Promise<EstadoFormulario> {
+  const admin = await requireAdmin();
+
+  const parsed = schemaFee.safeParse({
+    client_db: form.get('client_db'),
+    monthly_fee: form.get('monthly_fee') ?? '',
+  });
+  if (!parsed.success) return { erro: 'Dados inválidos' };
+
+  const conta = await buscaAdAccount(parsed.data.client_db);
+  if (!conta) return { erro: 'Cliente não encontrado no catálogo.' };
+
+  const bruto = parsed.data.monthly_fee;
+  let fee: number | null = null;
+  if (bruto !== '') {
+    const numero = Number(bruto);
+    if (!Number.isFinite(numero) || numero < 0) {
+      return { erro: 'Informe um valor em números, como 3500 ou 3500,00.' };
+    }
+    fee = numero > 0 ? Math.round(numero * 100) / 100 : null;
+  }
+
+  try {
+    await salvaFeeMensal(conta.client_db_name, fee);
+  } catch (erro) {
+    const lacuna = lacunaDeEsquema(erro);
+    if (lacuna) {
+      return {
+        erro:
+          'O banco central ainda não tem a coluna do fee mensal. ' +
+          'Rode "Banco de Dados/migracao_fee_mensal.sql" e tente de novo.',
+      };
+    }
+    console.error('[clientes] falha ao salvar o fee mensal', conta.client_db_name, erro);
+    return { erro: 'Não foi possível salvar o fee mensal.' };
+  }
+
+  await registraAuditoria({
+    userId: admin.id,
+    userEmail: admin.email,
+    acao: ACOES.CLIENTE_FEE_ALTERADO,
+    clientDb: conta.client_db_name,
+    detalhe: { monthly_fee: fee },
+  });
+
+  revalidatePath('/admin/clientes');
+  revalidatePath(`/app/${conta.client_db_name}/visao-geral`);
+  return {
+    sucesso: fee === null ? 'Fee mensal removido.' : `Fee mensal salvo: ${fee.toFixed(2)}.`,
   };
 }
