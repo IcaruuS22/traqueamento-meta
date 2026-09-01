@@ -1384,18 +1384,24 @@ select.filtro-campo {
   gap: 6px;
 }
 /* Série longa (mês em dias): sem folga entre colunas e número menor,
-   senão os dois dígitos não cabem nos ~16px que sobram por dia. */
+   senão os dois dígitos não cabem nos ~15px que sobram por dia. */
 .chart-bars-densa {
   gap: 3px;
   /* A etiqueta é mais larga que a coluna e fica centrada nela, então a
      primeira e a última passariam da borda do card sem esta folga. */
-  padding-inline: 14px;
+  padding-inline: 20px;
 }
 .chart-bars-densa .chart-bar-value {
   font-size: 9.5px;
 }
 .chart-bars-densa .chart-bar-label {
   font-size: 10px;
+}
+/* Trinta trilhos cinzas arredondados viram um paredão que compete com as
+   barras. Com poucas colunas o trilho ajuda a ler a altura; com um mês
+   inteiro ele só polui, e as próprias barras já marcam cada dia. */
+.chart-bars-densa .chart-bar-track {
+  background: transparent;
 }
 .chart-bar-value {
   color: var(--text-secondary);
@@ -1416,9 +1422,15 @@ select.filtro-campo {
   background: var(--bg-primary);
   border-radius: 6px 6px 0 0;
 }
+/* A altura é fixa porque em série densa a maioria das colunas fica sem
+   data: um span vazio mede zero e faria o trilho dessas colunas descer
+   mais que o das colunas com data — as barras terminavam em alturas
+   diferentes, que foi o serrilhado do gráfico de 30 dias. */
 .chart-bar-label {
   color: var(--text-tertiary);
   white-space: nowrap;
+  height: 14px;
+  line-height: 14px;
 }
 
 /* ---------- Tabelas ---------- */
