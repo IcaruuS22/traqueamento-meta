@@ -779,12 +779,14 @@ O prompt de classificação mandava preencher `valor` "quando o valor estiver ex
 ### 33.4 Fee mensal e indicador de ritmo de gasto
 
 - **`ad_accounts.monthly_fee`** (`Banco de Dados/migracao_fee_mensal.sql`, mais o template e a instalação limpa) — valor mensal combinado, no catálogo central junto do resto do cadastro comercial. NULL = não combinado.
-- **`src/lib/orcamento.ts`** (novo, puro) — compara gasto do mês com o fee e devolve projeção de fechamento, diária praticada, diária necessária e a recomendação. Faixa de 10% em torno do ritmo ideal conta como "no alvo": sem ela o indicador oscilaria entre "aumentar" e "reduzir" todo dia.
+- **`src/lib/orcamento.ts`** (novo, puro) — compara gasto do mês com o fee e devolve projeção de fechamento, diária praticada, diária necessária e a recomendação. Faixa de 10% em torno do ritmo ideal conta como "no alvo": sem ela o indicador oscilaria entre "aumentar" e "reduzir" todo dia. Trabalha com data civil ("YYYY-MM-DD") e não com `Date`: o servidor da Vercel roda em UTC e o painel raciocina em São Paulo, então `getDate()` viraria o mês três horas antes da meia-noite de quem olha.
+- **Mês encerrado não recebe recomendação** (`recomendacao: 'fechado'`): o gasto de agosto olhado em setembro é histórico, e mandar "aumentar a diária" no passado não significa nada. A projeção de um mês fechado é o próprio gasto, não uma extrapolação.
+- **A recomendação é dita em reais por dia, não em percentual.** No começo do mês o percentual explode — R$ 8 gastos no dia 1 de um fee de R$ 4.000 viram "aumente 1486%" — e afogam a única informação acionável, que é quanto por dia.
 - **`src/lib/db/orcamento.ts`** — fee do catálogo, gasto de `meta_insights_daily` no nível `campaign` (somar os três níveis multiplicaria o mesmo real). Toleram esquema defasado: sem a migração, o card pede o cadastro em vez de derrubar a página.
-- **`src/components/orcamento-mensal.tsx`** — card na aba Métricas, **sempre do mês corrente**, mesmo com a tela filtrada por outro período: o fee é mensal, e compará-lo com o gasto de sete dias não diria nada.
+- **`src/components/orcamento-mensal.tsx`** — card compacto na aba Métricas, dividindo a linha com "Tempo médio entre etapas". O mês mostrado é **o do período escolhido na tela** (o mês do último dia do período; sem período, o corrente), mas a comparação continua sendo de mês inteiro contra mês inteiro: o fee é mensal, e confrontá-lo com o gasto de sete dias não diria nada. Filtrar 05/08–31/08 mostra agosto fechado, não a fatia filtrada.
 - **A edição fica na administração** (`/admin/clientes`), não na tela do cliente: quem olha o painel precisa ver o teto e o ritmo, mas mudar o teto é decisão de contrato. Toda alteração entra no log de auditoria (`cliente_fee_alterado`).
 - **O indicador recomenda, não age.** Não existe ajuste automático de orçamento de campanha aqui.
 
-Verificação: `npx tsc --noEmit` limpo, `npm test` 139/139 (15 casos novos, entre telefone e orçamento) e `next build` sem erro.
+Verificação: `npx tsc --noEmit` limpo, `npm test` 144/144 (20 casos novos, entre telefone e orçamento) e `next build` sem erro.
 
 **Precisa reimportar no n8n**: `WhatsApp/WhatsApp IA - Classificacao Automatica.json`, por causa do prompt.

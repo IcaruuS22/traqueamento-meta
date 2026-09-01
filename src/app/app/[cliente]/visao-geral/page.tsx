@@ -153,9 +153,9 @@ export default async function PaginaVisaoGeral({
     buscaMetricas(db, periodo),
     visibilidadeMetricas(conta.client_db_name),
     primeiroLeadEm(db),
-    // Sempre do mês corrente, sem olhar o período da tela: o fee é
-    // mensal, e compará-lo com o gasto de sete dias não diria nada.
-    buscaOrcamentoDoMes(conta.client_db_name, db),
+    // O mês do período escolhido, e não o período em si: o fee é mensal,
+    // e compará-lo com o gasto de sete dias não diria nada.
+    buscaOrcamentoDoMes(conta.client_db_name, db, periodo.fimSec),
   ]);
 
   // Período e canal acompanham a paginação de "Últimos leads"; o resto da
@@ -263,11 +263,13 @@ function CorpoMetricas({
         </Card>
       </div>
 
-      <OrcamentoMensal orcamento={orcamento} />
+      <div className="panel-grid mt-4">
+        <OrcamentoMensal orcamento={orcamento} />
 
-      <Card titulo="Tempo médio entre etapas" className="mt-4">
-        <TempoEntreEtapas itens={metricas.tempo_medio_entre_etapas} />
-      </Card>
+        <Card titulo="Tempo médio entre etapas">
+          <TempoEntreEtapas itens={metricas.tempo_medio_entre_etapas} />
+        </Card>
+      </div>
 
       <Card titulo="Últimos leads" className="mt-4">
         {metricas.ultimos_leads.length ? (

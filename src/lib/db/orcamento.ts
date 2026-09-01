@@ -1,10 +1,11 @@
 import 'server-only';
 import { execute, LacunasDeEsquema, query, queryOne } from '@/lib/db/pool';
 import { sanitizaNomeBanco, type BancoCliente } from '@/lib/db/cliente';
-import { avaliaOrcamento, type Orcamento } from '@/lib/orcamento';
+import { avaliaOrcamento, ultimoDiaConsiderado, type Orcamento } from '@/lib/orcamento';
+import { epochSecParaData } from '@/lib/periodo';
 
 /**
- * Leitura do fee mensal e do gasto do mês corrente.
+ * Leitura do fee mensal e do gasto do mês analisado.
  *
  * O fee vive no catálogo central (`trakeamento_controle.ad_accounts`,
  * coluna `monthly_fee`) porque é um dado comercial do cliente, não do seu
@@ -13,9 +14,9 @@ import { avaliaOrcamento, type Orcamento } from '@/lib/orcamento';
  * O gasto vem de `meta_insights_daily` no nível `campaign`, exatamente
  * como `totaisAnuncios` em `lib/db/metricas.ts`: somar os três níveis
  * multiplicaria o mesmo real por três. A regra do gasto está repetida
- * aqui e não reaproveitada de lá porque a janela é outra — o card do
- * orçamento é sempre do mês corrente, independente do período escolhido
- * na tela, que pode ser "últimos 7 dias" ou um intervalo qualquer.
+ * aqui e não reaproveitada de lá porque a janela é outra — o card compara
+ * um mês inteiro, enquanto o período da tela pode ser sete dias ou um
+ * intervalo qualquer dentro desse mês.
  *
  * As duas leituras toleram esquema defasado: banco que ainda não rodou
  * `Banco de Dados/migracao_fee_mensal.sql` devolve fee nulo, e o card
@@ -69,23 +70,19 @@ export async function leFeesMensais(): Promise<Map<string, number | null>> {
 }
 
 /**
- * Gasto das campanhas no mês da data de referência, até ela inclusive.
+ * Gasto das campanhas entre o primeiro dia do mês e `ultimoDia`, ambos
+ * inclusive e no formato "YYYY-MM-DD".
  *
  * `meta_insights_daily.date` é DATE, então a janela é fechada por
  * comparação de data e não por timestamp — o mesmo recorte que o
- * Gerenciador de Anúncios mostra em "Este mês".
+ * Gerenciador de Anúncios mostra por mês.
  */
 export async function gastoDoMes(
   db: BancoCliente,
-  referencia: Date,
+  mes: string,
+  ultimoDia: string,
   lacunas?: LacunasDeEsquema,
 ): Promise<number> {
-  const ano = referencia.getFullYear();
-  const mes = String(referencia.getMonth() + 1).padStart(2, '0');
-  const dia = String(referencia.getDate()).padStart(2, '0');
-  const primeiro = `${ano}-${mes}-01`;
-  const ultimo = `${ano}-${mes}-${dia}`;
-
   const coletor = lacunas ?? new LacunasDeEsquema();
   const linha = await coletor.ou(
     db.queryOne<{ total: string | number | null }>(
@@ -93,7 +90,7 @@ export async function gastoDoMes(
          FROM ${db.tabela('meta_insights_daily')}
         WHERE entity_level = 'campaign'
           AND \`date\` >= ? AND \`date\` <= ?`,
-      [primeiro, ultimo],
+      [`${mes}-01`, ultimoDia],
     ),
     null,
   );
@@ -102,18 +99,32 @@ export async function gastoDoMes(
   return Number.isFinite(total) && total > 0 ? total : 0;
 }
 
-/** Fee e gasto já comparados, prontos para o card. */
+/**
+ * Fee e gasto já comparados, prontos para o card.
+ *
+ * `fimSec` é o fim (exclusivo) do período escolhido na tela: o mês
+ * analisado é o do último dia desse período, para que filtrar agosto
+ * mostre o fechamento de agosto. Sem período — o range "máximo" — o mês
+ * é o corrente.
+ */
 export async function buscaOrcamentoDoMes(
   clientDb: string,
   db: BancoCliente,
-  referencia = new Date(),
+  fimSec: number | null,
 ): Promise<Orcamento> {
+  const hoje = epochSecParaData(Math.floor(Date.now() / 1000));
+  // -1s porque `fimSec` é exclusivo: às 00:00 do dia 1 de setembro o
+  // período que termina em 31 de agosto não pode virar setembro.
+  const ultimoDoPeriodo = fimSec === null ? hoje : epochSecParaData(fimSec - 1);
+  const mes = ultimoDoPeriodo.slice(0, 7);
+  const ultimoDia = ultimoDiaConsiderado(mes, hoje);
+
   const lacunas = new LacunasDeEsquema();
   const [fee, gasto] = await Promise.all([
     leFeeMensal(clientDb, lacunas),
-    gastoDoMes(db, referencia, lacunas),
+    gastoDoMes(db, mes, ultimoDia, lacunas),
   ]);
-  return avaliaOrcamento({ fee, gasto, referencia });
+  return avaliaOrcamento({ fee, gasto, mes, hoje });
 }
 
 /**

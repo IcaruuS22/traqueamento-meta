@@ -6,9 +6,10 @@ import { fraseOrcamento, type Orcamento, type Recomendacao } from '@/lib/orcamen
  * Indicador de ritmo de gasto contra o fee mensal do cliente.
  *
  * Server Component sem estado: recebe o orçamento já avaliado por
- * `lib/db/orcamento.ts` e só desenha. O card é sempre do mês corrente,
- * mesmo quando a tela está filtrada por outro período — o fee é mensal, e
- * comparar um teto de mês com o gasto de sete dias não diria nada.
+ * `lib/db/orcamento.ts` e só desenha. O mês é o do período escolhido na
+ * tela, não o corrente — quem filtra agosto quer ver agosto — mas a
+ * comparação continua sendo de mês inteiro contra mês inteiro: confrontar
+ * um teto mensal com o gasto de sete dias não diria nada.
  *
  * Ele recomenda, não age: subir ou descer verba de anúncio é decisão de
  * quem gerencia a conta, e o botão para isso continua sendo o da Meta.
@@ -16,10 +17,15 @@ import { fraseOrcamento, type Orcamento, type Recomendacao } from '@/lib/orcamen
 
 /** Cor da faixa por recomendação. Verde = no alvo, âmbar = ajuste, vermelho = estouro. */
 const TONS: Record<Recomendacao, { barra: string; texto: string; rotulo: string }> = {
-  aumentar: { barra: 'bg-blue-500', texto: 'text-blue-700', rotulo: 'Aumentar investimento' },
-  reduzir: { barra: 'bg-amber-500', texto: 'text-amber-700', rotulo: 'Reduzir investimento' },
-  manter: { barra: 'bg-emerald-500', texto: 'text-emerald-700', rotulo: 'No alvo' },
-  estourado: { barra: 'bg-red-500', texto: 'text-red-700', rotulo: 'Fee consumido' },
+  aumentar: { barra: 'bg-blue-500', texto: 'text-blue-500', rotulo: 'Aumentar' },
+  reduzir: { barra: 'bg-amber-500', texto: 'text-amber-500', rotulo: 'Reduzir' },
+  manter: { barra: 'bg-emerald-500', texto: 'text-emerald-500', rotulo: 'No alvo' },
+  estourado: { barra: 'bg-red-500', texto: 'text-red-500', rotulo: 'Estourado' },
+  fechado: {
+    barra: 'bg-[var(--text-tertiary)]',
+    texto: 'text-[var(--text-tertiary)]',
+    rotulo: 'Mês fechado',
+  },
   indefinido: {
     barra: 'bg-[var(--border)]',
     texto: 'text-[var(--text-tertiary)]',
@@ -29,54 +35,49 @@ const TONS: Record<Recomendacao, { barra: string; texto: string; rotulo: string 
 
 export function OrcamentoMensal({ orcamento }: { orcamento: Orcamento }) {
   const tom = TONS[orcamento.recomendacao];
-  // A barra passa de 100% quando o mês estourou; travar em 100 esconderia
-  // justamente o caso que mais importa ver.
+  // A barra trava em 100% porque acima disso ela não distingue mais nada;
+  // o quanto passou está dito em reais na frase.
   const largura = Math.min(Math.round(orcamento.consumo * 100), 100);
+  const pct = Math.round(orcamento.consumo * 100);
 
   return (
     <Card
-      titulo="Orçamento do mês"
-      descricao={`Gasto em campanhas no mês corrente, contra o fee combinado. Dia ${orcamento.diasDecorridos} de ${orcamento.diasNoMes}.`}
-      className="mt-4"
+      titulo={`Orçamento — ${orcamento.mesRotulo}`}
+      descricao={
+        orcamento.fechado
+          ? 'Gasto em campanhas no mês, contra o fee combinado.'
+          : `Gasto em campanhas contra o fee combinado. Dia ${orcamento.diasDecorridos} de ${orcamento.diasNoMes}.`
+      }
     >
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className="text-lg font-medium">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <span className="text-lg font-medium tabular-nums">
           {fmtBRL(orcamento.gasto)}
           <span className="text-sm font-normal text-[var(--text-tertiary)]">
             {' '}
             de {orcamento.fee > 0 ? fmtBRL(orcamento.fee) : '—'}
           </span>
         </span>
-        <span className={`text-sm font-medium ${tom.texto}`}>{tom.rotulo}</span>
+        <span className={`text-xs font-medium ${tom.texto}`}>
+          {tom.rotulo}
+          {orcamento.fee > 0 ? ` · ${pct}%` : ''}
+        </span>
       </div>
 
-      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[var(--bg-field)]">
+      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[var(--bg-field)]">
         <div className={`h-full ${tom.barra}`} style={{ width: `${largura}%` }} />
       </div>
 
-      <p className={`mt-3 text-sm ${tom.texto}`}>{fraseOrcamento(orcamento)}</p>
+      <p className="mt-2 text-xs text-[var(--text-secondary)]">{fraseOrcamento(orcamento)}</p>
 
       {orcamento.fee > 0 ? (
-        <dl className="mt-3 grid gap-x-6 gap-y-1 text-xs text-[var(--text-tertiary)] sm:grid-cols-2">
-          <div>
-            Média diária atual:{' '}
-            <span className="text-[var(--text-secondary)]">{fmtBRL(orcamento.diarioAtual)}</span>
-          </div>
-          <div>
-            Diária para fechar no fee:{' '}
-            <span className="text-[var(--text-secondary)]">{fmtBRL(orcamento.diarioIdeal)}</span>
-          </div>
-          <div>
-            Projeção de fechamento:{' '}
-            <span className="text-[var(--text-secondary)]">{fmtBRL(orcamento.projecao)}</span>
-          </div>
-          <div>
-            Restante do fee:{' '}
-            <span className="text-[var(--text-secondary)]">{fmtBRL(orcamento.restante)}</span>
-          </div>
-        </dl>
+        <p className="mt-2 text-xs text-[var(--text-tertiary)] tabular-nums">
+          Diária atual {fmtBRL(orcamento.diarioAtual)}
+          {orcamento.fechado ? null : (
+            <> · Projeção {fmtBRL(orcamento.projecao)} · Restam {fmtBRL(orcamento.restante)}</>
+          )}
+        </p>
       ) : (
-        <p className="mt-3 text-xs text-[var(--text-tertiary)]">
+        <p className="mt-2 text-xs text-[var(--text-tertiary)]">
           O fee mensal é cadastrado por cliente na área de administração.
         </p>
       )}
