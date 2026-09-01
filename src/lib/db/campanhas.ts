@@ -222,7 +222,11 @@ export async function buscaHierarquia(
   const mapa = db.tabela('crm_meta_event_map');
 
   const orcamento = cfg.temOrcamento ? ', mc.daily_budget, mc.lifetime_budget' : '';
-  const escopo = cfg.colunaPai && paiId ? `mc.${cfg.colunaPai} = ? AND ` : '';
+  // Sem filtro de status: campanha pausada sem gasto no período também
+  // aparece. Ela ficava de fora, e desde que o status virou chave
+  // liga/desliga isso escondia justamente a linha que se quer religar.
+  const escopo = cfg.colunaPai && paiId ? `
+      WHERE mc.${cfg.colunaPai} = ?` : '';
 
   const sql =
     `SELECT mc.${cfg.colunaId} AS id, mc.${cfg.colunaNome} AS nome, mc.status AS status${orcamento},
@@ -267,7 +271,7 @@ export async function buscaHierarquia(
                      JOIN ${mapa} em ON em.status_id = c.current_stage AND em.is_conversion = 1
                      ${whereLeads.sql} AND e.status = 'SENT'
                     GROUP BY ${grupo} ) receita ON receita.entity_id = mc.${cfg.colunaId}
-      WHERE ${escopo}(mc.status <> 'PAUSED' OR COALESCE(ins.spend,0) > 0)
+${escopo}
       ORDER BY (mc.status = 'ACTIVE') DESC, spend DESC, mc.${cfg.colunaNome} ASC`;
 
   // A ordem dos `?` segue a ordem de aparição no SQL acima: nível e datas
