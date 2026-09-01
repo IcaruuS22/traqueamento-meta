@@ -10,6 +10,7 @@ import {
   type FaixaConversa,
   type LeadConversa,
   type MensagemWhatsapp,
+  type TempoResposta,
 } from '@/lib/whatsapp-conversas';
 
 /**
@@ -278,12 +279,68 @@ async function leLead(
   }
 }
 
+/**
+ * Primeiro contato do lead e primeira resposta do atendimento.
+ *
+ * Sai daqui, e não das mensagens já carregadas, porque `leMensagens`
+ * devolve só as 300 mais novas: em conversa comprida o primeiro contato
+ * não está entre elas, e a conta daria o tempo errado.
+ *
+ * A resposta considerada é a primeira saída **posterior** ao primeiro
+ * contato. Mensagem que o atendimento mandou antes de o lead escrever
+ * (prospecção ativa) não conta como resposta a nada.
+ */
+async function leTempoResposta(
+  db: BancoCliente,
+  msgs: string,
+  customerId: number,
+): Promise<TempoResposta | null> {
+  const linha = await db.queryOne<{
+    primeiro_contato: number | string | null;
+    primeira_resposta: number | string | null;
+    segundos_ate_resposta: number | string | null;
+    segundos_esperando: number | string | null;
+  }>(
+    // Duas camadas porque o MySQL não deixa reusar o apelido de uma
+    // coluna na mesma lista de seleção, e a subconsulta correlacionada
+    // (que precisa de `primeiro_contato`) é mais portável que LATERAL.
+    `SELECT t.primeiro_contato,
+            t.primeira_resposta,
+            CASE WHEN t.primeira_resposta IS NOT NULL
+                 THEN t.primeira_resposta - t.primeiro_contato END AS segundos_ate_resposta,
+            CASE WHEN t.primeira_resposta IS NULL AND t.primeiro_contato IS NOT NULL
+                 THEN UNIX_TIMESTAMP() - t.primeiro_contato END AS segundos_esperando
+       FROM (
+            SELECT p.primeiro_contato,
+                   (SELECT MIN(m.message_timestamp_unix)
+                      FROM ${msgs} m
+                     WHERE m.customer_id = ? AND m.direction = 'outbound'
+                       AND m.message_timestamp_unix >= p.primeiro_contato) AS primeira_resposta
+              FROM (SELECT MIN(message_timestamp_unix) AS primeiro_contato
+                      FROM ${msgs}
+                     WHERE customer_id = ? AND direction = 'inbound') p
+       ) t`,
+    // Ordem dos parâmetros: o outbound é lido antes, na consulta de fora.
+
+    [customerId, customerId],
+  );
+  if (!linha) return null;
+  const num = (v: number | string | null) => (v === null ? null : Number(v));
+  return {
+    primeiro_contato: num(linha.primeiro_contato),
+    primeira_resposta: num(linha.primeira_resposta),
+    segundos_ate_resposta: num(linha.segundos_ate_resposta),
+    segundos_esperando: num(linha.segundos_esperando),
+  };
+}
+
 export async function buscaThread(
   db: BancoCliente,
   customerId: number,
 ): Promise<{
   lead: LeadConversa | null;
   mensagens: MensagemWhatsapp[];
+  tempo_resposta: TempoResposta | null;
   lacunas_de_esquema: string[];
 }> {
   const lacunas = new LacunasDeEsquema();
@@ -303,6 +360,8 @@ export async function buscaThread(
 
   const mensagens = await lacunas.ou(leMensagens(db, msgs, customerId), []);
 
+  const tempoResposta = await lacunas.ou(leTempoResposta(db, msgs, customerId), null);
+
   return {
     lead: lead
       ? {
@@ -312,6 +371,7 @@ export async function buscaThread(
         }
       : null,
     mensagens,
+    tempo_resposta: tempoResposta,
     lacunas_de_esquema: lacunas.lista(),
   };
 }

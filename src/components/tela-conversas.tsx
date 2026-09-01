@@ -23,10 +23,12 @@ import {
   nomeArquivo,
   tamanhoLegivel,
   temMidia,
+  rotuloPrimeiraResposta,
   type Conversa,
   type FaixaConversa,
   type LeadConversa,
   type MensagemWhatsapp,
+  type TempoResposta,
 } from '@/lib/whatsapp-conversas';
 import { telefoneParaExibir } from '@/lib/exibicao';
 
@@ -102,6 +104,8 @@ function esperaVisivel(sinal: AbortSignal): Promise<void> {
 type ThreadCarregada = {
   lead: LeadConversa;
   mensagens: MensagemWhatsapp[];
+  /** Tempo até a primeira resposta, já calculado pelo banco. */
+  tempoResposta: TempoResposta | null;
   /** Quando esta resposta chegou, para posicionar a janela de 24h. */
   recebidoEm: number;
 };
@@ -344,6 +348,7 @@ export function TelaConversas({
 
         const lead = corpo.data.lead as LeadConversa;
         const mensagens = corpo.data.mensagens as MensagemWhatsapp[];
+        const tempoResposta = (corpo.data.tempo_resposta ?? null) as TempoResposta | null;
         const recebidoEm = Date.now();
 
         const sigM = assinaturaMensagens(mensagens);
@@ -355,8 +360,8 @@ export function TelaConversas({
         // nada mais mudou — é ela que libera ou bloqueia o envio.
         setThread((atual) =>
           !atual || mudouMensagem || mudouLead
-            ? { lead, mensagens, recebidoEm }
-            : { ...atual, lead, recebidoEm },
+            ? { lead, mensagens, tempoResposta, recebidoEm }
+            : { ...atual, lead, tempoResposta, recebidoEm },
         );
 
         if (mudouLead) {
@@ -675,6 +680,12 @@ export function TelaConversas({
                 <div className="text-body-small text-tertiary">
                   {thread.lead.phone ? telefoneParaExibir(thread.lead.phone) : 'sem telefone'} ·{' '}
                   {rotuloEstagio(thread.lead.status)}
+                  {/* Conta do primeiro contato do lead até a primeira
+                      resposta do atendimento, tenha ela saído daqui ou do
+                      celular via Evolution. */}
+                  {rotuloPrimeiraResposta(thread.tempoResposta)
+                    ? ` · ${rotuloPrimeiraResposta(thread.tempoResposta)}`
+                    : ''}
                 </div>
               </div>
             </div>

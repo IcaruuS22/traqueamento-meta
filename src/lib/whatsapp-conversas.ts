@@ -214,9 +214,61 @@ export type LeadConversa = {
   ai_last_value: string | number | null;
 };
 
+/**
+ * Tempo entre a primeira mensagem do lead e a primeira resposta do
+ * atendimento, calculado no banco a partir de `whatsapp_messages`.
+ *
+ * Vale para resposta dada em qualquer lugar, não só no painel: tanto o
+ * envio pelo painel quanto o que a Evolution devolve do celular
+ * (`fromMe`) entram na mesma tabela como `direction = 'outbound'`. A
+ * única resposta que ainda não é contada é a enviada fora do painel por
+ * quem usa a Cloud API — o webhook de lá só grava mensagem recebida.
+ *
+ * Os segundos vêm prontos do MySQL, e não de comparar timestamp com o
+ * relógio do navegador, pelo mesmo motivo de `segundos_desde_inbound`.
+ */
+export type TempoResposta = {
+  /** Unix do primeiro inbound. `null` quando o lead nunca escreveu. */
+  primeiro_contato: number | null;
+  /** Unix do primeiro outbound depois desse contato, se já houve. */
+  primeira_resposta: number | null;
+  /** Espera até a resposta, quando já respondida. */
+  segundos_ate_resposta: number | null;
+  /** Espera acumulada até agora, quando ainda não respondida. */
+  segundos_esperando: number | null;
+};
+
+/** Duração curta legível: "45 s", "12 min", "3 h", "2 dias". */
+export function fmtEspera(segundos: number): string {
+  const s = Math.max(0, Math.round(segundos));
+  if (s < 60) return `${s} s`;
+  const min = Math.round(s / 60);
+  if (min < 60) return `${min} min`;
+  const horas = Math.round(min / 60);
+  if (horas < 24) return `${horas} h`;
+  const dias = Math.round(horas / 24);
+  return `${dias} ${dias === 1 ? 'dia' : 'dias'}`;
+}
+
+/**
+ * Frase do cabeçalho da conversa. `null` quando não há o que dizer —
+ * lead que nunca escreveu, ou banco sem a coluna de horário.
+ */
+export function rotuloPrimeiraResposta(t: TempoResposta | null | undefined): string | null {
+  if (!t || t.primeiro_contato === null) return null;
+  if (t.segundos_ate_resposta !== null) {
+    return `1ª resposta em ${fmtEspera(t.segundos_ate_resposta)}`;
+  }
+  if (t.segundos_esperando !== null) {
+    return `sem resposta há ${fmtEspera(t.segundos_esperando)}`;
+  }
+  return null;
+}
+
 export type Thread = {
   lead: LeadConversa | null;
   mensagens: MensagemWhatsapp[];
+  tempo_resposta?: TempoResposta | null;
 };
 
 /** Nome do lead como aparece na lista e no cabeçalho da conversa. */
