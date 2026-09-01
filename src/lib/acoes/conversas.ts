@@ -289,7 +289,13 @@ export async function acaoSalvarLead(
 
   revalidatePath(`/app/${encodeURIComponent(conta.client_db_name)}/whatsapp/conversas`);
   revalidatePath(`/app/${encodeURIComponent(conta.client_db_name)}/funil`);
-  return { ok: true, sucesso: 'Dados do lead salvos com sucesso.' };
+  // O que aconteceu com o evento vai junto, como no quadro do CRM: sem
+  // isso, "lead não veio de anúncio" só apareceria no log de auditoria e
+  // quem mudou a etapa acharia que o evento saiu.
+  const mensagem = capi
+    ? `Dados do lead salvos · evento ${capi}.`
+    : 'Dados do lead salvos com sucesso.';
+  return { ok: true, sucesso: mensagem };
 }
 
 // -------------------------------------------------------------------

@@ -545,6 +545,55 @@ export async function buscaTelefone(
   return linha?.phone ?? null;
 }
 
+/**
+ * O lead veio de anúncio?
+ *
+ * Duas evidências, e basta uma:
+ *
+ *  - `whatsapp_messages.referral_ctwa_clid` / `referral_ad_id` — o
+ *    carimbo que o WhatsApp põe na mensagem quando a conversa nasceu de
+ *    um anúncio "Clique para WhatsApp". É o caso normal;
+ *  - `customers.meta_ad_id` / `meta_adset_id` / `meta_campaign_id` — o
+ *    lead entrou por formulário instantâneo e só depois foi para o
+ *    WhatsApp. Continua sendo lead de anúncio, e barrá-lo tiraria da
+ *    Meta uma conversão que ela de fato originou.
+ *
+ * Só `customers` é consultada sem tolerância: `whatsapp_messages` pode
+ * não existir num banco que ainda não passou pela migração, e nesse caso
+ * não há conversa de WhatsApp para gerar evento nenhum.
+ */
+export async function leadVeioDeAnuncio(
+  db: BancoCliente,
+  customerId: number,
+): Promise<boolean> {
+  const doFormulario = await db.queryOne<{ um: number }>(
+    `SELECT 1 AS um
+       FROM ${db.tabela('customers')}
+      WHERE id = ?
+        AND (COALESCE(meta_ad_id, '') <> ''
+          OR COALESCE(meta_adset_id, '') <> ''
+          OR COALESCE(meta_campaign_id, '') <> '')
+      LIMIT 1`,
+    [customerId],
+  );
+  if (doFormulario) return true;
+
+  const lacunas = new LacunasDeEsquema();
+  const daConversa = await lacunas.ou(
+    db.queryOne<{ um: number }>(
+      `SELECT 1 AS um
+         FROM ${db.tabela('whatsapp_messages')}
+        WHERE customer_id = ?
+          AND (COALESCE(referral_ctwa_clid, '') <> ''
+            OR COALESCE(referral_ad_id, '') <> '')
+        LIMIT 1`,
+      [customerId],
+    ),
+    null,
+  );
+  return daConversa !== null;
+}
+
 export type MapeamentoEstagio = {
   estagio: string;
   meta_event: string | null;

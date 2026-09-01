@@ -1,4 +1,5 @@
 import 'server-only';
+import { exigeAnuncioWhatsapp } from '@/lib/capi-politica';
 
 /**
  * Leitura centralizada das variáveis de ambiente.
@@ -104,6 +105,14 @@ export const env = {
       // Default alinhado com o que os workflows n8n usam hoje (v25.0).
       // O .env.local / a Vercel vencem este valor.
       return opcional('META_GRAPH_API_VERSION', 'v25.0');
+    },
+
+    /**
+     * Barra o evento de etapa de lead de WhatsApp que não veio de
+     * anúncio. A regra e o porquê estão em `capi-politica.ts`.
+     */
+    get exigeAnuncioWhatsapp() {
+      return exigeAnuncioWhatsapp(process.env.NODE_ENV, process.env.META_CAPI_EXIGE_ANUNCIO);
     },
   },
 

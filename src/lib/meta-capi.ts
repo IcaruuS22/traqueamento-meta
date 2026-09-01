@@ -2,6 +2,8 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import type { BancoCliente } from '@/lib/db/cliente';
 import { buscaCredenciaisCliente } from '@/lib/db/cliente';
+import { leadVeioDeAnuncio } from '@/lib/db/conversas';
+import { env } from '@/lib/env';
 
 /**
  * Envio de evento para a Conversions API da Meta — porte do bloco P.1 do
@@ -56,12 +58,29 @@ function hashTelefone(phone: string): string {
   return createHash('sha256').update(digitos).digest('hex');
 }
 
+/**
+ * Evento de mudança de etapa do lead de WhatsApp.
+ *
+ * A trava de origem fica AQUI, e não em cada tela que move o lead, pelo
+ * mesmo motivo de `requireClientAccess` ficar no guard: são duas telas
+ * hoje (Conversas e quadro do CRM) e uma terceira amanhã, e uma barreira
+ * que depende de alguém lembrar de chamá-la não é barreira. Ver
+ * `env.meta.exigeAnuncioWhatsapp` para quando ela vale.
+ *
+ * O evento barrado não vai para `meta_capi_events`: nada foi enviado, e
+ * registrar um envio que não houve confundiria o log. Quem chamou recebe
+ * o motivo e mostra na tela.
+ */
 export async function enviaEventoEstagio(
   clientDb: string,
   db: BancoCliente,
   evento: EventoEstagio,
 ): Promise<ResultadoCapi> {
   if (!evento.phone) return { enviado: false, motivo: 'lead sem telefone' };
+
+  if (env.meta.exigeAnuncioWhatsapp && !(await leadVeioDeAnuncio(db, evento.customerId))) {
+    return { enviado: false, motivo: 'lead não veio de anúncio' };
+  }
 
   const credenciais = await buscaCredenciaisCliente(clientDb);
   if (!credenciais?.meta_pixel_dataset_id || !credenciais.meta_access_token) {
