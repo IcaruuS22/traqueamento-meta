@@ -94,6 +94,18 @@ async function leCartoes(
   const conversa = comConversas
     ? `LEFT JOIN ${db.tabela('whatsapp_conversations')} wc ON wc.customer_id = c.id`
     : '';
+
+  // Mesma pergunta que `leadVeioDeAnuncio` faz para liberar evento de
+  // CAPI, só que em lote: o card diz "Meta Ads" exatamente quando o
+  // contato tem identificador de anúncio. Do lado do formulário está em
+  // `customers`; do lado do WhatsApp, no referral da primeira mensagem —
+  // por isso a subconsulta, presa à mesma condição de esquema do resto.
+  const anuncioNaConversa = comConversas
+    ? `OR EXISTS (SELECT 1 FROM ${db.tabela('whatsapp_messages')} wm
+                   WHERE wm.customer_id = c.id
+                     AND (COALESCE(wm.referral_ctwa_clid, '') <> ''
+                       OR COALESCE(wm.referral_ad_id, '') <> ''))`
+    : '';
   const camposConversa = comConversas
     ? `wc.status AS status_conversa, wc.tags, wc.unread_count, wc.last_message_at,
        CASE WHEN wc.customer_id IS NULL THEN 0 ELSE 1 END AS tem_conversa`
@@ -104,7 +116,12 @@ async function leCartoes(
     `SELECT c.id, c.first_name, c.last_name, c.email, c.phone, c.created_at,
             c.current_stage, NULLIF(c.meta_lead_id, '') AS meta_lead_id,
             ${camposConversa},
-            COALESCE(NULLIF(c.meta_campaign_name, ''), NULLIF(c.utm_campaign, '')) AS campanha
+            COALESCE(NULLIF(c.meta_campaign_name, ''), NULLIF(c.utm_campaign, '')) AS campanha,
+            (COALESCE(c.meta_ad_id, '') <> ''
+              OR COALESCE(c.meta_adset_id, '') <> ''
+              OR COALESCE(c.meta_campaign_id, '') <> ''
+              OR COALESCE(c.meta_lead_id, '') <> ''
+              ${anuncioNaConversa}) AS de_anuncio
        FROM ${db.tabela('customers')} c
        ${conversa}
        ${onde}

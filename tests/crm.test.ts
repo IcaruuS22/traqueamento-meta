@@ -36,6 +36,7 @@ function linha(parcial: Partial<LinhaCartao> & { id: number }): LinhaCartao {
     last_message_at: null,
     tem_conversa: 0,
     campanha: null,
+    de_anuncio: 0,
     ...parcial,
   };
 }
@@ -174,6 +175,19 @@ describe('origem do card', () => {
     );
     assert.equal(cartoes[0].tem_conversa, true);
     assert.equal(cartoes[0].mensagens_nao_lidas, 3);
+  });
+
+  test('a marca de anúncio vira booleano — é ela que acende a tag "Meta Ads"', () => {
+    const { cartoes } = montaQuadro(
+      ETAPAS_FORM,
+      ETAPAS_WPP,
+      [linha({ id: 5, de_anuncio: '1' }), linha({ id: 6, de_anuncio: 0 }), linha({ id: 7 })],
+      null,
+    );
+    assert.deepEqual(
+      cartoes.map((c) => c.de_anuncio),
+      [true, false, false],
+    );
   });
 });
 

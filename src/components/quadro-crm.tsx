@@ -2,18 +2,27 @@
 
 import { useEffect, useState } from 'react';
 import type { CartaoCrm, ColunaCrm } from '@/lib/crm';
-import { CLASSE_ORIGEM, ROTULO_ORIGEM, iniciaisDoNome, nomeDoCartao } from '@/lib/crm';
+import {
+  CLASSE_ORIGEM,
+  CLASSE_PLATAFORMA_ANUNCIO,
+  PLATAFORMA_ANUNCIO,
+  ROTULO_ORIGEM,
+  iniciaisDoNome,
+  nomeDoCartao,
+} from '@/lib/crm';
 import { acaoMoverLeadCrm } from '@/lib/acoes/crm';
 import { ehEtapaDePerda, MOTIVOS_PERDA_SUGERIDOS, TAMANHO_MOTIVO } from '@/lib/funil';
 import { ModalLeadCrm } from '@/components/modal-lead-crm';
 import { fmtDataHora, ouTraco } from '@/lib/format';
 
 /**
- * Quadro do CRM unificado.
+ * Quadro do CRM.
  *
- * Um quadro só, com os leads de formulário e os contatos de WhatsApp
- * lado a lado, cada card marcado com a origem. As colunas, porém, são as
- * de cada funil: card de WhatsApp só entra em coluna de WhatsApp.
+ * O mesmo componente serve às duas telas — CRM de Formulários e CRM de
+ * WhatsApp —, cada uma passando as colunas e os cards do seu funil (ver
+ * `tela-crm.tsx`). O card continua marcado com a origem porque um lead
+ * de formulário pode ter conversa, e porque a regra de arrastar depende
+ * dela.
  *
  * Só card de WhatsApp arrasta. A etapa do lead de formulário é espelho
  * do Kommo — quem a escreve é a automação do n8n, e mudá-la aqui
@@ -336,6 +345,14 @@ function CartaoLeadCrm({
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-1">
+        {cartao.de_anuncio ? (
+          <span
+            className={`origem-tag ${CLASSE_PLATAFORMA_ANUNCIO}`}
+            title="Contato com identificador de anúncio da Meta."
+          >
+            {PLATAFORMA_ANUNCIO}
+          </span>
+        ) : null}
         <span className={`origem-tag ${CLASSE_ORIGEM[cartao.origem]}`}>
           {ROTULO_ORIGEM[cartao.origem]}
         </span>
@@ -344,22 +361,9 @@ function CartaoLeadCrm({
             + conversa
           </span>
         ) : null}
-        {!arrastavel ? (
-          <span className="origem-tag bg-[var(--bg-field)] text-[var(--text-tertiary)]" title="A etapa deste lead é a do CRM do cliente e não pode ser mudada aqui.">
-            etapa travada
-          </span>
-        ) : null}
       </div>
 
-      <div className="lead-meta mt-2">
-        Entrou: {fmtDataHora(cartao.created_at)}
-        {cartao.campanha ? (
-          <>
-            <br />
-            <span className="text-tertiary">{cartao.campanha}</span>
-          </>
-        ) : null}
-      </div>
+      <div className="lead-meta mt-2">Entrou: {fmtDataHora(cartao.created_at)}</div>
     </div>
   );
 }

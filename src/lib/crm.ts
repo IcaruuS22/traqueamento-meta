@@ -36,6 +36,18 @@ export const CLASSE_ORIGEM: Record<OrigemLead, string> = {
   whatsapp: 'bg-[var(--green-50)] text-[var(--green-700)]',
 };
 
+/**
+ * Plataforma que trouxe o contato, quando ele tem identificador de
+ * anúncio. Hoje só existe uma: tudo que este painel rastreia entra pela
+ * Meta — formulário instantâneo ou clique-para-WhatsApp. O rótulo é
+ * constante de propósito, para o dia em que houver outra origem o card
+ * não precisar mudar de forma, só de valor.
+ */
+export const PLATAFORMA_ANUNCIO = 'Meta Ads';
+
+/** Azul da marca Meta, cheio; ver `.tag-meta` em globals.css. */
+export const CLASSE_PLATAFORMA_ANUNCIO = 'tag-meta';
+
 export function ehOrigem(valor: unknown): valor is OrigemLead {
   return valor === 'form' || valor === 'whatsapp';
 }
@@ -90,6 +102,8 @@ export type CartaoCrm = {
   ultima_mensagem_em: string | null;
   campanha: string | null;
   tags: string | null;
+  /** Tem identificador de anúncio da Meta (lead ad ou clique-para-WhatsApp). */
+  de_anuncio: boolean;
 };
 
 export function nomeDoCartao(c: {
@@ -126,6 +140,7 @@ export type LinhaCartao = {
   last_message_at: string | null;
   tem_conversa: number | string;
   campanha: string | null;
+  de_anuncio: number | string | null;
 };
 
 /**
@@ -255,6 +270,7 @@ export function montaQuadro(
       ultima_mensagem_em: l.last_message_at,
       campanha: l.campanha,
       tags: l.tags,
+      de_anuncio: Number(l.de_anuncio) === 1,
     });
   }
 

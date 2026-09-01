@@ -737,3 +737,15 @@ O quadro único juntava os dois funis lado a lado, e eles não se falam: a etapa
 - **O bloqueio do evento não foi testado contra a Meta de verdade** — em desenvolvimento ele nasce desligado de propósito. O que está coberto por teste é a decisão de ligar ou não; o efeito dela é uma linha só dentro de `enviaEventoEstagio`.
 
 **Precisa reimportar no n8n**: nada. As três alterações são do app.
+
+## 32. Card do CRM: plataforma no lugar do nome da campanha
+
+O card mostrava o nome da campanha inteiro no rodapé ("2. ACRESCE ENERGIA - JULHO/26 [5 CTV] >500"). Em coluna de 270px isso vira duas ou três linhas de texto pequeno que ninguém lê no quadro — quem quer saber de campanha abre o lead, onde campanha, conjunto e anúncio já aparecem separados. O card ficou com o que se decide de relance: quem é, de onde veio e quando entrou.
+
+- **Tag "Meta Ads"** (`PLATAFORMA_ANUNCIO` em `src/lib/crm.ts`, classe `.tag-meta` em `globals.css`, azul da marca `#0866ff` fixo nos dois temas) — aparece quando o contato tem identificador de anúncio, ao lado da tag do tipo ("Formulário" / "WhatsApp").
+- **`de_anuncio` é calculado na própria consulta do quadro** (`leCartoes`, `src/lib/db/crm.ts`), com a mesma pergunta que `leadVeioDeAnuncio` faz para liberar evento de CAPI: ids de anúncio em `customers`, ou referral em `whatsapp_messages`. Em lote e não por lead — são até 3000 cards por quadro. Sem identificador nenhum, o card simplesmente não ganha a tag; inventar um rótulo "Direto" diria mais do que o dado sustenta.
+- **A tag "etapa travada" saiu do card.** Ela repetia, card a card, o que a coluna já diz uma vez no cabeçalho ("Formulário · etapa vem do CRM") — e depois da separação do CRM o quadro inteiro de Formulários era coluna travada, ou seja, o aviso aparecia em todos os cards da tela.
+
+Verificação: `npx tsc --noEmit` limpo, `npm test` 125/125, e no preview os cards de Formulários aparecem com "Meta Ads" + "Formulário" lado a lado, sem campanha e sem "etapa travada".
+
+**Precisa reimportar no n8n**: nada.
