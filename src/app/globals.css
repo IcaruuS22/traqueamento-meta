@@ -815,6 +815,12 @@ select.filtro-campo {
   width: 100%;
   margin: 0 auto;
 }
+/* Telas de quadro e de tabela larga — ver TELAS_LARGAS em casca-painel.tsx. */
+.main-content--larga {
+  max-width: none;
+  padding-left: 24px;
+  padding-right: 24px;
+}
 
 /* ---------- Botões do painel ---------- */
 .btn {

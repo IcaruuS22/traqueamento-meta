@@ -128,6 +128,22 @@ function secoesDoCliente(cliente: string): SecaoNav[] {
 }
 
 /** Rótulo da última migalha, equivalente ao `TAB_LABELS` do painel. */
+/**
+ * Telas que ocupam a largura toda da janela, em vez dos 1360px do resto
+ * do painel.
+ *
+ * O limite padrão existe para não esticar texto corrido: linha longa
+ * demais cansa de ler. O quadro do CRM e a tabela de Campanhas não são
+ * texto corrido, são colunas de largura fixa — as do quadro têm 270px, e
+ * a tabela tem 19 colunas. Limitar essas duas a 1360px não melhora
+ * leitura nenhuma: só empurra coluna para a rolagem horizontal enquanto
+ * sobra tela vazia dos dois lados.
+ *
+ * A chave é o resto da rota depois do cliente, a mesma que `rotuloDaTela`
+ * usa.
+ */
+const TELAS_LARGAS = new Set(['crm', 'campanhas']);
+
 function rotuloDaTela(resto: string, canal: string): string {
   switch (resto) {
     case '':
@@ -285,6 +301,8 @@ export function CascaPainel({
           : pathname.startsWith('/app/tutorial')
             ? 'Ajuda'
             : 'Selecionar cliente';
+
+  const telaLarga = clienteAtivo !== null && TELAS_LARGAS.has(restoDaRota);
 
   const emClientes = pathname === '/app';
   const buscaAtual = params.get('q') ?? '';
@@ -552,7 +570,9 @@ export function CascaPainel({
           <span className="crumb-current">{rotuloTela}</span>
         </div>
 
-        <main className="main-content">{children}</main>
+        <main className={telaLarga ? 'main-content main-content--larga' : 'main-content'}>
+          {children}
+        </main>
       </div>
     </div>
   );
