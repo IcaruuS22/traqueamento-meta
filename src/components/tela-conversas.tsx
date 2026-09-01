@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { acaoEnviarMensagem, acaoExcluirConversa, acaoSalvarLead } from '@/lib/acoes/conversas';
+import { acaoExcluirLead } from '@/lib/acoes/leads';
 import { ehEtapaDePerda, MOTIVOS_PERDA_SUGERIDOS, TAMANHO_MOTIVO } from '@/lib/funil';
 import { fmtBRL, fmtDataHora, fmtHoraRelativa } from '@/lib/format';
 import { Dica } from '@/components/dica';
@@ -271,7 +272,10 @@ export function TelaConversas({
 
   const [texto, setTexto] = useState('');
   const [enviando, setEnviando] = useState(false);
-  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  // Qual exclusão está com a confirmação aberta. Estado único porque as
+  // duas são destrutivas e mostrar as duas perguntas ao mesmo tempo
+  // convida a clicar na errada.
+  const [confirmando, setConfirmando] = useState<'conversa' | 'lead' | null>(null);
 
   // Relógio próprio: sem ele, o aviso da janela de 24h só mudaria quando
   // chegasse mensagem nova.
@@ -466,7 +470,7 @@ export function TelaConversas({
 
   function selecionaConversa(customerId: number) {
     if (customerId === selecionado) return;
-    setConfirmandoExclusao(false);
+    setConfirmando(null);
     setRastreioAberto(false);
     sigMensagens.current = null;
     sigLead.current = null;
@@ -531,13 +535,36 @@ export function TelaConversas({
     const customerId = thread.lead.customer_id;
     iniciaSalvar(async () => {
       const r = await acaoExcluirConversa({ cliente, customer_id: customerId });
-      setConfirmandoExclusao(false);
+      setConfirmando(null);
       if (!r.ok) {
         setAviso({ tipo: 'erro', texto: r.erro });
         return;
       }
       // A conversa não existe mais: fechar o painel antes de recarregar
       // evita o polling pedir uma thread recém-apagada.
+      setSelecionado(null);
+      setThread(null);
+      sigMensagens.current = null;
+      sigLead.current = null;
+      sigLista.current = null;
+      setConversas((atual) => atual.filter((c) => c.customer_id !== customerId));
+      await carregaLista();
+    });
+  }
+
+  function excluiLead() {
+    if (!thread) return;
+    setAviso(null);
+    const customerId = thread.lead.customer_id;
+    iniciaSalvar(async () => {
+      const r = await acaoExcluirLead({ cliente, customer_id: customerId });
+      setConfirmando(null);
+      if (!r.ok) {
+        setAviso({ tipo: 'erro', texto: r.erro });
+        return;
+      }
+      // Mesmo cuidado da exclusão de conversa: fechar o painel antes de
+      // recarregar evita o polling pedir uma thread recém-apagada.
       setSelecionado(null);
       setThread(null);
       sigMensagens.current = null;
@@ -865,7 +892,7 @@ export function TelaConversas({
             {podeExcluir ? (
               <div className="crm-lead-origem">
                 <h4>Área do administrador</h4>
-                {confirmandoExclusao ? (
+                {confirmando === 'conversa' ? (
                   <div className="space-y-2">
                     <p className="text-body-small text-tertiary">
                       Apagar todas as mensagens desta conversa e o estado dela? O lead e os
@@ -884,21 +911,58 @@ export function TelaConversas({
                         type="button"
                         className="btn btn-secondary btn-sm"
                         disabled={salvando}
-                        onClick={() => setConfirmandoExclusao(false)}
+                        onClick={() => setConfirmando(null)}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : confirmando === 'lead' ? (
+                  <div className="space-y-2">
+                    <p className="text-body-small text-tertiary">
+                      Apagar o lead inteiro? Saem as mensagens, os arquivos, o estado da
+                      conversa, os eventos enviados à Meta e o próprio contato. O que já foi
+                      recebido pela Meta continua lá — some daqui, não de lá. Não há como
+                      desfazer.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm"
+                        disabled={salvando}
+                        onClick={excluiLead}
+                      >
+                        Confirmar exclusão do lead
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={salvando}
+                        onClick={() => setConfirmando(null)}
                       >
                         Cancelar
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    disabled={salvando}
-                    onClick={() => setConfirmandoExclusao(true)}
-                  >
-                    Excluir conversa
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      disabled={salvando}
+                      onClick={() => setConfirmando('conversa')}
+                    >
+                      Excluir conversa
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm"
+                      disabled={salvando}
+                      onClick={() => setConfirmando('lead')}
+                    >
+                      Excluir lead
+                    </button>
+                  </div>
                 )}
               </div>
             ) : null}

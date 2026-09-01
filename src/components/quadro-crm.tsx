@@ -43,10 +43,16 @@ export function QuadroCrm({
   colunas,
   cartoes,
   leadInicial = null,
+  podeExcluir = false,
 }: {
   cliente: string;
   colunas: ColunaCrm[];
   cartoes: CartaoCrm[];
+  /**
+   * Sessão de administrador. Só controla o que o modal do lead mostra —
+   * quem recusa a exclusão de fato é `acaoExcluirLead`, no servidor.
+   */
+  podeExcluir?: boolean;
   /**
    * Contato a abrir de saída, vindo de `?lead=` — é assim que a tela de
    * Conversas chega aqui. Se ele não estiver no período ou no filtro em
@@ -285,6 +291,8 @@ export function QuadroCrm({
               atual.map((c) => (c.id === mudanca.id ? { ...c, ...mudanca } : c)),
             )
           }
+          aoExcluir={(id) => setLista((atual) => atual.filter((c) => c.id !== id))}
+          podeExcluir={podeExcluir}
         />
       ) : null}
     </div>

@@ -28,6 +28,7 @@ export const ACOES = {
   WHATSAPP_EVOLUTION_DESCONECTADA: 'whatsapp_evolution_desconectada',
   WHATSAPP_EVOLUTION_REMOVIDA: 'whatsapp_evolution_removida',
   WHATSAPP_EVOLUTION_WEBHOOK: 'whatsapp_evolution_webhook',
+  LEAD_EXCLUIDO: 'lead_excluido',
   CRM_LEAD_MOVIDO: 'crm_lead_movido',
   CRM_LEAD_SALVO: 'crm_lead_salvo',
   EVENTO_MAPEAMENTO_SALVO: 'evento_mapeamento_salvo',

@@ -650,6 +650,59 @@ export async function apagaConversa(
 }
 
 /**
+ * Apaga o lead inteiro: mensagens, estado da conversa, eventos e o
+ * próprio contato.
+ *
+ * Diferente de `apagaConversa`, que preserva o registro em `customers`.
+ * Aqui o pedido é outro — sumir com o lead do banco —, então os eventos
+ * já enviados à Meta também saem de `meta_capi_events`.
+ *
+ * A ordem importa e não é arbitrária: `meta_capi_events.customer_id` e
+ * `whatsapp_messages.customer_id` são `ON DELETE SET NULL`, ou seja,
+ * apagar `customers` primeiro deixaria as linhas para trás com o vínculo
+ * zerado — exatamente o histórico órfão que se quer evitar. Por isso os
+ * filhos vão antes, e o contato por último.
+ *
+ * Os bytes em `whatsapp_media` não aparecem aqui de propósito: a chave
+ * estrangeira deles é `ON DELETE CASCADE` sobre `whatsapp_messages`, então
+ * o próprio banco leva os arquivos junto.
+ *
+ * Tudo em uma transação: exclusão pela metade deixaria evento apontando
+ * para contato que não existe mais.
+ */
+export async function apagaLead(
+  db: BancoCliente,
+  customerId: number,
+): Promise<{ mensagens: number; eventos: number; existia: boolean }> {
+  return transacao(async (conn) => {
+    const afetadas = (r: unknown) => (r as { affectedRows?: number }).affectedRows ?? 0;
+
+    const [msgs] = await conn.query(
+      `DELETE FROM ${db.tabela('whatsapp_messages')} WHERE customer_id = ?`,
+      [customerId],
+    );
+    await conn.query(
+      `DELETE FROM ${db.tabela('whatsapp_conversations')} WHERE customer_id = ?`,
+      [customerId],
+    );
+    const [eventos] = await conn.query(
+      `DELETE FROM ${db.tabela('meta_capi_events')} WHERE customer_id = ?`,
+      [customerId],
+    );
+    const [lead] = await conn.query(
+      `DELETE FROM ${db.tabela('customers')} WHERE id = ?`,
+      [customerId],
+    );
+
+    return {
+      mensagens: afetadas(msgs),
+      eventos: afetadas(eventos),
+      existia: afetadas(lead) > 0,
+    };
+  });
+}
+
+/**
  * Bytes de um anexo, para a rota que serve o arquivo.
  *
  * Faz JOIN com `whatsapp_messages` de propósito: o `message_id` chega

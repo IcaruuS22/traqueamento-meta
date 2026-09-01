@@ -63,7 +63,7 @@ export async function TelaCrm({
   origem: OrigemLead;
   searchParams: Record<string, string | string[] | undefined>;
 }) {
-  const { conta, db } = await requireClientAccessPagina(decodeURIComponent(cliente));
+  const { usuario, conta, db } = await requireClientAccessPagina(decodeURIComponent(cliente));
   const texto = TEXTO[origem];
 
   const um = (chave: string) => {
@@ -127,6 +127,7 @@ export async function TelaCrm({
             colunas={quadro.colunas}
             cartoes={quadro.cartoes}
             leadInicial={leadInicial}
+            podeExcluir={usuario.papel === 'admin'}
           />
         ) : (
           <Vazio>

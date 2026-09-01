@@ -12,6 +12,7 @@ import {
   nomeDoCartao,
 } from '@/lib/crm';
 import { acaoMoverLeadCrm, acaoSalvarLeadCrm } from '@/lib/acoes/crm';
+import { acaoExcluirLead } from '@/lib/acoes/leads';
 import { ehEtapaDePerda, MOTIVOS_PERDA_SUGERIDOS, TAMANHO_MOTIVO } from '@/lib/funil';
 import { textoDaMensagem } from '@/lib/whatsapp-conversas';
 import { fmtDataHora, ouTraco } from '@/lib/format';
@@ -59,18 +60,29 @@ export function ModalLeadCrm({
   cartao,
   aoFechar,
   aoAtualizar,
+  aoExcluir,
+  podeExcluir = false,
 }: {
   cliente: string;
   cartao: CartaoCrm;
   aoFechar: () => void;
   /** Reflete no quadro o que foi editado aqui, sem recarregar a tela. */
   aoAtualizar: (mudanca: Partial<CartaoCrm> & { id: number }) => void;
+  /** Tira o card do quadro depois que o lead foi apagado no banco. */
+  aoExcluir: (id: number) => void;
+  /**
+   * Sessão de administrador. Só controla o que o modal mostra — quem
+   * recusa a exclusão de fato é `acaoExcluirLead`, no servidor.
+   */
+  podeExcluir?: boolean;
 }) {
   const [lead, setLead] = useState<DetalheLeadCrm | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<Aviso | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [movendo, setMovendo] = useState(false);
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
 
   // Mandar para "perdido" não move na hora: primeiro pergunta o motivo.
   // Sem essa pausa o motivo nunca seria registrado — e é dele que sai o
@@ -126,6 +138,23 @@ export function ModalLeadCrm({
   }, [cliente, cartao.id]);
 
   const nome = lead ? nomeDoCartao(lead) : nomeDoCartao(cartao);
+
+  async function excluir() {
+    if (!lead) return;
+    setExcluindo(true);
+    setAviso(null);
+    const r = await acaoExcluirLead({ cliente, customer_id: lead.id });
+    setExcluindo(false);
+    if (!r.ok) {
+      setConfirmandoExclusao(false);
+      setAviso({ tipo: 'erro', texto: r.erro });
+      return;
+    }
+    // O card não pode continuar no quadro apontando para um lead que não
+    // existe mais: sai do quadro e o modal fecha junto.
+    aoExcluir(lead.id);
+    aoFechar();
+  }
 
   async function salvar() {
     if (!lead) return;
@@ -456,6 +485,47 @@ export function ModalLeadCrm({
                   </p>
                 )}
               </Secao>
+
+              {podeExcluir ? (
+                <Secao titulo="Área do administrador">
+                  {confirmandoExclusao ? (
+                    <div className="space-y-2">
+                      <p className="text-body-small text-tertiary">
+                        Apagar o lead inteiro? Saem as mensagens, os arquivos, o estado da
+                        conversa, os eventos enviados à Meta e o próprio contato. O que já foi
+                        recebido pela Meta continua lá — some daqui, não de lá. Não há como
+                        desfazer.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-sm"
+                          disabled={excluindo}
+                          onClick={excluir}
+                        >
+                          {excluindo ? 'Excluindo...' : 'Confirmar exclusão do lead'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          disabled={excluindo}
+                          onClick={() => setConfirmandoExclusao(false)}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm"
+                      onClick={() => setConfirmandoExclusao(true)}
+                    >
+                      Excluir lead
+                    </button>
+                  )}
+                </Secao>
+              ) : null}
             </>
           )}
         </div>

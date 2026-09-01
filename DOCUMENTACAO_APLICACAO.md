@@ -767,7 +767,7 @@ A conversa da instância consigo mesma (o "recado para mim mesmo", e o que a Evo
 
 - **`buscaContaPorInstanciaEvolution`** passou a trazer `evolution_number`, e a rota de webhook descarta a mensagem cujo telefone bate com ele (`mesmoTelefone`). A resposta devolve `ignoradas_proprias` junto de `gravadas`.
 - **`leNumeroConexao`** (novo, em `evolution-payload.ts`) lê o número do evento `connection.update` quando a versão da Evolution o manda, para o catálogo ter o valor sem depender de alguém abrir a tela de conexão.
-- **Lead já criado não some sozinho**: o filtro vale daí para frente. O que já está no banco sai pelo botão "Excluir conversa" na tela de Conversas, ou por SQL.
+- **Lead já criado não some sozinho**: o filtro vale daí para frente. O que já está no banco sai pelo botão "Excluir lead" na tela de Conversas (ver seção 34), ou por SQL.
 
 ### 33.3 Valor da IA: o preço quase sempre é dito pelo atendente
 
@@ -790,3 +790,15 @@ O prompt de classificação mandava preencher `valor` "quando o valor estiver ex
 Verificação: `npx tsc --noEmit` limpo, `npm test` 144/144 (20 casos novos, entre telefone e orçamento) e `next build` sem erro.
 
 **Precisa reimportar no n8n**: `WhatsApp/WhatsApp IA - Classificacao Automatica.json`, por causa do prompt.
+
+## 34. Excluir lead: apaga tudo, não só a conversa
+
+Só existia "Excluir conversa", que apaga as mensagens e deixa o contato de pé — de propósito, porque o registro em `customers` é o mesmo que os eventos da CAPI e os leads de formulário referenciam. Faltava o outro caso, que é o pedido comum: sumir com o lead inteiro.
+
+- **`apagaLead`** (`src/lib/db/conversas.ts`) — uma transação apagando `whatsapp_messages`, `whatsapp_conversations`, `meta_capi_events` e a linha em `customers`, nessa ordem. A ordem não é arbitrária: as duas chaves estrangeiras para `customers` são `ON DELETE SET NULL`, então apagar o contato primeiro deixaria mensagens e eventos para trás com o vínculo zerado — exatamente o histórico órfão que se quer evitar. Os bytes em `whatsapp_media` não aparecem no código porque a chave deles é `ON DELETE CASCADE` sobre `whatsapp_messages`: o banco leva os arquivos junto.
+- **`acaoExcluirLead`** (`src/lib/acoes/leads.ts`, novo) — arquivo próprio porque as duas telas chamam a mesma coisa: o lead é o mesmo registro venha de formulário ou de WhatsApp. Restrita a administrador **no servidor**, não escondendo o botão: Server Action é endpoint, e qualquer sessão autenticada alcança. Registra em auditoria a ação nova `lead_excluido`, com a contagem de mensagens e eventos apagados.
+- **Onde fica**: na área do administrador da tela de Conversas, ao lado de "Excluir conversa" (as duas confirmações compartilham um estado só, para não abrirem juntas e o clique não cair na errada), e no modal do lead nos dois CRMs — que é como o lead de formulário, sem conversa, também é excluível.
+- **O que a exclusão não alcança**: nada do lado da Meta. Os eventos já enviados continuam no Gerenciador de Eventos, e `meta_insights_daily` não muda, porque é agregado da própria Meta e não tem lead nenhum dentro. Some o lead do painel; não some a conversão que ele gerou lá fora.
+- **Não há lixeira.** As mensagens também não voltam pelo webhook: o `wa_message_id` reenviado é descartado pelo `INSERT IGNORE`. Por isso as duas telas pedem confirmação antes de chamar.
+
+Verificação: `npx tsc --noEmit` limpo, `npm test` 144/144 e `next build` sem erro. Não verificado no navegador: a tela exige sessão autenticada contra dados de produção.
