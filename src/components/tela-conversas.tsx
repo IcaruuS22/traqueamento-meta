@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { acaoEnviarMensagem, acaoExcluirConversa, acaoSalvarLead } from '@/lib/acoes/conversas';
 import { ehEtapaDePerda, MOTIVOS_PERDA_SUGERIDOS, TAMANHO_MOTIVO } from '@/lib/funil';
-import { fmtDataHora, fmtHoraRelativa } from '@/lib/format';
+import { fmtBRL, fmtDataHora, fmtHoraRelativa } from '@/lib/format';
+import { Dica } from '@/components/dica';
 import Link from 'next/link';
 import { IconesNav } from '@/components/icones';
 import { ModalRastreio } from '@/components/modal-rastreio';
@@ -153,6 +154,21 @@ const doFormulario = (l: LeadConversa): FormLead => ({
  * com o rótulo de `textoDaMensagem` ("📎 Imagem recebida"), que é o que
  * já acontecia antes da captura existir.
  */
+/**
+ * Valor que a IA extraiu da conversa.
+ *
+ * Vem como string do MySQL (DECIMAL com `dateStrings` no pool) ou como
+ * `null` — tanto quando a IA não achou valor nenhum quanto quando o banco
+ * do cliente ainda não rodou `migracao_whatsapp_ia_valor.sql`. Os dois
+ * casos aparecem como "—": o painel não tem como distinguir um do outro,
+ * e inventar mensagem diferente pra cada um seria chute.
+ */
+function valorDaIA(valor: string | number | null): string {
+  if (valor === null || valor === undefined || valor === '') return '—';
+  const n = Number(valor);
+  return Number.isFinite(n) && n > 0 ? fmtBRL(n) : '—';
+}
+
 function Anexo({
   cliente,
   customerId,
@@ -902,6 +918,13 @@ export function TelaConversas({
                 <div className="crm-readonly">
                   {rotuloEstagio(thread.lead.ai_last_classification)}
                 </div>
+              </div>
+              <div className="crm-field">
+                <label>
+                  Valor identificado{' '}
+                  <Dica texto="Valor que a IA leu nas próprias mensagens da conversa. Quando existe, é ele que vai como valor do evento enviado à Meta, no lugar do valor fixo cadastrado em Configuração de Eventos." />
+                </label>
+                <div className="crm-readonly">{valorDaIA(thread.lead.ai_last_value)}</div>
               </div>
               <div className="crm-field">
                 <label>Motivo</label>

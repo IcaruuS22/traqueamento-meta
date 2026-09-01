@@ -290,7 +290,10 @@ CREATE TABLE IF NOT EXISTS whatsapp_media (
 -- Automatica" (classificação automática por Groq): ai_last_analyzed_at
 -- controla o debounce (evita reanalisar a mesma conversa repetidamente)
 -- e ai_last_classification/ai_last_reason guardam a última decisão da
--- IA para auditoria na aba Conversas do painel.
+-- IA para auditoria na aba Conversas do painel. ai_last_value é o valor
+-- que a IA encontrou nas próprias mensagens (o que o lead disse que
+-- pagou): quando existe, é ele que vai como `value` no evento Meta CAPI,
+-- no lugar do valor fixo cadastrado em whatsapp_event_map.
 CREATE TABLE IF NOT EXISTS whatsapp_conversations (
   customer_id BIGINT PRIMARY KEY,
   status VARCHAR(60) DEFAULT 'novo' NOT NULL,   -- ver whatsapp_event_map para a lista de estágios (dinâmica, definida pelo cliente)
@@ -302,6 +305,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_conversations (
   ai_last_analyzed_at TIMESTAMP NULL DEFAULT NULL,
   ai_last_classification VARCHAR(60) NULL DEFAULT NULL,
   ai_last_reason VARCHAR(500) NULL DEFAULT NULL,
+  ai_last_value DECIMAL(12,2) NULL DEFAULT NULL,
   -- Por que a conversa foi perdida, preenchido no painel na hora de
   -- mover para o estágio `perdido` (tela CRM ou Conversas). Alimenta a
   -- tela "Analytics do funil". Voltam a NULL quando a conversa sai de

@@ -323,3 +323,30 @@ export async function buscaHierarquia(
     lacunas_de_esquema: lacunas.lista(),
   };
 }
+
+/**
+ * Espelha na tabela local o status que a Meta acabou de aceitar.
+ *
+ * Sem isto a linha voltaria ao status antigo no primeiro `router.refresh()`:
+ * a tela lê `meta_campaigns`/`meta_adsets`/`meta_ads`, e essas tabelas só
+ * são reescritas quando a sincronização com a Meta roda. Aqui a fonte da
+ * verdade continua sendo a Meta — o que se grava é a resposta dela, e a
+ * próxima sincronização sobrescreve de qualquer jeito.
+ *
+ * Devolve quantas linhas mudaram. Zero é possível e não é erro: a
+ * campanha pode existir na conta da Meta e ainda não ter sido importada
+ * para o banco do cliente.
+ */
+export async function atualizaStatusLocal(
+  db: BancoCliente,
+  nivel: NivelHierarquia,
+  id: string,
+  status: string,
+): Promise<number> {
+  const cfg = NIVEIS[nivel];
+  const { affectedRows } = await db.execute(
+    `UPDATE ${db.tabela(cfg.tabela)} SET status = ? WHERE ${cfg.colunaId} = ?`,
+    [status, id],
+  );
+  return affectedRows;
+}

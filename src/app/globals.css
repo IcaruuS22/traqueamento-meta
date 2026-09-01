@@ -2324,6 +2324,72 @@ select.filtro-campo {
   padding: 18px;
   overflow-y: auto;
 }
+/* Bolinha de informacao ao lado de um rotulo.
+   Existe porque o `title` do navegador demora cerca de um segundo pra
+   aparecer, some sozinho e nao abre no toque -- e o texto que ela guarda
+   (o que cada nivel de confianca significa) e' o que impede alguem de ler
+   "Confianca Baixa" como "lead ruim" em vez de "origem nao rastreada". */
+.dica {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+.dica-botao {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  /* Cor herdada, fundo transparente: a bolinha vive dentro de um selo
+     colorido (verde/ambar/vermelho, conforme a confianca) e cor propria
+     ficaria como remendo em cima do selo. */
+  border: 1px solid currentColor;
+  /* 999px e nao --radius-pill (7px): aqui tem que ser circulo. */
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+}
+.dica-botao:hover,
+.dica-botao:focus-visible {
+  opacity: 1;
+}
+.dica-balao {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  z-index: 40;
+  width: max-content;
+  max-width: min(260px, 70vw);
+  padding: 8px 10px;
+  transform: translateX(-50%);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-floating);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
+}
+/* `:focus` e nao `:focus-visible`: no celular o toque da foco sem passar
+   pelo teclado, e sem isso a dica nao abriria de jeito nenhum. */
+.dica:hover .dica-balao,
+.dica-botao:focus + .dica-balao {
+  opacity: 1;
+  visibility: visible;
+}
+
 /* Rotulo e valor lado a lado; no celular o valor cai para a linha de
    baixo, porque id de anuncio nao cabe em meia tela. */
 .rastreio-linha {

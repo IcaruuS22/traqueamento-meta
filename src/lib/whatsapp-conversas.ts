@@ -190,6 +190,11 @@ export type LeadConversa = {
   ai_last_analyzed_at: string | null;
   ai_last_classification: string | null;
   ai_last_reason: string | null;
+  /**
+   * Valor que a IA achou nas mensagens ("paguei 19,90"), quando achou.
+   * Só existe em banco que já rodou `migracao_whatsapp_ia_valor.sql`.
+   */
+  ai_last_value: string | number | null;
 };
 
 export type Thread = {

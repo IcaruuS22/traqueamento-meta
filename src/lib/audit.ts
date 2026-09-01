@@ -38,6 +38,7 @@ export const ACOES = {
   SYNC_DISPARADA: 'sync_disparada',
   BACKFILL_DISPARADO: 'backfill_disparado',
   IA_ANALISE_EXECUTADA: 'ia_analise_executada',
+  META_STATUS_ALTERADO: 'meta_status_alterado',
 } as const;
 
 export type Acao = (typeof ACOES)[keyof typeof ACOES];

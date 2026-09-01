@@ -658,3 +658,38 @@ Testado no preview (porta 8935), sem recarregar a página entre os passos:
 Detalhe do ambiente de teste: o navegador embutido reporta `document.hidden = true` mesmo com a aba em primeiro plano, e o polling (corretamente) pula quando a aba não está visível — foi preciso sobrescrever `document.hidden` para forçar o poll durante o teste. Isso é limitação do preview, não do código.
 
 **Precisa reimportar no n8n**: nada. As duas correções são só de frontend (`painel-admin.html`), nenhum workflow foi alterado.
+
+---
+
+## 30. Ligar e desligar campanha, conjunto e anúncio pelo painel
+
+Até aqui o app só **lia** da Meta (métricas, hierarquia de campanhas) e escrevia na Conversions API (evento de conversão). Esta é a primeira escrita na **conta de anúncio** do cliente: na aba Campanhas, o status de cada linha virou botão — clicar alterna entre ativo e pausado, nos três níveis (campanha, conjunto, anúncio).
+
+### 30.1 Como funciona
+
+- **`src/lib/meta-ads.ts`** (novo) — `alteraStatusEntidade(clientDb, id, status)` faz `POST https://graph.facebook.com/v25.0/{id}` com `status=ACTIVE|PAUSED`. A Graph API trata os três níveis pelo mesmo endpoint: o id já diz à Meta o que a entidade é, então o nível não entra na chamada.
+
+  Ficou separado de `meta-capi.ts` de propósito — aquele fala com a Conversions API, este com a Marketing API. São escopos de token diferentes: um token que envia evento sem problema pode não ter `ads_management`.
+
+  O `meta_access_token` vai no **corpo** do POST, não na query string como na CAPI: URL aparece em log de proxy e em relatório de erro, corpo de POST não.
+
+- **`src/lib/acoes/campanhas.ts`** (novo) — Server Action `acaoAlterarStatus`. Valida a entrada com Zod (o id precisa casar com `^\d{1,25}$`, porque ele vai direto no caminho da URL da Graph API), chama a Meta, e **só depois** grava o status na tabela local. A ordem importa: gravar primeiro deixaria o painel mostrando "Pausada" para uma campanha que segue gastando.
+
+- **`atualizaStatusLocal`** em `src/lib/db/campanhas.ts` — espelha em `meta_campaigns`/`meta_adsets`/`meta_ads` o status que a Meta aceitou. Sem isso a linha voltaria ao status antigo no primeiro `router.refresh()`, já que essas tabelas só são reescritas pela sincronização. A fonte da verdade continua sendo a Meta; a próxima sincronização sobrescreve de qualquer jeito.
+
+- **`proximoStatus`** em `src/lib/campanhas.ts` — só `ACTIVE` e `PAUSED` se alternam. Arquivado e excluído a Meta não aceita reverter por um POST de status, e os status que ela mesma inventa (`IN_PROCESS`, `WITH_ISSUES`, `PENDING_REVIEW`) descrevem uma situação dela, não uma escolha do anunciante. Nesses casos o status continua sendo texto, sem botão — um botão que não faz nada é pior do que nenhum botão.
+
+### 30.2 Decisões
+
+- **Não é restrito a administrador.** A conta de anúncio é do cliente, e pausar tem volta pelo mesmo botão — diferente de excluir conversa, que é irreversível e por isso é só de admin. Quem clicou fica registrado na auditoria, na ação nova `meta_status_alterado`.
+- **Confirmação antes de cada alteração** (`window.confirm`, mesmo padrão do "Importar histórico"), porque o clique mexe em entrega e gasto reais.
+- **Erros de token viram texto legível**: código 190 vira "o token expirou ou foi revogado"; código 200 vira "o token não tem permissão de gerenciar anúncios (`ads_management`)". A mensagem crua da Meta não deixa claro que o problema é o cadastro do cliente, não o clique.
+- **Mapa de status local no componente da tabela.** `router.refresh()` recarrega as campanhas do servidor, mas os conjuntos e anúncios abertos vivem em estado de cliente (`filhos`) e não são refeitos — sem o mapa, a linha filha voltaria ao status antigo logo depois de mudar.
+
+### 30.3 Verificação
+
+- `npx tsc --noEmit` limpo; `npm test` 115/115 (5 casos novos para `proximoStatus`).
+- No preview: as duas campanhas do cliente renderizam o status como botão, com o `title` certo em cada sentido ("Pausar na Meta…" / "Ativar na Meta…"); expandir a campanha mostra os conjuntos, também com botão.
+- **A ida à Meta não foi testada de ponta a ponta**: o único jeito seria pausar ou ativar uma campanha real de um cliente em produção.
+
+**Precisa reimportar no n8n**: nada. A alteração é toda do app.

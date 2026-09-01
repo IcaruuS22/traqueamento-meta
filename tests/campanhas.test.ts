@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { LinhaHierarquia } from '@/lib/db/campanhas';
-import { rotuloStatus, somaCampanhas, tomStatus } from '@/lib/campanhas';
+import { proximoStatus, rotuloStatus, somaCampanhas, tomStatus } from '@/lib/campanhas';
 
 function linha(over: Partial<LinhaHierarquia> = {}): LinhaHierarquia {
   return {
@@ -101,5 +101,21 @@ describe('totais da tabela de campanhas', () => {
     assert.equal(t.spend, 0);
     assert.equal(t.ctr, 0);
     assert.deepEqual(t.funil_eventos, []);
+  });
+});
+
+describe('proximoStatus', () => {
+  it('alterna entre ativo e pausado', () => {
+    assert.equal(proximoStatus('ACTIVE'), 'PAUSED');
+    assert.equal(proximoStatus('PAUSED'), 'ACTIVE');
+    assert.equal(proximoStatus('active'), 'PAUSED');
+  });
+
+  it('recusa o que a Meta não deixa alternar por status', () => {
+    assert.equal(proximoStatus('ARCHIVED'), null);
+    assert.equal(proximoStatus('DELETED'), null);
+    assert.equal(proximoStatus('IN_PROCESS'), null);
+    assert.equal(proximoStatus(null), null);
+    assert.equal(proximoStatus(''), null);
   });
 });

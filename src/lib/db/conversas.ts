@@ -236,13 +236,14 @@ async function leLead(
   msgs: string,
   customerId: number,
 ): Promise<LinhaLead | null> {
-  const consulta = (motivo: string) =>
+  const consulta = (motivo: string, valorIA: string) =>
     db.queryOne<LinhaLead>(
       `SELECT c.id AS customer_id, c.first_name, c.last_name, c.email, c.phone,
               COALESCE(wc.status, 'novo') AS status, wc.notes, wc.tags,
               ${motivo} AS motivo_perda,
               TIMESTAMPDIFF(SECOND, wc.last_inbound_at, NOW()) AS segundos_desde_inbound,
               wc.ai_last_analyzed_at, wc.ai_last_classification, wc.ai_last_reason,
+              ${valorIA} AS ai_last_value,
               (SELECT m.referral_ctwa_clid FROM ${msgs} m
                 WHERE m.customer_id = c.id AND m.referral_ctwa_clid IS NOT NULL
                 ORDER BY m.id ASC LIMIT 1) AS referral_ctwa_clid,
@@ -256,11 +257,24 @@ async function leLead(
       [customerId],
     );
 
+  // Duas colunas de migrações diferentes, testadas na ordem em que
+  // provavelmente faltam: quem não rodou nenhuma cai no último caso e
+  // continua vendo a conversa inteira, só sem esses dois campos.
   try {
-    return await consulta('wc.lost_reason');
+    return await consulta('wc.lost_reason', 'wc.ai_last_value');
   } catch (erro) {
     if (!lacunaDeEsquema(erro)) throw erro;
-    return consulta('NULL');
+  }
+  try {
+    return await consulta('wc.lost_reason', 'NULL');
+  } catch (erro) {
+    if (!lacunaDeEsquema(erro)) throw erro;
+  }
+  try {
+    return await consulta('NULL', 'wc.ai_last_value');
+  } catch (erro) {
+    if (!lacunaDeEsquema(erro)) throw erro;
+    return consulta('NULL', 'NULL');
   }
 }
 

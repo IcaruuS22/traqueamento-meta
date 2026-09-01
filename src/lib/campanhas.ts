@@ -34,6 +34,24 @@ export function rotuloStatus(
   return nivel === 'campaign' ? par[0] : par[1];
 }
 
+/**
+ * Para onde o clique no status leva, ou `null` quando não há para onde ir.
+ *
+ * Só ACTIVE e PAUSED se alternam. Arquivado e excluído a Meta não aceita
+ * reverter por um POST de status, e os status intermediários que ela
+ * inventa (`IN_PROCESS`, `WITH_ISSUES`, `PENDING_REVIEW`) descrevem uma
+ * situação dela, não uma escolha do anunciante — escrever por cima seria
+ * mandar a Meta desfazer algo que ela está fazendo.
+ */
+export function proximoStatus(status: string | null | undefined): 'ACTIVE' | 'PAUSED' | null {
+  const s = String(status ?? '')
+    .trim()
+    .toUpperCase();
+  if (s === 'ACTIVE') return 'PAUSED';
+  if (s === 'PAUSED') return 'ACTIVE';
+  return null;
+}
+
 export type TomStatus = 'ativo' | 'pausado' | 'atencao';
 
 export function tomStatus(status: string | null | undefined): TomStatus {

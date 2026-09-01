@@ -13,6 +13,7 @@ import {
   metodoDeCaptura,
 } from '@/lib/rastreamento';
 import { fmtBRL, fmtDataHora, ouTraco } from '@/lib/format';
+import { Dica } from './dica';
 
 /**
  * Modal "Rastreio do contato" — tudo o que se sabe sobre a origem de um lead.
@@ -215,10 +216,10 @@ export function ModalRastreio({
                   {ROTULO_FONTE[c.fonte]}
                 </span>
                 <span
-                  title={DICA_CONFIANCA[c.confianca]}
-                  className={`inline-flex h-6 items-center rounded-[var(--radius-pill)] px-2.5 text-[11px] font-medium ${CLASSE_CONFIANCA[c.confianca]}`}
+                  className={`inline-flex h-6 items-center gap-1.5 rounded-[var(--radius-pill)] px-2.5 text-[11px] font-medium ${CLASSE_CONFIANCA[c.confianca]}`}
                 >
                   Confiança {ROTULO_CONFIANCA[c.confianca]}
+                  <Dica texto={DICA_CONFIANCA[c.confianca]} />
                 </span>
               </div>
 
