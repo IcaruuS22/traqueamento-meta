@@ -11,6 +11,14 @@
  * corrente: quem filtra agosto quer o fechamento de agosto. Mês já
  * encerrado não recebe recomendação — não há o que ajustar no passado.
  *
+ * O ritmo é medido só em dias inteiros. O dia de hoje está pela metade
+ * quando alguém olha o painel, e dividir o gasto do mês pelos dias
+ * decorridos jogava essa metade na média: no dia 2, com R$ 130 ontem e
+ * R$ 18 até agora, a média caía para R$ 74 e o card mandava dobrar a
+ * diária de quem estava exatamente no ritmo certo. O gasto de hoje
+ * continua contando no total e no que resta do fee — ele só não entra na
+ * conta da média.
+ *
  * Tudo aqui trabalha com data civil ("YYYY-MM-DD") em vez de `Date`. O
  * servidor da Vercel roda em UTC e o painel raciocina em São Paulo; usar
  * `getDate()` faria o card virar o mês três horas antes da meia-noite de
@@ -77,7 +85,7 @@ export type Orcamento = {
   consumo: number;
   /** Quanto o mês fecharia mantido o ritmo atual. Mês fechado: o gasto. */
   projecao: number;
-  /** Média diária praticada no mês. */
+  /** Média diária praticada nos dias inteiros do mês, hoje de fora. */
   diarioAtual: number;
   /** Média diária que faz o mês fechar exatamente no fee. */
   diarioIdeal: number;
@@ -89,6 +97,8 @@ export type Orcamento = {
   diasNoMes: number;
   /** Dias já decorridos, contando o dia de referência. */
   diasDecorridos: number;
+  /** Dias que já terminaram — os decorridos menos hoje. Base do ritmo. */
+  diasCompletos: number;
   /** Dias que faltam, contando o dia de referência. */
   diasRestantes: number;
   recomendacao: Recomendacao;
@@ -129,7 +139,14 @@ export function ultimoDiaConsiderado(mes: string, hoje: string): string {
  */
 export function avaliaOrcamento(entrada: {
   fee: number | null;
+  /** Gasto do mês até hoje, hoje incluso. */
   gasto: number;
+  /**
+   * Gasto do mês até ontem. É o que sustenta o ritmo: o dia de hoje está
+   * pela metade e diluiria a média. Mês encerrado não tem "hoje", então
+   * pode vir igual ao gasto ou ser omitido.
+   */
+  gastoAteOntem?: number;
   /** Mês analisado, "YYYY-MM". */
   mes: string;
   /** Hoje em São Paulo, "YYYY-MM-DD". */
@@ -148,10 +165,18 @@ export function avaliaOrcamento(entrada: {
     : futuro
       ? 0
       : Math.min(Number(entrada.hoje.slice(8, 10)), diasNoMes);
+  // Hoje sai da conta do ritmo, mas continua no que resta do mês: ainda
+  // dá para gastar nele.
+  const diasCompletos = fechado ? diasNoMes : Math.max(diasDecorridos - 1, 0);
   const diasRestantes = fechado ? 0 : diasNoMes - diasDecorridos + 1;
 
+  const ateOntemBruto = Number(entrada.gastoAteOntem);
+  const gastoAteOntem = fechado
+    ? gasto
+    : Math.min(Number.isFinite(ateOntemBruto) && ateOntemBruto > 0 ? ateOntemBruto : 0, gasto);
+
   const restante = Math.max(fee - gasto, 0);
-  const diarioAtual = diasDecorridos > 0 ? gasto / diasDecorridos : 0;
+  const diarioAtual = diasCompletos > 0 ? gastoAteOntem / diasCompletos : 0;
   const diarioIdeal = diasRestantes > 0 ? restante / diasRestantes : 0;
 
   const base: Omit<Orcamento, 'ajuste' | 'recomendacao'> = {
@@ -162,11 +187,14 @@ export function avaliaOrcamento(entrada: {
     gasto,
     restante,
     consumo: fee > 0 ? gasto / fee : 0,
-    projecao: fechado ? gasto : diarioAtual * diasNoMes,
+    // O que já se gastou, mais o ritmo dos dias inteiros que ainda vêm.
+    // Hoje entra pelo valor real, e não pela média: parte dele já foi.
+    projecao: fechado ? gasto : gasto + diarioAtual * (diasNoMes - diasDecorridos),
     diarioAtual,
     diarioIdeal,
     diasNoMes,
     diasDecorridos,
+    diasCompletos,
     diasRestantes,
   };
 
@@ -176,9 +204,11 @@ export function avaliaOrcamento(entrada: {
   if (fechado) return { ...base, ajuste: 0, recomendacao: 'fechado' };
   if (futuro) return { ...base, ajuste: 0, recomendacao: 'indefinido' };
   if (restante <= 0) return { ...base, ajuste: -1, recomendacao: 'estourado' };
-  // Sem gasto nenhum não existe ritmo para comparar: qualquer percentual
-  // sairia de uma divisão por zero e viraria "aumentar 1000%".
-  if (gasto <= 0) return { ...base, ajuste: 0, recomendacao: 'indefinido' };
+  // Sem um dia inteiro com gasto não existe ritmo para comparar: qualquer
+  // percentual sairia de uma divisão por zero e viraria "aumentar 1000%".
+  if (diasCompletos <= 0 || gastoAteOntem <= 0) {
+    return { ...base, ajuste: 0, recomendacao: 'indefinido' };
+  }
 
   const ajuste = diarioIdeal / diarioAtual - 1;
   if (Math.abs(ajuste) <= MARGEM_NO_ALVO) return { ...base, ajuste, recomendacao: 'manter' };
@@ -211,8 +241,13 @@ export function fraseOrcamento(o: Orcamento): string {
         ? `Mês encerrado ${brl(o.gasto - o.fee)} acima do fee.`
         : `Mês encerrado com ${brl(o.fee - o.gasto)} do fee não usados.`;
     default:
-      return o.fee > 0
-        ? 'Ainda não há gasto neste mês para comparar com o fee.'
-        : 'Cadastre o fee mensal deste cliente para acompanhar o gasto.';
+      if (o.fee <= 0) return 'Cadastre o fee mensal deste cliente para acompanhar o gasto.';
+      if (o.gasto <= 0 && o.diasCompletos > 0)
+        return 'Ainda não há gasto neste mês para comparar com o fee.';
+      // Gasto só de hoje, ou dia 1 do mês: existe gasto, mas nenhum dia
+      // inteiro para medir ritmo. A diária de referência ainda ajuda.
+      if (o.diarioIdeal > 0)
+        return `Sem dia inteiro fechado para medir o ritmo. Para usar o fee, cerca de ${brl(o.diarioIdeal)} por dia.`;
+      return 'Ainda não há gasto neste mês para comparar com o fee.';
   }
 }

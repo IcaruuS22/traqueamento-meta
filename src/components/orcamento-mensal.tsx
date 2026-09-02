@@ -13,6 +13,10 @@ import { fraseOrcamento, type Orcamento, type Recomendacao } from '@/lib/orcamen
  *
  * Ele recomenda, não age: subir ou descer verba de anúncio é decisão de
  * quem gerencia a conta, e o botão para isso continua sendo o da Meta.
+ *
+ * O percentual ao lado do rótulo é de consumo do fee, não de ajuste. Vem
+ * escrito "% do fee" porque "Aumentar · 4%" se lia como uma ordem de
+ * subir 4%, enquanto a frase logo abaixo pedia quase o dobro da diária.
  */
 
 /** Cor da faixa por recomendação. Verde = no alvo, âmbar = ajuste, vermelho = estouro. */
@@ -46,7 +50,7 @@ export function OrcamentoMensal({ orcamento }: { orcamento: Orcamento }) {
       descricao={
         orcamento.fechado
           ? 'Gasto em campanhas no mês, contra o fee combinado.'
-          : `Gasto em campanhas contra o fee combinado. Dia ${orcamento.diasDecorridos} de ${orcamento.diasNoMes}.`
+          : `Gasto do mês inteiro contra o fee combinado, não o do período da tela. Dia ${orcamento.diasDecorridos} de ${orcamento.diasNoMes}.`
       }
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -59,7 +63,7 @@ export function OrcamentoMensal({ orcamento }: { orcamento: Orcamento }) {
         </span>
         <span className={`text-xs font-medium ${tom.texto}`}>
           {tom.rotulo}
-          {orcamento.fee > 0 ? ` · ${pct}%` : ''}
+          {orcamento.fee > 0 ? ` · ${pct}% do fee` : ''}
         </span>
       </div>
 
@@ -71,7 +75,7 @@ export function OrcamentoMensal({ orcamento }: { orcamento: Orcamento }) {
 
       {orcamento.fee > 0 ? (
         <p className="mt-2 text-xs text-[var(--text-tertiary)] tabular-nums">
-          Diária atual {fmtBRL(orcamento.diarioAtual)}
+          Diária dos dias fechados {fmtBRL(orcamento.diarioAtual)}
           {orcamento.fechado ? null : (
             <> · Projeção {fmtBRL(orcamento.projecao)} · Restam {fmtBRL(orcamento.restante)}</>
           )}

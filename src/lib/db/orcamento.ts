@@ -76,27 +76,37 @@ export async function leFeesMensais(): Promise<Map<string, number | null>> {
  * `meta_insights_daily.date` é DATE, então a janela é fechada por
  * comparação de data e não por timestamp — o mesmo recorte que o
  * Gerenciador de Anúncios mostra por mês.
+ *
+ * Volta também o subtotal até o dia anterior a `hoje`, na mesma consulta.
+ * O card mede o ritmo em dias inteiros, e o dia de hoje está pela metade
+ * na hora em que alguém olha o painel — uma segunda consulta só para
+ * descontá-lo seria uma varredura a mais na mesma tabela.
  */
 export async function gastoDoMes(
   db: BancoCliente,
   mes: string,
   ultimoDia: string,
+  hoje: string,
   lacunas?: LacunasDeEsquema,
-): Promise<number> {
+): Promise<{ total: number; ateOntem: number }> {
   const coletor = lacunas ?? new LacunasDeEsquema();
   const linha = await coletor.ou(
-    db.queryOne<{ total: string | number | null }>(
-      `SELECT COALESCE(SUM(spend), 0) AS total
+    db.queryOne<{ total: string | number | null; ate_ontem: string | number | null }>(
+      `SELECT COALESCE(SUM(spend), 0) AS total,
+              COALESCE(SUM(CASE WHEN \`date\` < ? THEN spend ELSE 0 END), 0) AS ate_ontem
          FROM ${db.tabela('meta_insights_daily')}
         WHERE entity_level = 'campaign'
           AND \`date\` >= ? AND \`date\` <= ?`,
-      [`${mes}-01`, ultimoDia],
+      [hoje, `${mes}-01`, ultimoDia],
     ),
     null,
   );
 
-  const total = Number(linha?.total);
-  return Number.isFinite(total) && total > 0 ? total : 0;
+  const positivo = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  return { total: positivo(linha?.total), ateOntem: positivo(linha?.ate_ontem) };
 }
 
 /**
@@ -122,9 +132,9 @@ export async function buscaOrcamentoDoMes(
   const lacunas = new LacunasDeEsquema();
   const [fee, gasto] = await Promise.all([
     leFeeMensal(clientDb, lacunas),
-    gastoDoMes(db, mes, ultimoDia, lacunas),
+    gastoDoMes(db, mes, ultimoDia, hoje, lacunas),
   ]);
-  return avaliaOrcamento({ fee, gasto, mes, hoje });
+  return avaliaOrcamento({ fee, gasto: gasto.total, gastoAteOntem: gasto.ateOntem, mes, hoje });
 }
 
 /**
