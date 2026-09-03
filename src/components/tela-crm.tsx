@@ -2,8 +2,7 @@ import { Suspense } from 'react';
 import { requireClientAccessPagina } from '@/lib/auth/guard';
 import { buscaQuadroCrm } from '@/lib/db/crm';
 import type { OrigemLead } from '@/lib/crm';
-import { resolvePeriodo, rotuloPeriodo } from '@/lib/periodo';
-import { fmtInt } from '@/lib/format';
+import { resolvePeriodo } from '@/lib/periodo';
 import { Card, Vazio } from '@/components/dados';
 import { PageHero } from '@/components/hero';
 import { SeletorPeriodo } from '@/components/seletores';
@@ -30,7 +29,6 @@ import { BotaoAdicionarLead } from '@/components/botao-adicionar-lead';
 
 type Textos = {
   titulo: string;
-  descricao: string;
   arrastar: string;
   tabelaDeEtapas: string;
   rodape: string | null;
@@ -39,7 +37,6 @@ type Textos = {
 const TEXTO: Record<OrigemLead, Textos> = {
   form: {
     titulo: 'CRM (Formulários)',
-    descricao: 'Leads que chegaram por Formulário Instantâneo, na etapa em que o funil do Kommo os deixou.',
     arrastar: 'Clique no card para abrir o contato. A etapa vem do Kommo, então o card não arrasta.',
     tabelaDeEtapas: 'crm_meta_event_map',
     rodape:
@@ -47,7 +44,6 @@ const TEXTO: Record<OrigemLead, Textos> = {
   },
   whatsapp: {
     titulo: 'CRM (WhatsApp)',
-    descricao: 'Contatos que chegaram por conversa de WhatsApp, na etapa do funil do painel.',
     arrastar: 'Clique no card para abrir o contato. Arraste o card para mudar a etapa.',
     tabelaDeEtapas: 'whatsapp_event_map',
     rodape:
@@ -93,11 +89,7 @@ export async function TelaCrm({
 
   return (
     <>
-      <PageHero
-        titulo={texto.titulo}
-        descricao={texto.descricao}
-        acoes={<SeletorPeriodo minimo={minimo} />}
-      />
+      <PageHero titulo={texto.titulo} acoes={<SeletorPeriodo minimo={minimo} />} />
 
       {quadro.lacunas_de_esquema.length ? (
         <p className="mb-4 rounded-[var(--radius-control)] bg-amber-50 px-3 py-2 text-sm text-amber-700">
@@ -106,11 +98,6 @@ export async function TelaCrm({
           não entra no quadro; é falta de migração, não falta de contato.
         </p>
       ) : null}
-
-      <p className="mb-4 text-body-small text-tertiary">
-        {rotuloPeriodo(periodo)} · {fmtInt(quadro.total)}{' '}
-        {quadro.total === 1 ? 'contato' : 'contatos'}
-      </p>
 
       <Card
         titulo="Funil"
