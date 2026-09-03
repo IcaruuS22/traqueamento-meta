@@ -24,7 +24,7 @@ type Mensagem = {
 async function envia({ para, assunto, texto, html }: Mensagem): Promise<boolean> {
   if (!env.smtp.configurado) {
     console.warn(
-      `[email] SMTP não configurado — mensagem NÃO enviada para ${para}.\n` +
+      `[email] SMTP não configurado: mensagem NÃO enviada para ${para}.\n` +
         `        Assunto: ${assunto}\n` +
         `        Conteúdo:\n${texto}`,
     );
@@ -110,7 +110,7 @@ export async function enviaEmailRedefinicao(email: string, token: string): Promi
   const url = `${env.appUrl}/redefinir-senha?token=${encodeURIComponent(token)}`;
   return envia({
     para: email,
-    assunto: 'Redefinição de senha — painel de trakeamento',
+    assunto: 'Redefinição de senha no painel de trakeamento',
     texto:
       `Recebemos um pedido para redefinir a senha desta conta.\n\n` +
       `Defina uma nova senha em: ${url}\n\n` +
@@ -118,7 +118,7 @@ export async function enviaEmailRedefinicao(email: string, token: string): Promi
     html: moldura(
       'Redefinir sua senha',
       '<p style="margin:0;">Recebemos um pedido para redefinir a senha desta conta. O link vale por <strong>1 hora</strong>.</p>' +
-        '<p style="margin:12px 0 0;">Se você não pediu isso, ignore este e-mail — sua senha atual continua valendo.</p>',
+        '<p style="margin:12px 0 0;">Se você não pediu isso, ignore este e-mail: sua senha atual continua valendo.</p>',
       { texto: 'Definir nova senha', url },
     ),
   });

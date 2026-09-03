@@ -428,7 +428,7 @@ export function CascaPainel({
           {/* Administração e Ajuda ficam presas ao pé da barra: são destinos
               ocasionais, e no meio do menu disputavam espaço com a navegação
               do cliente, que é a que se usa o dia inteiro. A lista de
-              clientes saiu daqui — chega-se a ela pelo botão "Trocar". */}
+              clientes saiu daqui: chega-se a ela pelo botão "Trocar". */}
           <div className="nav-bottom">
             {usuario.papel === 'admin'
               ? itemPrincipal(

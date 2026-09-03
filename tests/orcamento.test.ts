@@ -13,10 +13,10 @@ const MES = '2026-04';
 const HOJE = '2026-04-10';
 
 test('gastando exatamente no ritmo, a recomendação é manter', () => {
-  // 3000 de fee em 30 dias = 100 por dia. Nove dias fechados a 100 = 900,
+  // 3000 de investimento em 30 dias = 100 por dia. Nove dias fechados a 100 = 900,
   // mais 60 gastos hoje até agora.
   const o = avaliaOrcamento({
-    fee: 3000,
+    investimento: 3000,
     gasto: 960,
     gastoAteOntem: 900,
     mes: MES,
@@ -33,7 +33,7 @@ test('gastando exatamente no ritmo, a recomendação é manter', () => {
 test('gastando devagar, manda aumentar — e diz quanto', () => {
   // 450 em nove dias fechados = 50/dia. Faltam 2550 em 21 dias = 121,43/dia.
   const o = avaliaOrcamento({
-    fee: 3000,
+    investimento: 3000,
     gasto: 450,
     gastoAteOntem: 450,
     mes: MES,
@@ -48,7 +48,7 @@ test('gastando devagar, manda aumentar — e diz quanto', () => {
 test('o gasto de hoje conta no total, mas não na média do ritmo', () => {
   // Dia 2 com 130 ontem e 18 hoje: a média é a de ontem, não 74.
   const o = avaliaOrcamento({
-    fee: 4000,
+    investimento: 4000,
     gasto: 148,
     gastoAteOntem: 130,
     mes: MES,
@@ -63,7 +63,7 @@ test('o gasto de hoje conta no total, mas não na média do ritmo', () => {
 
 test('gastando rápido demais, manda reduzir', () => {
   const o = avaliaOrcamento({
-    fee: 3000,
+    investimento: 3000,
     gasto: 1800,
     gastoAteOntem: 1800,
     mes: MES,
@@ -74,9 +74,9 @@ test('gastando rápido demais, manda reduzir', () => {
   assert.equal(Math.round(o.projecao), 5800);
 });
 
-test('fee já consumido é estouro, não questão de ritmo', () => {
+test('investimento já consumido é estouro, não questão de ritmo', () => {
   const o = avaliaOrcamento({
-    fee: 3000,
+    investimento: 3000,
     gasto: 3200,
     gastoAteOntem: 3000,
     mes: MES,
@@ -87,10 +87,10 @@ test('fee já consumido é estouro, não questão de ritmo', () => {
   assert.equal(o.consumo > 1, true);
 });
 
-test('sem fee, ou sem gasto no mês, não há o que recomendar', () => {
+test('sem investimento, ou sem gasto no mês, não há o que recomendar', () => {
   assert.equal(
     avaliaOrcamento({
-      fee: null,
+      investimento: null,
       gasto: 900,
       gastoAteOntem: 900,
       mes: MES,
@@ -100,7 +100,7 @@ test('sem fee, ou sem gasto no mês, não há o que recomendar', () => {
   );
   assert.equal(
     avaliaOrcamento({
-      fee: 3000,
+      investimento: 3000,
       gasto: 0,
       gastoAteOntem: 0,
       mes: MES,
@@ -112,7 +112,7 @@ test('sem fee, ou sem gasto no mês, não há o que recomendar', () => {
 
 test('sem gasto o ajuste é zero — nada de dividir por zero', () => {
   const o = avaliaOrcamento({
-    fee: 3000,
+    investimento: 3000,
     gasto: 0,
     gastoAteOntem: 0,
     mes: MES,
@@ -124,7 +124,7 @@ test('sem gasto o ajuste é zero — nada de dividir por zero', () => {
 
 test('no primeiro dia do mês não há ritmo para medir', () => {
   const o = avaliaOrcamento({
-    fee: 3000,
+    investimento: 3000,
     gasto: 100,
     gastoAteOntem: 0,
     mes: MES,
@@ -135,14 +135,14 @@ test('no primeiro dia do mês não há ritmo para medir', () => {
   assert.equal(o.diasRestantes, 30);
   assert.equal(o.diarioAtual, 0);
   assert.equal(o.recomendacao, 'indefinido');
-  // Sem ritmo, a frase ainda dá a diária que usa o fee: 2900 em 30 dias.
+  // Sem ritmo, a frase ainda dá a diária que usa o investimento: 2900 em 30 dias.
   assert.match(fraseOrcamento(o), /Sem dia inteiro fechado/);
   assert.equal(Math.round(o.diarioIdeal), 97);
 });
 
 test('gasto só de hoje também não vira ritmo', () => {
   const o = avaliaOrcamento({
-    fee: 3000,
+    investimento: 3000,
     gasto: 400,
     gastoAteOntem: 0,
     mes: MES,
@@ -155,7 +155,7 @@ test('gasto só de hoje também não vira ritmo', () => {
 test('mês já encerrado é histórico: sem recomendação de ajuste', () => {
   // Olhando março em abril: o mês inteiro conta, e não há ritmo a corrigir.
   const o = avaliaOrcamento({
-    fee: 3000,
+    investimento: 3000,
     gasto: 2400,
     mes: '2026-03',
     hoje: HOJE,
@@ -171,20 +171,20 @@ test('mês já encerrado é histórico: sem recomendação de ajuste', () => {
   assert.equal(o.projecao, 2400);
 });
 
-test('mês encerrado acima do fee ainda é "fechado", não "estourado"', () => {
+test('mês encerrado acima do investimento ainda é "fechado", não "estourado"', () => {
   const o = avaliaOrcamento({
-    fee: 3000,
+    investimento: 3000,
     gasto: 4000,
     mes: '2026-03',
     hoje: HOJE,
   });
   assert.equal(o.recomendacao, 'fechado');
-  assert.match(fraseOrcamento(o), /acima do fee/);
+  assert.match(fraseOrcamento(o), /acima do investimento/);
 });
 
 test('mês futuro não recebe opinião', () => {
   const o = avaliaOrcamento({
-    fee: 3000,
+    investimento: 3000,
     gasto: 0,
     mes: '2026-05',
     hoje: HOJE,
@@ -214,7 +214,7 @@ test('o rótulo do mês sai por extenso', () => {
 
 test('a frase fala em reais por dia, não em percentual', () => {
   const subir = avaliaOrcamento({
-    fee: 3000,
+    investimento: 3000,
     gasto: 450,
     gastoAteOntem: 450,
     mes: MES,
@@ -224,6 +224,6 @@ test('a frase fala em reais por dia, não em percentual', () => {
   assert.match(frase, /^Suba a diária/);
   assert.doesNotMatch(frase, /%/);
 
-  const semFee = avaliaOrcamento({ fee: 0, gasto: 0, mes: MES, hoje: HOJE });
-  assert.match(fraseOrcamento(semFee), /Cadastre o fee mensal/);
+  const semInvestimento = avaliaOrcamento({ investimento: 0, gasto: 0, mes: MES, hoje: HOJE });
+  assert.match(fraseOrcamento(semInvestimento), /Cadastre o investimento mensal/);
 });

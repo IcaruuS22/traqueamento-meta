@@ -2,13 +2,13 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requireAdmin } from '@/lib/auth/guard';
 import { contaVinculosPorCliente, listaAdAccounts } from '@/lib/db/cliente';
-import { leFeesMensais } from '@/lib/db/orcamento';
+import { leInvestimentosMensais } from '@/lib/db/orcamento';
 import { PageHero } from '@/components/hero';
 import { ExcluirCliente } from './excluir-cliente';
-import { FeeMensal } from './fee-mensal';
+import { InvestimentoMensal } from './investimento-mensal';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Clientes — Trakeamento' };
+export const metadata: Metadata = { title: 'Clientes | Trakeamento' };
 
 /**
  * Lista de clientes do administrador.
@@ -20,10 +20,10 @@ export const metadata: Metadata = { title: 'Clientes — Trakeamento' };
 export default async function PaginaClientesAdmin() {
   await requireAdmin();
 
-  const [clientes, vinculos, fees] = await Promise.all([
+  const [clientes, vinculos, investimentos] = await Promise.all([
     listaAdAccounts(),
     contaVinculosPorCliente(),
-    leFeesMensais(),
+    leInvestimentosMensais(),
   ]);
 
   return (
@@ -60,7 +60,7 @@ export default async function PaginaClientesAdmin() {
                 </div>
                 <div>
                   CRM Account:{' '}
-                  <span className="text-[var(--text-secondary)]">{cliente.crm_account_id ?? '—'}</span>
+                  <span className="text-[var(--text-secondary)]">{cliente.crm_account_id ?? '-'}</span>
                 </div>
                 <div>
                   Banco: <code>{cliente.client_db_name}</code>
@@ -80,9 +80,9 @@ export default async function PaginaClientesAdmin() {
                 </Link>
               </div>
 
-              <FeeMensal
+              <InvestimentoMensal
                 banco={cliente.client_db_name}
-                fee={fees.get(cliente.client_db_name) ?? null}
+                investimento={investimentos.get(cliente.client_db_name) ?? null}
               />
 
               <ExcluirCliente nome={cliente.account_name} banco={cliente.client_db_name} />

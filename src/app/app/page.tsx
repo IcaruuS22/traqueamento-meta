@@ -2,7 +2,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { clientesDoUsuario, requireAuth } from '@/lib/auth/guard';
 
-export const metadata: Metadata = { title: 'Clientes — Trakeamento' };
+export const metadata: Metadata = { title: 'Clientes | Trakeamento' };
 
 // Lista sempre viva: o catálogo muda quando um cliente é criado.
 export const dynamic = 'force-dynamic';

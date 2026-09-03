@@ -32,7 +32,7 @@ export default async function LayoutCliente({
           fazia todo cliente saudável exibir o aviso de desatualizado. */}
       {conta.status && !['active', 'ativo'].includes(conta.status.trim().toLowerCase()) ? (
         <p className="mb-4 rounded-[var(--radius-control)] bg-amber-50 px-3 py-2 text-sm text-amber-700">
-          Este cliente está com status <strong>{conta.status}</strong> no catálogo — os dados podem
+          Este cliente está com status <strong>{conta.status}</strong> no catálogo. Os dados podem
           estar desatualizados.{' '}
           {usuario.papel === 'admin' ? (
             <Link href="/admin/usuarios" className="underline">

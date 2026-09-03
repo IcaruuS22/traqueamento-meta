@@ -53,7 +53,7 @@ function Linha({ rotulo, valor, mono = false }: { rotulo: string; valor: React.R
     <div className="rastreio-linha">
       <dt>{rotulo}</dt>
       <dd className={mono && !vazio ? 'font-mono text-[12px] break-all' : undefined}>
-        {vazio ? <span className="text-[var(--text-tertiary)]">—</span> : valor}
+        {vazio ? <span className="text-[var(--text-tertiary)]">-</span> : valor}
       </dd>
     </div>
   );
@@ -231,7 +231,7 @@ export function ModalLeadCrm({
 
               {lead.lacunas_de_esquema.length ? (
                 <p className="mb-3 rounded-[var(--radius-control)] bg-amber-50 px-3 py-2 text-sm text-amber-700">
-                  O banco deste cliente está atrás do template — falta:{' '}
+                  O banco deste cliente está atrás do template. Falta:{' '}
                   <strong>{lead.lacunas_de_esquema.join(', ')}</strong>. Os campos que dependem
                   dessas tabelas aparecem vazios.
                 </p>
@@ -355,7 +355,7 @@ export function ModalLeadCrm({
                             {fmtDataHora(m.created_at)}
                           </span>
                           <br />
-                          {textoDaMensagem(m.message_type, m.message_text) || '—'}
+                          {textoDaMensagem(m.message_type, m.message_text) || '-'}
                         </li>
                       ))}
                     </ul>
@@ -380,7 +380,7 @@ export function ModalLeadCrm({
                       <p className="text-body-small text-tertiary">
                         Apagar o lead inteiro? Saem as mensagens, os arquivos, o estado da
                         conversa, os eventos enviados à Meta e o próprio contato. O que já foi
-                        recebido pela Meta continua lá — some daqui, não de lá. Não há como
+                        recebido pela Meta continua lá: some daqui, não de lá. Não há como
                         desfazer.
                       </p>
                       <div className="flex flex-wrap gap-2">
@@ -481,7 +481,7 @@ function CampoMotivo({
         </button>
       </div>
       <p className="mt-2 text-xs text-[var(--text-tertiary)]">
-        Pode ficar em branco — o funil conta como &ldquo;sem motivo registrado&rdquo;.
+        Pode ficar em branco, o funil conta como &ldquo;sem motivo registrado&rdquo;.
       </p>
     </div>
   );

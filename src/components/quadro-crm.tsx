@@ -190,7 +190,7 @@ export function QuadroCrm({
             </button>
           </div>
           <p className="mt-2 text-xs text-[var(--text-tertiary)]">
-            Pode ficar em branco — o funil conta como &ldquo;sem motivo registrado&rdquo;.
+            Pode ficar em branco, o funil conta como &ldquo;sem motivo registrado&rdquo;.
           </p>
         </form>
       ) : null}

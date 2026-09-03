@@ -52,7 +52,7 @@ export async function TelaIa({
       />
 
       <p className="mb-4 text-body-small text-tertiary">
-        A IA recebe os mesmos números da tela de métricas — <strong>{rotuloPeriodo(periodo)}</strong>,{' '}
+        A IA recebe os mesmos números da tela de métricas: <strong>{rotuloPeriodo(periodo)}</strong>,{' '}
         {canal === 'whatsapp' ? 'canal WhatsApp' : 'canal Formulários'}. Ela não tem acesso a
         mensagens, nomes ou telefones de leads.
       </p>

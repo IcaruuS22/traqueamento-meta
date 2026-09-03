@@ -58,7 +58,7 @@ export function AnaliseIa({
     <>
       <Card
         titulo="Pergunta para a IA (opcional)"
-        descricao="Deixe em branco para uma análise geral do período, ou peça algo específico — ex.: “por que o CPL subiu?”, “quais campanhas focar mais?”."
+        descricao="Deixe em branco para uma análise geral do período, ou peça algo específico. Ex.: “por que o CPL subiu?”, “quais campanhas focar mais?”."
       >
         <textarea
           rows={3}

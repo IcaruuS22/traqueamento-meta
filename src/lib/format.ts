@@ -43,7 +43,7 @@ export function fmtPct(valor: number | null | undefined, casas = 2): string {
 /** Valor ausente vira travessão, e não "0" — zero e "sem dado" são coisas diferentes. */
 export function ouTraco(valor: string | null | undefined): string {
   const v = String(valor ?? '').trim();
-  return v || '—';
+  return v || '-';
 }
 
 /** "2026-05-10" — dia de calendário, não instante. */
@@ -90,7 +90,7 @@ function paraMs(valor: unknown): number | null {
 /** "10/05/2026 14:32" no horário de São Paulo. */
 export function fmtDataHora(valor: unknown): string {
   const ms = paraMs(valor);
-  if (ms === null) return '—';
+  if (ms === null) return '-';
   const d = new Date(ms - SP_OFFSET_MS);
   const p = (n: number) => String(n).padStart(2, '0');
   return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
@@ -140,7 +140,7 @@ export function fmtHoraRelativa(valor: unknown, agora: number = Date.now()): str
 /** "10/05/2026" no horário de São Paulo. */
 export function fmtData(valor: unknown): string {
   const ms = paraMs(valor);
-  if (ms === null) return '—';
+  if (ms === null) return '-';
   const d = new Date(ms - SP_OFFSET_MS);
   const p = (n: number) => String(n).padStart(2, '0');
   return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
@@ -155,7 +155,7 @@ export function fmtDiaMes(dataIso: string): string {
 /** Duração legível: "3 dias", "5 h", "12 min". Mesma escala do painel. */
 export function fmtDuracao(ms: number | null | undefined): string {
   const v = Number(ms);
-  if (!Number.isFinite(v) || v < 0) return '—';
+  if (!Number.isFinite(v) || v < 0) return '-';
   const min = Math.round(Math.max(0, v) / 60_000);
   if (min < 60) return `${min} min`;
   const horas = Math.round(min / 60);
@@ -168,7 +168,7 @@ export function fmtDuracao(ms: number | null | undefined): string {
 export function fmtDecorrido(de: unknown, ate: unknown): string {
   const a = paraMs(de);
   const b = paraMs(ate);
-  if (a === null || b === null) return '—';
+  if (a === null || b === null) return '-';
   return fmtDuracao(b - a);
 }
 
@@ -181,13 +181,13 @@ export function fmtDecorrido(de: unknown, ate: unknown): string {
  */
 export function fmtRoas(gasto: unknown, receita: unknown): string {
   const g = Number(gasto);
-  if (!Number.isFinite(g) || g === 0) return '—';
+  if (!Number.isFinite(g) || g === 0) return '-';
   return `${fmtDec((Number(receita) || 0) / g, 2)}x`;
 }
 
 export function fmtRoi(gasto: unknown, receita: unknown): string {
   const g = Number(gasto);
-  if (!Number.isFinite(g) || g === 0) return '—';
+  if (!Number.isFinite(g) || g === 0) return '-';
   const roi = ((Number(receita) || 0) - g) / g;
   return `${roi >= 0 ? '+' : ''}${fmtDec(roi * 100, 1)}%`;
 }

@@ -101,7 +101,7 @@ export async function TelaRastreamento({
 
       {painel.lacunas_de_esquema.length ? (
         <p className="mb-4 rounded-[var(--radius-control)] bg-amber-50 px-3 py-2 text-sm text-amber-700">
-          O banco deste cliente está atrás do template — falta:{' '}
+          O banco deste cliente está atrás do template. Falta:{' '}
           <strong>{painel.lacunas_de_esquema.join(', ')}</strong>. Sem isso a origem por
           Click to WhatsApp não pode ser apurada, e zero ali é falta de migração, não falta de
           resultado.
@@ -129,8 +129,8 @@ export async function TelaRastreamento({
         ))}
         <KpiCard
           rotulo="Cobertura de rastreio"
-          valor={cobertura === null ? '—' : `${fmtDec(cobertura, 1)}%`}
-          dica="Percentual de leads com alguma origem identificada. O resto entrou sem nenhum parâmetro — nem UTM, nem lead_id, nem referência de anúncio."
+          valor={cobertura === null ? '-' : `${fmtDec(cobertura, 1)}%`}
+          dica="Percentual de leads com alguma origem identificada. O resto entrou sem nenhum parâmetro, nem UTM, nem lead_id, nem referência de anúncio."
           icone={Icones.percent}
           destaque={cobertura !== null && cobertura >= 80}
         />
@@ -170,7 +170,7 @@ export async function TelaRastreamento({
 
       {filtrado ? (
         <p className="mt-3 text-xs text-[var(--text-tertiary)]">
-          Os cards acima cobrem o período inteiro e não seguem o filtro de fonte — só a tabela
+          Os cards acima cobrem o período inteiro e não seguem o filtro de fonte: só a tabela
           segue. A busca, essa sim, vale para os dois.
         </p>
       ) : null}

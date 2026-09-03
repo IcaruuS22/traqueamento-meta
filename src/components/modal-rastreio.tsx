@@ -72,7 +72,7 @@ function Linha({
       <dt>{rotulo}</dt>
       <dd className={mono && !vazio ? 'font-mono text-[12px] break-all' : undefined}>
         {vazio ? (
-          <span className="text-[var(--text-tertiary)]">—</span>
+          <span className="text-[var(--text-tertiary)]">-</span>
         ) : href ? (
           <a
             href={href}
@@ -91,9 +91,9 @@ function Linha({
 }
 
 function valorDoEvento(v: string | number | null, moeda: string | null): string {
-  if (v === null || v === undefined || v === '') return '—';
+  if (v === null || v === undefined || v === '') return '-';
   const n = Number(v);
-  if (!Number.isFinite(n) || n === 0) return '—';
+  if (!Number.isFinite(n) || n === 0) return '-';
   return moeda && moeda !== 'BRL'
     ? `${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${moeda}`
     : fmtBRL(n);
@@ -205,7 +205,7 @@ export function ModalRastreio({
             <>
               {c.lacunas_de_esquema.length ? (
                 <p className="mb-3 rounded-[var(--radius-control)] bg-[var(--amber-50)] px-3 py-2 text-xs text-[var(--amber-700)]">
-                  Parte do rastreio não pôde ser lida neste banco — falta:{' '}
+                  Parte do rastreio não pôde ser lida neste banco. Falta:{' '}
                   <strong>{c.lacunas_de_esquema.join(', ')}</strong>.
                 </p>
               ) : null}

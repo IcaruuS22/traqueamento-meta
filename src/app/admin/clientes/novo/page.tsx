@@ -5,7 +5,7 @@ import { ClienteForm } from './cliente-form';
 import { PageHero } from '@/components/hero';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Novo cliente — Trakeamento' };
+export const metadata: Metadata = { title: 'Novo cliente | Trakeamento' };
 
 /**
  * Cadastro de cliente novo, exclusivo de administrador.

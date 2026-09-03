@@ -25,8 +25,8 @@ export const ROTULO_FONTE: Record<Fonte, string> = {
 };
 
 export const DESCRICAO_FONTE: Record<Fonte, string> = {
-  ctwa: 'Lead que abriu a conversa por um anúncio "Clique para o WhatsApp" — a mensagem chegou com o click-id do anúncio (ctwa_clid).',
-  meta_lead_ads: 'Lead preenchido no Formulário Instantâneo dentro da própria Meta — veio com lead_id e form_id.',
+  ctwa: 'Lead que abriu a conversa por um anúncio "Clique para o WhatsApp": a mensagem chegou com o click-id do anúncio (ctwa_clid).',
+  meta_lead_ads: 'Lead preenchido no Formulário Instantâneo dentro da própria Meta: veio com lead_id e form_id.',
   lp_utm: 'Lead que passou por uma página própria: chegou com UTMs e/ou fbclid na URL.',
   outros: 'Sem nenhum identificador de origem gravado. Entrada manual, importação ou perda de parâmetro no caminho.',
 };

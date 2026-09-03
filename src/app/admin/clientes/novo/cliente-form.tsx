@@ -62,7 +62,7 @@ export function ClienteForm() {
 
       <fieldset className="space-y-4 rounded-[var(--radius-control)] border border-[var(--border-default)] p-4">
         <legend className="px-1 text-sm font-medium text-[var(--text-secondary)]">
-          CRM (Kommo) — opcional
+          CRM (Kommo), opcional
         </legend>
         <p className="text-xs text-[var(--text-tertiary)]">
           Preencha apenas se este cliente usa Formulários Instantâneos com Kommo. Cliente que só

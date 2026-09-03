@@ -3,7 +3,7 @@ import { TelaCrm } from '@/components/tela-crm';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-export const metadata: Metadata = { title: 'CRM (WhatsApp) — Trakeamento' };
+export const metadata: Metadata = { title: 'CRM (WhatsApp) | Trakeamento' };
 
 /** Quadro dos contatos de WhatsApp. Corpo em `tela-crm.tsx`. */
 export default async function PaginaCrmWhatsapp({

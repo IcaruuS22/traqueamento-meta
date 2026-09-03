@@ -13,7 +13,7 @@ import { BotoesMeta } from '@/components/botoes-meta';
 import { fmtBRL } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Campanhas — Trakeamento' };
+export const metadata: Metadata = { title: 'Campanhas | Trakeamento' };
 
 /**
  * Aba "Campanhas" — hierarquia Campanha → Conjunto → Anúncio no modelo do
@@ -106,7 +106,7 @@ export default async function PaginaCampanhas({
 
       {hierarquia.lacunas_de_esquema.length ? (
         <p className="rounded-[var(--radius-control)] bg-amber-50 px-3 py-2 text-sm text-amber-700">
-          O banco deste cliente está atrás do template — falta:{' '}
+          O banco deste cliente está atrás do template. Falta:{' '}
           <strong>{hierarquia.lacunas_de_esquema.join(', ')}</strong>. A hierarquia de campanhas
           depende dessas tabelas e por isso aparece vazia; não é falta de campanha, é falta de
           migração.
@@ -128,7 +128,7 @@ export default async function PaginaCampanhas({
         ) : (
           <Vazio>
             Nenhuma campanha com atividade no período. Se este cliente nunca sincronizou o Meta
-            Ads, as tabelas de campanha estão vazias — rode a importação de histórico.
+            Ads, as tabelas de campanha estão vazias. Rode a importação de histórico.
           </Vazio>
         )}
 

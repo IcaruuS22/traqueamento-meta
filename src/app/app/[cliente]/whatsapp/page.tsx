@@ -10,7 +10,7 @@ import { IconesNav } from '@/components/icones';
 import { PageHero } from '@/components/hero';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Conexão WhatsApp — Trakeamento' };
+export const metadata: Metadata = { title: 'Conexão WhatsApp | Trakeamento' };
 
 /**
  * Conexão do WhatsApp — porte de `GET /painel-api/whatsapp-config` e de
@@ -73,7 +73,7 @@ export default async function PaginaWhatsapp({
         />
         <p className="mt-4 text-body-small text-tertiary">
           {config.token_cadastrado
-            ? 'Token de acesso: cadastrado. O valor nunca sai do servidor — nem para esta tela.'
+            ? 'Token de acesso: cadastrado. O valor nunca sai do servidor, nem para esta tela.'
             : 'Token de acesso: não cadastrado.'}
           {config.updated_at ? ` Última alteração em ${fmtDataHora(config.updated_at)}.` : ''}
         </p>
@@ -121,7 +121,7 @@ export default async function PaginaWhatsapp({
           <code>trakeamento_controle</code> e recarregue esta página.
         </p>
         <p>
-          Nada do que já está configurado se perde com a migração — ela só acrescenta colunas a{' '}
+          Nada do que já está configurado se perde com a migração: ela só acrescenta colunas a{' '}
           <code>whatsapp_accounts</code>.
         </p>
       </div>
@@ -137,7 +137,7 @@ export default async function PaginaWhatsapp({
 
       {config.lacunas_de_esquema.length ? (
         <p className="mb-4 rounded-[var(--radius-control)] bg-amber-50 px-3 py-2 text-sm text-amber-700">
-          O catálogo está atrás do template — falta:{' '}
+          O catálogo está atrás do template. Falta:{' '}
           <strong>{config.lacunas_de_esquema.join(', ')}</strong>. Sem isso não dá para saber se
           este cliente tem WhatsApp conectado. Para a conexão por Evolution, rode{' '}
           <code>migracao_whatsapp_evolution.sql</code>.

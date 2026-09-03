@@ -58,7 +58,7 @@ export const KPIS: DefinicaoKpi[] = [
     rotulo: 'CPL',
     dica: () =>
       'Custo por Lead: gasto total dividido pelo número de leads capturados no período.',
-    valor: (m) => (m.cpl === null ? '—' : fmtBRL(m.cpl)),
+    valor: (m) => (m.cpl === null ? '-' : fmtBRL(m.cpl)),
     atual: (m) => m.cpl,
     anterior: (t) => t.cpl,
     melhorQuandoCai: true,
@@ -75,7 +75,7 @@ export const KPIS: DefinicaoKpi[] = [
     id: 'reach',
     rotulo: 'Alcance',
     dica: () =>
-      'Soma dos valores diários. Não é deduplicado entre dias quando o período tem mais de um dia — use como aproximação.',
+      'Soma dos valores diários. Não é deduplicado entre dias quando o período tem mais de um dia: use como aproximação.',
     valor: (m) => fmtInt(m.reach),
     deAnuncio: true,
   },
@@ -130,7 +130,7 @@ export const KPIS: DefinicaoKpi[] = [
       `Percentual de leads que chegaram a uma etapa marcada como conversão (${fmtInt(
         m.total_conversoes,
       )} de ${fmtInt(m.total_leads)} leads).`,
-    valor: (m) => (m.taxa_conversao === null ? '—' : `${fmtDec(m.taxa_conversao, 1)}%`),
+    valor: (m) => (m.taxa_conversao === null ? '-' : `${fmtDec(m.taxa_conversao, 1)}%`),
     atual: (m) => m.taxa_conversao,
     anterior: (t) => t.taxa_conversao,
   },
@@ -148,7 +148,7 @@ export const KPIS: DefinicaoKpi[] = [
     rotulo: 'ROAS',
     dica: () =>
       'Receita dividida pelo Gasto (Meta Ads) no período. Depende de Receita estar configurada corretamente.',
-    valor: (m) => (m.roas === null ? '—' : `${fmtDec(m.roas, 2)}x`),
+    valor: (m) => (m.roas === null ? '-' : `${fmtDec(m.roas, 2)}x`),
     atual: (m) => m.roas,
     anterior: (t) => t.roas,
     deAnuncio: true,

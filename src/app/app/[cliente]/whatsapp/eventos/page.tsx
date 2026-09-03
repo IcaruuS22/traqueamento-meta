@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { TelaEventos } from '@/components/tela-eventos';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Últimos eventos (WhatsApp) — Trakeamento' };
+export const metadata: Metadata = { title: 'Últimos eventos (WhatsApp) | Trakeamento' };
 
 /**
  * Mesma tela de eventos, recortada para os leads que têm conversa de

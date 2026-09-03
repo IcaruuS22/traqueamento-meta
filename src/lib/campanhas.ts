@@ -28,7 +28,7 @@ export function rotuloStatus(
   nivel: NivelHierarquia,
 ): string {
   const bruto = String(status ?? '').trim();
-  if (!bruto) return '—';
+  if (!bruto) return '-';
   const par = ROTULOS_STATUS[bruto.toUpperCase()];
   if (!par) return bruto.toLowerCase().replace(/_/g, ' ');
   return nivel === 'campaign' ? par[0] : par[1];

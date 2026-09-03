@@ -32,7 +32,7 @@ import { ExportarPdf } from '@/components/exportar-pdf';
 import { OrcamentoMensal } from '@/components/orcamento-mensal';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Visão geral — Trakeamento' };
+export const metadata: Metadata = { title: 'Visão geral | Trakeamento' };
 
 /**
  * Visão geral do cliente — porte da aba "Métricas Gerais" do painel.
@@ -153,7 +153,7 @@ export default async function PaginaVisaoGeral({
     buscaMetricas(db, periodo),
     visibilidadeMetricas(conta.client_db_name),
     primeiroLeadEm(db),
-    // O mês do período escolhido, e não o período em si: o fee é mensal,
+    // O mês do período escolhido, e não o período em si: o investimento é mensal,
     // e compará-lo com o gasto de sete dias não diria nada.
     buscaOrcamentoDoMes(conta.client_db_name, db, periodo.fimSec),
   ]);
@@ -231,7 +231,7 @@ function CorpoMetricas({
     <>
       {metricas.lacunas_de_esquema.length ? (
         <p className="mb-4 rounded-[var(--radius-control)] bg-amber-50 px-3 py-2 text-sm text-amber-700">
-          O banco deste cliente está atrás do template — falta:{' '}
+          O banco deste cliente está atrás do template. Falta:{' '}
           <strong>{metricas.lacunas_de_esquema.join(', ')}</strong>. As métricas que dependem
           disso aparecem como zero, e zero aqui é falta de migração, não falta de resultado.
         </p>
@@ -258,7 +258,7 @@ function CorpoMetricas({
           />
         </Card>
 
-        <Card titulo={`Leads capturados — ${rotuloGrafico(periodo.range, periodo)}`}>
+        <Card titulo={`Leads capturados: ${rotuloGrafico(periodo.range, periodo)}`}>
           <GraficoDiario serie={agrupaSerie(serie)} />
         </Card>
       </div>

@@ -71,7 +71,7 @@ export function montaResumo(m: Metricas, periodo: Periodo): string {
     canal === 'form'
       ? 'Escopo: somente leads de Formulário (Instant Form/Kommo).\n'
       : canal === 'whatsapp'
-        ? 'Escopo: somente conversas de WhatsApp — gasto/CPL/ROAS de anúncio não são atribuíveis por canal e não entram nesta análise.\n'
+        ? 'Escopo: somente conversas de WhatsApp. Gasto/CPL/ROAS de anúncio não são atribuíveis por canal e não entram nesta análise.\n'
         : '';
 
   const funil = m.eventos_por_nome;

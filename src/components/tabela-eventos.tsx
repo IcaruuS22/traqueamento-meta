@@ -36,13 +36,13 @@ function Status({ valor }: { valor: string }) {
 /** Nome completo, e-mail como segunda opção — igual ao painel antigo. */
 function nomeDoLead(e: EventoRecente): string {
   const nome = nomeParaExibir(e.lead_first_name, e.lead_last_name);
-  return nome || String(e.lead_email ?? '').trim() || '—';
+  return nome || String(e.lead_email ?? '').trim() || '-';
 }
 
 function valorDoEvento(e: EventoRecente): string {
-  if (e.value === null || e.value === undefined || e.value === '') return '—';
+  if (e.value === null || e.value === undefined || e.value === '') return '-';
   const n = Number(e.value);
-  if (!Number.isFinite(n)) return '—';
+  if (!Number.isFinite(n)) return '-';
   // Fora de BRL não dá para usar o formatador de real: mostra o número com
   // a moeda que o evento carrega, sem fingir que é outra coisa.
   return e.currency && e.currency !== 'BRL'
@@ -133,7 +133,7 @@ export function TabelaEventos({
                       {e.error_message}
                     </span>
                   ) : (
-                    '—'
+                    '-'
                   )}
                 </td>
               </tr>

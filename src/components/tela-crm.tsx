@@ -37,15 +37,15 @@ type Textos = {
 
 const TEXTO: Record<OrigemLead, Textos> = {
   form: {
-    titulo: 'CRM — Formulários',
+    titulo: 'CRM (Formulários)',
     descricao: 'Leads que chegaram por Formulário Instantâneo, na etapa em que o funil do Kommo os deixou.',
     arrastar: 'Clique no card para abrir o contato. A etapa vem do Kommo, então o card não arrasta.',
     tabelaDeEtapas: 'crm_meta_event_map',
     rodape:
-      'A etapa do lead de formulário é espelho do CRM do cliente (Kommo), escrita pela automação — por isso o card não arrasta. Mudá-la aqui dessincronizaria o funil e ainda contaria conversão que não houve.',
+      'A etapa do lead de formulário é espelho do CRM do cliente (Kommo), escrita pela automação, por isso o card não arrasta. Mudá-la aqui dessincronizaria o funil e ainda contaria conversão que não houve.',
   },
   whatsapp: {
-    titulo: 'CRM — WhatsApp',
+    titulo: 'CRM (WhatsApp)',
     descricao: 'Contatos que chegaram por conversa de WhatsApp, na etapa do funil do painel.',
     arrastar: 'Clique no card para abrir o contato. Arraste o card para mudar a etapa.',
     tabelaDeEtapas: 'whatsapp_event_map',
@@ -100,7 +100,7 @@ export async function TelaCrm({
 
       {quadro.lacunas_de_esquema.length ? (
         <p className="mb-4 rounded-[var(--radius-control)] bg-amber-50 px-3 py-2 text-sm text-amber-700">
-          O banco deste cliente está atrás do template — falta:{' '}
+          O banco deste cliente está atrás do template. Falta:{' '}
           <strong>{quadro.lacunas_de_esquema.join(', ')}</strong>. Sem isso parte dos contatos
           não entra no quadro; é falta de migração, não falta de contato.
         </p>

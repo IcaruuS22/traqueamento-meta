@@ -4,7 +4,7 @@ import { consultaConvite } from '@/lib/auth/actions';
 import { FormularioConvite, FormularioSolicitacao } from './formulario';
 import { Alerta } from '@/components/form';
 
-export const metadata: Metadata = { title: 'Criar conta — Trakeamento' };
+export const metadata: Metadata = { title: 'Criar conta | Trakeamento' };
 
 /**
  * Duas telas no mesmo endereço:

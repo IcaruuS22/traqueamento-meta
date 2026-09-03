@@ -37,8 +37,8 @@ describe('status da hierarquia', () => {
 
   it('mostra status desconhecido cru, sem inventar tradução', () => {
     assert.equal(rotuloStatus('WITH_ISSUES', 'campaign'), 'with issues');
-    assert.equal(rotuloStatus(null, 'campaign'), '—');
-    assert.equal(rotuloStatus('   ', 'campaign'), '—');
+    assert.equal(rotuloStatus(null, 'campaign'), '-');
+    assert.equal(rotuloStatus('   ', 'campaign'), '-');
   });
 
   it('separa o tom em ativo, pausado e o resto', () => {

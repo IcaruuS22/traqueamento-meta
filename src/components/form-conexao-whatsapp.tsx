@@ -96,7 +96,7 @@ export function FormConexaoWhatsapp({
             Pixel de mensagens (Conversions API)
           </h3>
           <p className="mt-1 text-xs text-[var(--text-tertiary)]">
-            Destino dos eventos de WhatsApp. É um dataset separado do pixel dos formulários — as
+            Destino dos eventos de WhatsApp. É um dataset separado do pixel dos formulários: as
             conversas não entram na contagem do site.
           </p>
         </div>
@@ -113,9 +113,9 @@ export function FormConexaoWhatsapp({
                 value={modo}
                 onChange={(e) => setModo(e.target.value as typeof modo)}
               >
-                <option value="desligado">Desligado — nenhum evento sai</option>
-                <option value="teste">Teste — só em “Testar eventos”, não vira conversão</option>
-                <option value="producao">Produção — os eventos valem como conversão</option>
+                <option value="desligado">Desligado: nenhum evento sai</option>
+                <option value="teste">Teste: só em “Testar eventos”, não vira conversão</option>
+                <option value="producao">Produção: os eventos valem como conversão</option>
               </select>
               <span className="mt-1 block text-xs text-[var(--text-tertiary)]">
                 {modo === 'producao'
@@ -150,7 +150,7 @@ export function FormConexaoWhatsapp({
               dica={
                 inicial.capi.token_cadastrado
                   ? 'Deixe em branco para manter o token atual.'
-                  : 'Opcional. Em branco, usa o token da Meta já cadastrado no cliente — serve quando os dois datasets estão na mesma conta de negócios.'
+                  : 'Opcional. Em branco, usa o token da Meta já cadastrado no cliente: serve quando os dois datasets estão na mesma conta de negócios.'
               }
             />
           </>

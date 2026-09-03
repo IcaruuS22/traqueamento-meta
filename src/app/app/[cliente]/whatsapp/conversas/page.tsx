@@ -8,7 +8,7 @@ import { FAIXA_PADRAO } from '@/lib/whatsapp-conversas';
 import { PageHero } from '@/components/hero';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Conversas — Trakeamento' };
+export const metadata: Metadata = { title: 'Conversas | Trakeamento' };
 
 /**
  * Conversas do WhatsApp — porte da aba "Conversas" do painel antigo.
@@ -53,14 +53,14 @@ export default async function PaginaConversas({
         titulo="Conversas"
         descricao={
           config.provider === 'evolution'
-            ? 'Histórico de conversas de WhatsApp. Responda direto por aqui — pela Evolution API não há janela de 24h, porque a restrição é da Cloud API da Meta.'
-            : 'Histórico de conversas de WhatsApp iniciadas por anúncio. Responda direto por aqui — dentro da janela de 24h após a última mensagem do lead, conforme a regra da Meta para mensagens livres.'
+            ? 'Histórico de conversas de WhatsApp. Responda direto por aqui: pela Evolution API não há janela de 24h, porque a restrição é da Cloud API da Meta.'
+            : 'Histórico de conversas de WhatsApp iniciadas por anúncio. Responda direto por aqui, dentro da janela de 24h após a última mensagem do lead, conforme a regra da Meta para mensagens livres.'
         }
       />
 
       {lacunas.length ? (
         <p className="mb-4 rounded-[var(--radius-control)] bg-amber-50 px-3 py-2 text-sm text-amber-700">
-          O banco deste cliente está atrás do template — falta:{' '}
+          O banco deste cliente está atrás do template. Falta:{' '}
           <strong>{lacunas.join(', ')}</strong>. As conversas só aparecem depois da migração.
         </p>
       ) : null}

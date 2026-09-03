@@ -56,7 +56,7 @@ export async function acaoExcluirLead(entrada: z.input<typeof Schema>): Promise<
   }
 
   if (!resultado.existia) {
-    return { ok: false, erro: 'Lead não encontrado — pode já ter sido excluído.' };
+    return { ok: false, erro: 'Lead não encontrado. Pode já ter sido excluído.' };
   }
 
   await registraAuditoria({

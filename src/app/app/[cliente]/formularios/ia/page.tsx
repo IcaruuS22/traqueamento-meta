@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { TelaIa } from '@/components/tela-ia';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Análise por IA (Formulários) — Trakeamento' };
+export const metadata: Metadata = { title: 'Análise por IA (Formulários) | Trakeamento' };
 
 export default async function PaginaIaFormularios({
   params,

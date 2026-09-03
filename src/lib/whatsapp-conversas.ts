@@ -89,7 +89,7 @@ export function faixaDoEstagio(estagio: string | null | undefined): FaixaConvers
  */
 export function rotuloEstagio(estagio: string | null | undefined): string {
   const bruto = (estagio ?? '').trim();
-  if (!bruto) return '—';
+  if (!bruto) return '-';
   const texto = bruto.replace(/_/g, ' ');
   return texto.charAt(0).toUpperCase() + texto.slice(1);
 }

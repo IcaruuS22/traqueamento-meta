@@ -5,9 +5,9 @@ import { avaliaOrcamento, ultimoDiaConsiderado, type Orcamento } from '@/lib/orc
 import { epochSecParaData } from '@/lib/periodo';
 
 /**
- * Leitura do fee mensal e do gasto do mês analisado.
+ * Leitura do investimento mensal e do gasto do mês analisado.
  *
- * O fee vive no catálogo central (`trakeamento_controle.ad_accounts`,
+ * O investimento vive no catálogo central (`trakeamento_controle.ad_accounts`,
  * coluna `monthly_fee`) porque é um dado comercial do cliente, não do seu
  * banco de leads — mesmo lugar de `content_category` e `status`.
  *
@@ -19,12 +19,12 @@ import { epochSecParaData } from '@/lib/periodo';
  * intervalo qualquer dentro desse mês.
  *
  * As duas leituras toleram esquema defasado: banco que ainda não rodou
- * `Banco de Dados/migracao_fee_mensal.sql` devolve fee nulo, e o card
+ * `Banco de Dados/migracao_fee_mensal.sql` devolve investimento nulo, e o card
  * aparece pedindo o cadastro em vez de derrubar a página.
  */
 
-/** Fee combinado com o cliente, ou `null` quando não há. */
-export async function leFeeMensal(
+/** Investimento combinado com o cliente, ou `null` quando não há. */
+export async function leInvestimentoMensal(
   clientDb: string,
   lacunas?: LacunasDeEsquema,
 ): Promise<number | null> {
@@ -46,12 +46,12 @@ export async function leFeeMensal(
 }
 
 /**
- * Fee de todos os clientes de uma vez, para a lista da administração.
+ * Investimento de todos os clientes de uma vez, para a lista da administração.
  *
  * Uma consulta só em vez de uma por cartão. Banco sem a migração devolve
  * mapa vazio, e cada cartão mostra o campo em branco.
  */
-export async function leFeesMensais(): Promise<Map<string, number | null>> {
+export async function leInvestimentosMensais(): Promise<Map<string, number | null>> {
   const lacunas = new LacunasDeEsquema();
   const linhas = await lacunas.ou(
     query<{ client_db_name: string; monthly_fee: string | number | null }>(
@@ -110,7 +110,7 @@ export async function gastoDoMes(
 }
 
 /**
- * Fee e gasto já comparados, prontos para o card.
+ * Investimento e gasto já comparados, prontos para o card.
  *
  * `fimSec` é o fim (exclusivo) do período escolhido na tela: o mês
  * analisado é o do último dia desse período, para que filtrar agosto
@@ -130,23 +130,32 @@ export async function buscaOrcamentoDoMes(
   const ultimoDia = ultimoDiaConsiderado(mes, hoje);
 
   const lacunas = new LacunasDeEsquema();
-  const [fee, gasto] = await Promise.all([
-    leFeeMensal(clientDb, lacunas),
+  const [investimento, gasto] = await Promise.all([
+    leInvestimentoMensal(clientDb, lacunas),
     gastoDoMes(db, mes, ultimoDia, hoje, lacunas),
   ]);
-  return avaliaOrcamento({ fee, gasto: gasto.total, gastoAteOntem: gasto.ateOntem, mes, hoje });
+  return avaliaOrcamento({
+    investimento,
+    gasto: gasto.total,
+    gastoAteOntem: gasto.ateOntem,
+    mes,
+    hoje,
+  });
 }
 
 /**
- * Grava o fee combinado. `null` limpa o valor — cliente que deixou de ter
+ * Grava o investimento combinado. `null` limpa o valor — cliente que deixou de ter
  * teto combinado volta ao card neutro, e não a um teto de zero.
  */
-export async function salvaFeeMensal(clientDb: string, fee: number | null): Promise<void> {
+export async function salvaInvestimentoMensal(
+  clientDb: string,
+  investimento: number | null,
+): Promise<void> {
   const nome = sanitizaNomeBanco(clientDb);
   if (!nome) throw new Error('Nome de banco de cliente inválido');
 
   await execute(
     `UPDATE trakeamento_controle.ad_accounts SET monthly_fee = ? WHERE client_db_name = ?`,
-    [fee, nome],
+    [investimento, nome],
   );
 }

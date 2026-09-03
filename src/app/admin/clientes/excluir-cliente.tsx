@@ -50,8 +50,8 @@ export function ExcluirCliente({ nome, banco }: { nome: string; banco: string })
         Excluir “{nome}” é permanente e não tem como reverter.
       </p>
       <p className="text-xs text-red-700">
-        Some o banco <code>{banco}</code> inteiro — leads, conversas, mensagens, campanhas,
-        mapeamentos de evento — mais o cadastro no catálogo, a conexão de WhatsApp, as
+        Some o banco <code>{banco}</code> inteiro: leads, conversas, mensagens, campanhas,
+        mapeamentos de evento, mais o cadastro no catálogo, a conexão de WhatsApp, as
         preferências de métrica e os vínculos dos usuários com este cliente. Não existe lixeira
         nem backup automático: se você quer guardar esses dados, faça o dump antes de continuar.
       </p>

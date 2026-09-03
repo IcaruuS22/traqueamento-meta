@@ -16,7 +16,7 @@
  * decorridos jogava essa metade na média: no dia 2, com R$ 130 ontem e
  * R$ 18 até agora, a média caía para R$ 74 e o card mandava dobrar a
  * diária de quem estava exatamente no ritmo certo. O gasto de hoje
- * continua contando no total e no que resta do fee — ele só não entra na
+ * continua contando no total e no que resta do investimento — ele só não entra na
  * conta da média.
  *
  * Tudo aqui trabalha com data civil ("YYYY-MM-DD") em vez de `Date`. O
@@ -25,7 +25,7 @@
  * quem olha. As strings vêm de `lib/periodo.ts`, que já resolve o fuso.
  *
  * Módulo puro, sem `server-only`: só aritmética de datas e dinheiro, para
- * poder ser testado sem banco. A leitura do fee e a soma do gasto ficam
+ * poder ser testado sem banco. A leitura do investimento e a soma do gasto ficam
  * em `lib/db/orcamento.ts`.
  */
 
@@ -65,7 +65,7 @@ export type Recomendacao =
   | 'estourado'
   /** Mês encerrado: o número é histórico, não há ajuste a fazer. */
   | 'fechado'
-  /** Sem fee cadastrado, ou mês ainda sem gasto: não dá para opinar. */
+  /** Sem investimento cadastrado, ou mês ainda sem gasto: não dá para opinar. */
   | 'indefinido';
 
 export type Orcamento = {
@@ -76,18 +76,18 @@ export type Orcamento = {
   /** O mês já terminou. */
   fechado: boolean;
   /** Limite mensal combinado com o cliente. */
-  fee: number;
+  investimento: number;
   /** Gasto acumulado no mês, até o dia de referência. */
   gasto: number;
   /** Quanto ainda cabe no mês; nunca negativo. */
   restante: number;
-  /** Fração do fee já consumida (0,42 = 42%). */
+  /** Fração do investimento já consumida (0,42 = 42%). */
   consumo: number;
   /** Quanto o mês fecharia mantido o ritmo atual. Mês fechado: o gasto. */
   projecao: number;
   /** Média diária praticada nos dias inteiros do mês, hoje de fora. */
   diarioAtual: number;
-  /** Média diária que faz o mês fechar exatamente no fee. */
+  /** Média diária que faz o mês fechar exatamente no investimento. */
   diarioIdeal: number;
   /**
    * Ajuste sugerido no orçamento diário, em fração (0,25 = subir 25%).
@@ -131,14 +131,14 @@ export function ultimoDiaConsiderado(mes: string, hoje: string): string {
 }
 
 /**
- * Compara gasto e fee e devolve tudo o que o card precisa mostrar.
+ * Compara gasto e investimento e devolve tudo o que o card precisa mostrar.
  *
- * `fee` nulo ou zero significa cliente sem valor combinado — o card
+ * `investimento` nulo ou zero significa cliente sem valor combinado — o card
  * aparece convidando a cadastrar, e não como se o cliente tivesse
  * estourado um limite de zero.
  */
 export function avaliaOrcamento(entrada: {
-  fee: number | null;
+  investimento: number | null;
   /** Gasto do mês até hoje, hoje incluso. */
   gasto: number;
   /**
@@ -152,7 +152,7 @@ export function avaliaOrcamento(entrada: {
   /** Hoje em São Paulo, "YYYY-MM-DD". */
   hoje: string;
 }): Orcamento {
-  const fee = Number(entrada.fee) > 0 ? Number(entrada.fee) : 0;
+  const investimento = Number(entrada.investimento) > 0 ? Number(entrada.investimento) : 0;
   const gasto = Number(entrada.gasto) > 0 ? Number(entrada.gasto) : 0;
   const mes = entrada.mes;
   const mesDeHoje = entrada.hoje.slice(0, 7);
@@ -175,7 +175,7 @@ export function avaliaOrcamento(entrada: {
     ? gasto
     : Math.min(Number.isFinite(ateOntemBruto) && ateOntemBruto > 0 ? ateOntemBruto : 0, gasto);
 
-  const restante = Math.max(fee - gasto, 0);
+  const restante = Math.max(investimento - gasto, 0);
   const diarioAtual = diasCompletos > 0 ? gastoAteOntem / diasCompletos : 0;
   const diarioIdeal = diasRestantes > 0 ? restante / diasRestantes : 0;
 
@@ -183,10 +183,10 @@ export function avaliaOrcamento(entrada: {
     mes,
     mesRotulo: rotuloDoMes(mes),
     fechado,
-    fee,
+    investimento,
     gasto,
     restante,
-    consumo: fee > 0 ? gasto / fee : 0,
+    consumo: investimento > 0 ? gasto / investimento : 0,
     // O que já se gastou, mais o ritmo dos dias inteiros que ainda vêm.
     // Hoje entra pelo valor real, e não pela média: parte dele já foi.
     projecao: fechado ? gasto : gasto + diarioAtual * (diasNoMes - diasDecorridos),
@@ -198,7 +198,7 @@ export function avaliaOrcamento(entrada: {
     diasRestantes,
   };
 
-  if (fee <= 0) return { ...base, ajuste: 0, recomendacao: 'indefinido' };
+  if (investimento <= 0) return { ...base, ajuste: 0, recomendacao: 'indefinido' };
   // Mês encerrado é histórico: recomendar ajuste de ritmo no passado não
   // significa nada, mesmo quando o gasto ficou longe do combinado.
   if (fechado) return { ...base, ajuste: 0, recomendacao: 'fechado' };
@@ -219,7 +219,7 @@ export function avaliaOrcamento(entrada: {
  * Texto curto do indicador, em uma frase.
  *
  * A recomendação é dita em reais por dia, e não em percentual: no começo
- * do mês o percentual explode — gastar R$ 8 no dia 1 de um fee de
+ * do mês o percentual explode — gastar R$ 8 no dia 1 de um investimento de
  * R$ 4.000 vira "aumente 1486%" — e some com a informação que interessa,
  * que é quanto por dia.
  */
@@ -229,25 +229,26 @@ export function fraseOrcamento(o: Orcamento): string {
 
   switch (o.recomendacao) {
     case 'aumentar':
-      return `Suba a diária de ${brl(o.diarioAtual)} para cerca de ${brl(o.diarioIdeal)} e use o fee do mês.`;
+      return `Suba a diária de ${brl(o.diarioAtual)} para cerca de ${brl(o.diarioIdeal)} e use o investimento do mês.`;
     case 'reduzir':
-      return `Desça a diária de ${brl(o.diarioAtual)} para cerca de ${brl(o.diarioIdeal)} e não passe do fee.`;
+      return `Desça a diária de ${brl(o.diarioAtual)} para cerca de ${brl(o.diarioIdeal)} e não passe do investimento.`;
     case 'manter':
       return `Ritmo no alvo: ${brl(o.diarioAtual)} por dia fecha o mês no combinado.`;
     case 'estourado':
-      return `Fee consumido — ${brl(o.gasto - o.fee)} acima do combinado.`;
+      return `Investimento consumido: ${brl(o.gasto - o.investimento)} acima do combinado.`;
     case 'fechado':
-      return o.gasto > o.fee
-        ? `Mês encerrado ${brl(o.gasto - o.fee)} acima do fee.`
-        : `Mês encerrado com ${brl(o.fee - o.gasto)} do fee não usados.`;
+      return o.gasto > o.investimento
+        ? `Mês encerrado ${brl(o.gasto - o.investimento)} acima do investimento.`
+        : `Mês encerrado com ${brl(o.investimento - o.gasto)} do investimento não usados.`;
     default:
-      if (o.fee <= 0) return 'Cadastre o fee mensal deste cliente para acompanhar o gasto.';
+      if (o.investimento <= 0)
+        return 'Cadastre o investimento mensal deste cliente para acompanhar o gasto.';
       if (o.gasto <= 0 && o.diasCompletos > 0)
-        return 'Ainda não há gasto neste mês para comparar com o fee.';
+        return 'Ainda não há gasto neste mês para comparar com o investimento.';
       // Gasto só de hoje, ou dia 1 do mês: existe gasto, mas nenhum dia
       // inteiro para medir ritmo. A diária de referência ainda ajuda.
       if (o.diarioIdeal > 0)
-        return `Sem dia inteiro fechado para medir o ritmo. Para usar o fee, cerca de ${brl(o.diarioIdeal)} por dia.`;
-      return 'Ainda não há gasto neste mês para comparar com o fee.';
+        return `Sem dia inteiro fechado para medir o ritmo. Para usar o investimento, cerca de ${brl(o.diarioIdeal)} por dia.`;
+      return 'Ainda não há gasto neste mês para comparar com o investimento.';
   }
 }

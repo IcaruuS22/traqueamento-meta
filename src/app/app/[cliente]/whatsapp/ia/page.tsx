@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { TelaIa } from '@/components/tela-ia';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Análise por IA (WhatsApp) — Trakeamento' };
+export const metadata: Metadata = { title: 'Análise por IA (WhatsApp) | Trakeamento' };
 
 export default async function PaginaIaWhatsapp({
   params,

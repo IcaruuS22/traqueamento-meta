@@ -295,7 +295,7 @@ function Tabela({
 export function RelatorioMetricas({ dados }: { dados: DadosRelatorio }) {
   return (
     <Document
-      title={`Métricas Gerais — ${dados.cliente}`}
+      title={`Métricas Gerais: ${dados.cliente}`}
       author="Trakeamento"
       subject={`${dados.canal} · ${dados.periodo}`}
       creator="Trakeamento"
@@ -320,7 +320,7 @@ export function RelatorioMetricas({ dados }: { dados: DadosRelatorio }) {
         {dados.lacunas.length ? (
           <View style={s.aviso}>
             <Text>
-              O banco deste cliente está atrás do template — falta: {dados.lacunas.join(', ')}. As
+              O banco deste cliente está atrás do template. Falta: {dados.lacunas.join(', ')}. As
               métricas que dependem disso aparecem como zero, e zero aqui é falta de migração, não
               falta de resultado.
             </Text>

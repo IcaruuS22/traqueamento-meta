@@ -6,7 +6,7 @@ import { requireAdmin } from '@/lib/auth/guard';
 import { ACOES, registraAuditoria } from '@/lib/audit';
 import { buscaAdAccount, conflitoDeAdAccount, criaAdAccount, removeAdAccount } from '@/lib/db/cliente';
 import { apagaBancoDoCliente, criaBancoDoCliente } from '@/lib/db/provisiona';
-import { salvaFeeMensal } from '@/lib/db/orcamento';
+import { salvaInvestimentoMensal } from '@/lib/db/orcamento';
 import { lacunaDeEsquema } from '@/lib/db/pool';
 import { confirmacaoDeExclusaoBate, geraNomeBanco } from '@/lib/nomes-banco';
 import type { EstadoFormulario } from '@/lib/auth/actions';
@@ -188,7 +188,7 @@ export async function acaoExcluirCliente(
 
   if (!confirmacaoDeExclusaoBate(parsed.data.confirmacao, [conta.account_name, conta.client_db_name])) {
     return {
-      erro: `A confirmação não bate. Digite exatamente "${conta.account_name}" para excluir — nada foi apagado.`,
+      erro: `A confirmação não bate. Digite exatamente "${conta.account_name}" para excluir: nada foi apagado.`,
     };
   }
 
@@ -199,7 +199,7 @@ export async function acaoExcluirCliente(
     console.error('[clientes] falha ao remover do catálogo', conta.client_db_name, erro);
     return {
       erro:
-        'Não foi possível remover o cliente do catálogo. Nada foi apagado — ' +
+        'Não foi possível remover o cliente do catálogo. Nada foi apagado. ' +
         'confira o log do servidor e tente de novo.',
     };
   }
@@ -214,7 +214,7 @@ export async function acaoExcluirCliente(
     console.error('[clientes] catálogo limpo mas o DROP DATABASE falhou', conta.client_db_name, erro);
     bancoApagado = false;
     aviso =
-      ` Atenção: o banco \`${conta.client_db_name}\` continua no servidor — ` +
+      ` Atenção: o banco \`${conta.client_db_name}\` continua no servidor: ` +
       'o cliente já saiu do painel, mas os dados só somem com um DROP DATABASE manual.';
   }
 
@@ -245,14 +245,14 @@ export async function acaoExcluirCliente(
 }
 
 /**
- * Fee (budget) mensal combinado com o cliente.
+ * Investimento (budget) mensal combinado com o cliente.
  *
  * Fica com o administrador, e não na tela de métricas do cliente, porque
  * é dado comercial: quem olha o painel precisa ver o teto e o ritmo, mas
  * mudar o teto é decisão de contrato. Campo vazio limpa o valor — cliente
- * sem fee combinado volta ao indicador neutro.
+ * sem investimento combinado volta ao indicador neutro.
  */
-const schemaFee = z.object({
+const schemaInvestimento = z.object({
   client_db: z.string().trim().min(1).max(64),
   monthly_fee: z
     .string()
@@ -263,13 +263,13 @@ const schemaFee = z.object({
     .transform((v) => v.replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.')),
 });
 
-export async function acaoSalvarFeeMensal(
+export async function acaoSalvarInvestimentoMensal(
   _estado: EstadoFormulario,
   form: FormData,
 ): Promise<EstadoFormulario> {
   const admin = await requireAdmin();
 
-  const parsed = schemaFee.safeParse({
+  const parsed = schemaInvestimento.safeParse({
     client_db: form.get('client_db'),
     monthly_fee: form.get('monthly_fee') ?? '',
   });
@@ -279,28 +279,28 @@ export async function acaoSalvarFeeMensal(
   if (!conta) return { erro: 'Cliente não encontrado no catálogo.' };
 
   const bruto = parsed.data.monthly_fee;
-  let fee: number | null = null;
+  let investimento: number | null = null;
   if (bruto !== '') {
     const numero = Number(bruto);
     if (!Number.isFinite(numero) || numero < 0) {
       return { erro: 'Informe um valor em números, como 3500 ou 3500,00.' };
     }
-    fee = numero > 0 ? Math.round(numero * 100) / 100 : null;
+    investimento = numero > 0 ? Math.round(numero * 100) / 100 : null;
   }
 
   try {
-    await salvaFeeMensal(conta.client_db_name, fee);
+    await salvaInvestimentoMensal(conta.client_db_name, investimento);
   } catch (erro) {
     const lacuna = lacunaDeEsquema(erro);
     if (lacuna) {
       return {
         erro:
-          'O banco central ainda não tem a coluna do fee mensal. ' +
+          'O banco central ainda não tem a coluna do investimento mensal. ' +
           'Rode "Banco de Dados/migracao_fee_mensal.sql" e tente de novo.',
       };
     }
-    console.error('[clientes] falha ao salvar o fee mensal', conta.client_db_name, erro);
-    return { erro: 'Não foi possível salvar o fee mensal.' };
+    console.error('[clientes] falha ao salvar o investimento mensal', conta.client_db_name, erro);
+    return { erro: 'Não foi possível salvar o investimento mensal.' };
   }
 
   await registraAuditoria({
@@ -308,12 +308,15 @@ export async function acaoSalvarFeeMensal(
     userEmail: admin.email,
     acao: ACOES.CLIENTE_FEE_ALTERADO,
     clientDb: conta.client_db_name,
-    detalhe: { monthly_fee: fee },
+    detalhe: { monthly_fee: investimento },
   });
 
   revalidatePath('/admin/clientes');
   revalidatePath(`/app/${conta.client_db_name}/visao-geral`);
   return {
-    sucesso: fee === null ? 'Fee mensal removido.' : `Fee mensal salvo: ${fee.toFixed(2)}.`,
+    sucesso:
+      investimento === null
+        ? 'Investimento mensal removido.'
+        : `Investimento mensal salvo: ${investimento.toFixed(2)}.`,
   };
 }

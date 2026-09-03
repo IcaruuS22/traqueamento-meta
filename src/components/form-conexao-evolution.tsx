@@ -259,7 +259,7 @@ export function FormConexaoEvolution({
         <div className="rounded-[var(--radius-control)] border border-[var(--border-default)] p-4">
           <p className="mb-3 text-sm text-[var(--text-secondary)]">
             No celular: <strong>WhatsApp → Aparelhos conectados → Conectar aparelho</strong> e aponte
-            para o código. Ele expira em cerca de 40 segundos — se passar, gere um novo.
+            para o código. Ele expira em cerca de 40 segundos. Se passar, gere um novo.
           </p>
 
           {qr.base64 ? (
@@ -297,7 +297,7 @@ export function FormConexaoEvolution({
       <div className="rounded-[var(--radius-control)] bg-[var(--bg-field-on-canvas)] px-3 py-2.5 text-xs text-[var(--text-tertiary)]">
         Webhook cadastrado na instância: <code>{urlWebhook}</code>
         <br />O token de autenticação é acrescentado pelo servidor e não aparece aqui. A Evolution
-        precisa conseguir alcançar esse endereço — se o painel roda atrás de proxy, ajuste{' '}
+        precisa conseguir alcançar esse endereço. Se o painel roda atrás de proxy, ajuste{' '}
         <code>EVOLUTION_WEBHOOK_BASE_URL</code>.
         {enderecoLocal ? (
           <>

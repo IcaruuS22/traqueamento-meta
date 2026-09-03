@@ -118,7 +118,7 @@ export async function TelaEventos({
 
       {painel.lacunas_de_esquema.length ? (
         <p className="mb-4 rounded-[var(--radius-control)] bg-amber-50 px-3 py-2 text-sm text-amber-700">
-          O banco deste cliente está atrás do template — falta:{' '}
+          O banco deste cliente está atrás do template. Falta:{' '}
           <strong>{painel.lacunas_de_esquema.join(', ')}</strong>. O que depende disso aparece
           como zero, e zero aqui é falta de migração, não falta de resultado.
         </p>
@@ -163,7 +163,7 @@ export async function TelaEventos({
         />
         <KpiCard
           rotulo="Taxa de sucesso"
-          valor={taxa === null ? '—' : `${fmtDec(taxa, 1)}%`}
+          valor={taxa === null ? '-' : `${fmtDec(taxa, 1)}%`}
           dica="Enviados dividido por enviados + com erro. Pendentes e duplicados ficam de fora: nenhum dos dois chegou a ser uma tentativa de envio."
           icone={Icones.percent}
           tom="verde"
@@ -210,7 +210,7 @@ export async function TelaEventos({
       {filtrado ? (
         <p className="mt-3 text-xs text-[var(--text-tertiary)]">
           Os cards e o gráfico acima cobrem o período inteiro e não seguem o filtro de status
-          nem a busca — só a tabela segue.
+          nem a busca: só a tabela segue.
         </p>
       ) : null}
     </>

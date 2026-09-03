@@ -57,7 +57,7 @@ async function destinoWhatsapp(clientDb: string): Promise<Destino> {
     return {
       ok: false,
       motivo:
-        'catálogo sem as colunas do pixel de mensagens — rode ' +
+        'catálogo sem as colunas do pixel de mensagens: rode ' +
         'migracao_whatsapp_pixel_mensagens.sql',
     };
   }

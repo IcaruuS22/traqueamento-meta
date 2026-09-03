@@ -85,9 +85,9 @@ const COLUNAS: ColunaMetrica[] = [
     chave: 'orcamento',
     rotulo: 'Orçamento',
     dica: 'Orçamento diário quando existe; senão o vitalício. Anúncio não tem orçamento próprio.',
-    valor: (l) => (l.orcamento === null ? '—' : fmtBRL(l.orcamento)),
+    valor: (l) => (l.orcamento === null ? '-' : fmtBRL(l.orcamento)),
     // Somar diário com vitalício daria um número sem significado.
-    total: () => '—',
+    total: () => '-',
   },
   { chave: 'spend', rotulo: 'Gasto', valor: (l) => fmtBRL(l.spend), total: (t) => fmtBRL(t.spend) },
   {
@@ -101,14 +101,14 @@ const COLUNAS: ColunaMetrica[] = [
     rotulo: 'Alcance',
     dica: 'Pessoas únicas alcançadas. Não soma entre campanhas: quem viu duas contaria duas vezes.',
     valor: (l) => fmtInt(l.reach),
-    total: () => '—',
+    total: () => '-',
   },
   {
     chave: 'frequency',
     rotulo: 'Frequência',
     dica: 'Impressões por pessoa alcançada.',
     valor: (l) => fmtDec(l.frequency, 2),
-    total: () => '—',
+    total: () => '-',
   },
   {
     chave: 'clicks',
@@ -153,15 +153,15 @@ const COLUNAS: ColunaMetrica[] = [
     chave: 'cpl',
     rotulo: 'CPL',
     dica: 'Custo por lead: gasto ÷ leads.',
-    valor: (l) => (l.cpl === null ? '—' : fmtBRL(l.cpl)),
-    total: (t) => (t.cpl === null ? '—' : fmtBRL(t.cpl)),
+    valor: (l) => (l.cpl === null ? '-' : fmtBRL(l.cpl)),
+    total: (t) => (t.cpl === null ? '-' : fmtBRL(t.cpl)),
   },
   {
     chave: 'cac',
     rotulo: 'CAC',
     dica: 'Custo por cliente: gasto ÷ conversões.',
-    valor: (l) => (l.cac === null ? '—' : fmtBRL(l.cac)),
-    total: (t) => (t.cac === null ? '—' : fmtBRL(t.cac)),
+    valor: (l) => (l.cac === null ? '-' : fmtBRL(l.cac)),
+    total: (t) => (t.cac === null ? '-' : fmtBRL(t.cac)),
   },
   {
     chave: 'receita',
@@ -247,13 +247,13 @@ function Status({
       type="button"
       role="switch"
       aria-checked={ligado}
-      aria-label={`${rotulo} — ${proximo === 'PAUSED' ? 'pausar' : 'ativar'} na Meta`}
+      aria-label={`${rotulo}: ${proximo === 'PAUSED' ? 'pausar' : 'ativar'} na Meta`}
       onClick={onAlterna}
       disabled={pendente}
       title={
         proximo === 'PAUSED'
-          ? 'Pausar na Meta — a entrega para e o gasto também.'
-          : 'Ativar na Meta — a entrega recomeça e volta a gastar.'
+          ? 'Pausar na Meta: a entrega para e o gasto também.'
+          : 'Ativar na Meta: a entrega recomeça e volta a gastar.'
       }
       className={`inline-flex items-center gap-2 whitespace-nowrap disabled:cursor-default ${COR_TEXTO_STATUS[tom]}`}
     >
@@ -279,7 +279,7 @@ const MAX_CHIPS_FUNIL = 3;
  * resume o resto em "+N", com a lista completa no `title`.
  */
 function Funil({ eventos }: { eventos: EventoFunil[] }) {
-  if (!eventos.length) return <span className="text-[var(--text-tertiary)]">—</span>;
+  if (!eventos.length) return <span className="text-[var(--text-tertiary)]">-</span>;
 
   const visiveis = eventos.slice(0, MAX_CHIPS_FUNIL);
   const resto = eventos.length - visiveis.length;

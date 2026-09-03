@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { TelaEventos } from '@/components/tela-eventos';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Últimos eventos (Formulários) — Trakeamento' };
+export const metadata: Metadata = { title: 'Últimos eventos (Formulários) | Trakeamento' };
 
 /**
  * Envios à Meta CAPI dos leads de Formulário Instantâneo.

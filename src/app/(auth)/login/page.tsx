@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { FormularioLogin } from './formulario';
 import { Alerta } from '@/components/form';
 
-export const metadata: Metadata = { title: 'Entrar — Trakeamento' };
+export const metadata: Metadata = { title: 'Entrar | Trakeamento' };
 
 /**
  * Reduz o valor a um caminho interno, ou descarta.

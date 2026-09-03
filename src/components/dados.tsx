@@ -318,7 +318,7 @@ export function Funil({
           return (
             <g key={`${it.label}-${i}`}>
               <text className="funnel-stage-label" x={cx} y={16} textAnchor="middle">
-                {corta(it.label || '—')}
+                {corta(it.label || '-')}
               </text>
               <text className="funnel-pct" x={cx} y={(centroY + 4.5).toFixed(1)} textAnchor="middle">
                 {pct}%
@@ -360,9 +360,9 @@ export function TempoEntreEtapas({
           <div className="etapa-row" key={`${i.from_stage}||${i.to_stage}`}>
             <div className="etapa-row-top">
               <span className="etapa-label">
-                {i.from_stage || '—'}
+                {i.from_stage || '-'}
                 <span className="arrow">→</span>
-                {i.to_stage || '—'}
+                {i.to_stage || '-'}
               </span>
               <span className="etapa-meta">
                 <span className="etapa-time">{fmtDuracao(ms)}</span>
@@ -433,7 +433,7 @@ export function GraficoDiario({ serie }: { serie: { label: string; count: number
               />
             </div>
             <span className="chart-bar-label text-body-small">
-              {mostraLabel ? p.label || '—' : ''}
+              {mostraLabel ? p.label || '-' : ''}
             </span>
           </div>
         );

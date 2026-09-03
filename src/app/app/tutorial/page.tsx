@@ -4,7 +4,7 @@ import { GUIAS } from '@/content/tutorial';
 import { Card } from '@/components/dados';
 import { PageHero } from '@/components/hero';
 
-export const metadata: Metadata = { title: 'Ajuda — Trakeamento' };
+export const metadata: Metadata = { title: 'Ajuda | Trakeamento' };
 
 /**
  * Tutorial de configuração — porte da aba "Tutorial" do painel.

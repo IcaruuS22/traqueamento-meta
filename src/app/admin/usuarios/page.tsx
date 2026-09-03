@@ -7,7 +7,7 @@ import { LinhaUsuario } from './linha-usuario';
 import { PageHero } from '@/components/hero';
 import { fmtData } from '@/lib/format';
 
-export const metadata: Metadata = { title: 'Usuários — Trakeamento' };
+export const metadata: Metadata = { title: 'Usuários | Trakeamento' };
 export const dynamic = 'force-dynamic';
 
 export default async function PaginaUsuarios() {

@@ -3,7 +3,7 @@ import { fmtBRL } from '@/lib/format';
 import { fraseOrcamento, type Orcamento, type Recomendacao } from '@/lib/orcamento';
 
 /**
- * Indicador de ritmo de gasto contra o fee mensal do cliente.
+ * Indicador de ritmo de gasto contra o investimento mensal do cliente.
  *
  * Server Component sem estado: recebe o orçamento já avaliado por
  * `lib/db/orcamento.ts` e só desenha. O mês é o do período escolhido na
@@ -14,8 +14,8 @@ import { fraseOrcamento, type Orcamento, type Recomendacao } from '@/lib/orcamen
  * Ele recomenda, não age: subir ou descer verba de anúncio é decisão de
  * quem gerencia a conta, e o botão para isso continua sendo o da Meta.
  *
- * O percentual ao lado do rótulo é de consumo do fee, não de ajuste. Vem
- * escrito "% do fee" porque "Aumentar · 4%" se lia como uma ordem de
+ * O percentual ao lado do rótulo é de consumo do investimento, não de ajuste. Vem
+ * escrito "% do investimento" porque "Aumentar · 4%" se lia como uma ordem de
  * subir 4%, enquanto a frase logo abaixo pedia quase o dobro da diária.
  */
 
@@ -46,11 +46,11 @@ export function OrcamentoMensal({ orcamento }: { orcamento: Orcamento }) {
 
   return (
     <Card
-      titulo={`Orçamento — ${orcamento.mesRotulo}`}
+      titulo={`Orçamento de ${orcamento.mesRotulo}`}
       descricao={
         orcamento.fechado
-          ? 'Gasto em campanhas no mês, contra o fee combinado.'
-          : `Gasto do mês inteiro contra o fee combinado, não o do período da tela. Dia ${orcamento.diasDecorridos} de ${orcamento.diasNoMes}.`
+          ? 'Gasto em campanhas no mês, contra o investimento combinado.'
+          : `Gasto do mês inteiro contra o investimento combinado, não o do período da tela. Dia ${orcamento.diasDecorridos} de ${orcamento.diasNoMes}.`
       }
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -58,12 +58,12 @@ export function OrcamentoMensal({ orcamento }: { orcamento: Orcamento }) {
           {fmtBRL(orcamento.gasto)}
           <span className="text-sm font-normal text-[var(--text-tertiary)]">
             {' '}
-            de {orcamento.fee > 0 ? fmtBRL(orcamento.fee) : '—'}
+            de {orcamento.investimento > 0 ? fmtBRL(orcamento.investimento) : '-'}
           </span>
         </span>
         <span className={`text-xs font-medium ${tom.texto}`}>
           {tom.rotulo}
-          {orcamento.fee > 0 ? ` · ${pct}% do fee` : ''}
+          {orcamento.investimento > 0 ? ` · ${pct}% do investimento` : ''}
         </span>
       </div>
 
@@ -73,7 +73,7 @@ export function OrcamentoMensal({ orcamento }: { orcamento: Orcamento }) {
 
       <p className="mt-2 text-xs text-[var(--text-secondary)]">{fraseOrcamento(orcamento)}</p>
 
-      {orcamento.fee > 0 ? (
+      {orcamento.investimento > 0 ? (
         <p className="mt-2 text-xs text-[var(--text-tertiary)] tabular-nums">
           Diária dos dias fechados {fmtBRL(orcamento.diarioAtual)}
           {orcamento.fechado ? null : (
@@ -82,7 +82,7 @@ export function OrcamentoMensal({ orcamento }: { orcamento: Orcamento }) {
         </p>
       ) : (
         <p className="mt-2 text-xs text-[var(--text-tertiary)]">
-          O fee mensal é cadastrado por cliente na área de administração.
+          O investimento mensal é cadastrado por cliente na área de administração.
         </p>
       )}
     </Card>

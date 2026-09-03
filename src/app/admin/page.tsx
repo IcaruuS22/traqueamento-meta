@@ -4,7 +4,7 @@ import { requireAdmin } from '@/lib/auth/guard';
 import { PageHero } from '@/components/hero';
 import { Icones, IconesNav } from '@/components/icones';
 
-export const metadata: Metadata = { title: 'Administração — Trakeamento' };
+export const metadata: Metadata = { title: 'Administração | Trakeamento' };
 
 /**
  * Página de administração.

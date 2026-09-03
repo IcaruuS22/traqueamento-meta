@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { TelaRastreamento } from '@/components/tela-rastreamento';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Rastreamento — Trakeamento' };
+export const metadata: Metadata = { title: 'Rastreamento | Trakeamento' };
 
 /**
  * Origem dos leads do cliente, com o detalhe por contato.

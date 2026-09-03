@@ -334,7 +334,7 @@ export async function acaoReapontarWebhookEvolution(
   return {
     ok: true,
     sucesso: local
-      ? `Webhook atualizado para ${base}/api/webhooks/evolution — mas esse endereço é local. Se a Evolution roda em outro servidor, ela não alcança o painel: defina EVOLUTION_WEBHOOK_BASE_URL com o endereço público e clique de novo.`
+      ? `Webhook atualizado para ${base}/api/webhooks/evolution, mas esse endereço é local. Se a Evolution roda em outro servidor, ela não alcança o painel: defina EVOLUTION_WEBHOOK_BASE_URL com o endereço público e clique de novo.`
       : `Webhook atualizado para ${base}/api/webhooks/evolution`,
   };
 }

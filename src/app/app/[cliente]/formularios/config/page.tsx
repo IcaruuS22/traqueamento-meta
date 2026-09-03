@@ -5,7 +5,7 @@ import { ConfigEventosForm } from '@/components/config-eventos';
 import { PageHero } from '@/components/hero';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Configuração de eventos — Trakeamento' };
+export const metadata: Metadata = { title: 'Configuração de eventos | Trakeamento' };
 
 /**
  * Configuração de eventos do Formulário Instantâneo — porte de
@@ -36,7 +36,7 @@ export default async function PaginaConfigEventos({
 
       {lacunas_de_esquema.length ? (
         <p className="mb-4 rounded-[var(--radius-control)] bg-amber-50 px-3 py-2 text-sm text-amber-700">
-          O banco deste cliente está atrás do template — falta:{' '}
+          O banco deste cliente está atrás do template. Falta:{' '}
           <strong>{lacunas_de_esquema.join(', ')}</strong>. Enquanto isso, salvar aqui vai falhar.
         </p>
       ) : null}

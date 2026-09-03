@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { FormularioRedefinir } from './formulario';
 import { Alerta } from '@/components/form';
 
-export const metadata: Metadata = { title: 'Definir nova senha — Trakeamento' };
+export const metadata: Metadata = { title: 'Definir nova senha | Trakeamento' };
 
 export default async function PaginaRedefinirSenha({
   searchParams,

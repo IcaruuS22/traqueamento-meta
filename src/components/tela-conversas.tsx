@@ -170,9 +170,9 @@ const doFormulario = (l: LeadConversa): FormLead => ({
  * e inventar mensagem diferente pra cada um seria chute.
  */
 function valorDaIA(valor: string | number | null): string {
-  if (valor === null || valor === undefined || valor === '') return '—';
+  if (valor === null || valor === undefined || valor === '') return '-';
   const n = Number(valor);
-  return Number.isFinite(n) && n > 0 ? fmtBRL(n) : '—';
+  return Number.isFinite(n) && n > 0 ? fmtBRL(n) : '-';
 }
 
 function Anexo({
@@ -585,7 +585,7 @@ export function TelaConversas({
 
   return (
     <div className="crm-shell">
-      {/* Coluna 1 — lista */}
+      {/* Coluna 1: lista */}
       <div className="crm-col crm-col-list">
         <div className="crm-list-head">
           <div className="search-inline">
@@ -641,7 +641,7 @@ export function TelaConversas({
                     </span>
                     <span className="crm-list-item-preview">
                       {c.ultima_mensagem_direcao === 'outbound' ? 'Você: ' : ''}
-                      {textoDaMensagem(c.ultima_mensagem_tipo, c.ultima_mensagem) || '—'}
+                      {textoDaMensagem(c.ultima_mensagem_tipo, c.ultima_mensagem) || '-'}
                     </span>
                     <span className="crm-list-item-top" style={{ marginTop: 4 }}>
                       {(c.status ?? '').trim() ? (
@@ -663,7 +663,7 @@ export function TelaConversas({
         </ul>
       </div>
 
-      {/* Coluna 2 — conversa */}
+      {/* Coluna 2: conversa */}
       <div className="crm-col crm-col-thread">
         {!thread ? (
           <div className="crm-thread-empty">
@@ -767,7 +767,7 @@ export function TelaConversas({
         )}
       </div>
 
-      {/* Coluna 3 — lead */}
+      {/* Coluna 3: lead */}
       <div className="crm-col crm-col-lead">
         {!thread ? (
           <div className="crm-thread-empty">
@@ -820,7 +820,7 @@ export function TelaConversas({
 
             {/* O motivo só faz sentido no estágio de perda, e é dele que
                 sai o ranking da tela de Funil. Fica em branco quando
-                ninguém quis dizer — o funil conta como sem motivo. */}
+                ninguém quis dizer, o funil conta como sem motivo. */}
             {ehEtapaDePerda(form.status) ? (
               <div className="crm-field">
                 <label htmlFor="leadMotivoPerda">Motivo da perda</label>
@@ -882,11 +882,11 @@ export function TelaConversas({
               <h4>Origem do Anúncio</h4>
               <div className="crm-field">
                 <label>Ad ID</label>
-                <div className="crm-readonly">{thread.lead.referral_ad_id ?? '—'}</div>
+                <div className="crm-readonly">{thread.lead.referral_ad_id ?? '-'}</div>
               </div>
               <div className="crm-field">
                 <label>Click ID (ctwa_clid)</label>
-                <div className="crm-readonly">{thread.lead.referral_ctwa_clid ?? '—'}</div>
+                <div className="crm-readonly">{thread.lead.referral_ctwa_clid ?? '-'}</div>
               </div>
               {/* Aqui ficam os identificadores crus; nome de campanha,
                   conjunto, anúncio e os eventos já enviados moram no modal
@@ -941,7 +941,7 @@ export function TelaConversas({
                     <p className="text-body-small text-tertiary">
                       Apagar o lead inteiro? Saem as mensagens, os arquivos, o estado da
                       conversa, os eventos enviados à Meta e o próprio contato. O que já foi
-                      recebido pela Meta continua lá — some daqui, não de lá. Não há como
+                      recebido pela Meta continua lá: some daqui, não de lá. Não há como
                       desfazer.
                     </p>
                     <div className="flex flex-wrap gap-2">
@@ -993,7 +993,7 @@ export function TelaConversas({
                 <div className="crm-readonly">
                   {thread.lead.ai_last_analyzed_at
                     ? fmtDataHora(thread.lead.ai_last_analyzed_at)
-                    : '—'}
+                    : '-'}
                 </div>
               </div>
               <div className="crm-field">
@@ -1011,7 +1011,7 @@ export function TelaConversas({
               </div>
               <div className="crm-field">
                 <label>Motivo</label>
-                <div className="crm-readonly">{thread.lead.ai_last_reason ?? '—'}</div>
+                <div className="crm-readonly">{thread.lead.ai_last_reason ?? '-'}</div>
               </div>
             </div>
           </>

@@ -191,7 +191,7 @@ export async function acaoSolicitarAcesso(
   }
 
   const mensagemSucesso =
-    'Solicitação registrada. Seu acesso precisa ser liberado por um administrador — você será avisado por e-mail.';
+    'Solicitação registrada. Seu acesso precisa ser liberado por um administrador. Você será avisado por e-mail.';
 
   try {
     const id = await criaUsuario({
