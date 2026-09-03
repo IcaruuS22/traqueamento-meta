@@ -186,7 +186,12 @@
           ]
         },
         "options": {
-          "timeout": 15000
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
         }
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -202,7 +207,7 @@
     },
     {
       "parameters": {
-        "jsCode": "function sqlVal(v) {\n  if (v === null || v === undefined || v === '') return 'NULL';\n  return JSON.stringify(String(v));\n}\n\nconst lote = $('Para Cada Lote').first().json;\nconst db = String(lote.client_db).replace(/[^A-Za-z0-9_]/g, '');\nconst etapas = (lote.etapas_perda || []).map(String);\nconst resposta = $json || {};\n\nconst nada = [{ json: { acao: 'nada', client_db: db } }];\nif (resposta.error) return nada;\n\nconst negocios = (resposta._embedded && resposta._embedded.leads) || [];\nif (!negocios.length) return nada;\n\nconst customerPorLead = {};\n(lote.mapa || []).forEach(function(m){ customerPorLead[String(m.crm_lead_id)] = m.customer_id; });\n\nconst saida = [];\nnegocios.forEach(function(neg){\n  const status = String(neg.status_id === null || neg.status_id === undefined ? '' : neg.status_id);\n  if (etapas.indexOf(status) === -1) return;\n\n  const customerId = customerPorLead[String(neg.id)];\n  if (!customerId) return;\n\n  const motivos = (neg._embedded && neg._embedded.loss_reason) || [];\n  const motivo = (motivos[0] && motivos[0].name ? String(motivos[0].name) : '').trim().slice(0, 120);\n\n  // Só UPDATE em customers: a etapa de perda não tem evento Meta, e é\n  // por isso que este workflow não fala com a CAPI em lugar nenhum.\n  const sql = 'UPDATE `' + db + '`.`customers` SET current_stage = ' + sqlVal(status) +\n    ', lost_reason = ' + sqlVal(motivo) + ', lost_at = NOW() WHERE id = ' + Number(customerId) + ';';\n\n  saida.push({ json: {\n    acao: 'atualiza',\n    sql: sql,\n    client_db: db,\n    customer_id: customerId,\n    crm_lead_id: neg.id,\n    status_id: status,\n    motivo: motivo\n  } });\n});\n\nreturn saida.length ? saida : nada;\n"
+        "jsCode": "function sqlVal(v) {\n  if (v === null || v === undefined || v === '') return 'NULL';\n  return JSON.stringify(String(v));\n}\n\nconst lote = $('Para Cada Lote').first().json;\nconst db = String(lote.client_db).replace(/[^A-Za-z0-9_]/g, '');\nconst etapas = (lote.etapas_perda || []).map(String);\n// A resposta pode chegar já como objeto ou como texto cru (o Kommo manda\n// application/hal+json, e nem toda versão do n8n desembrulha isso\n// sozinha). Aceita as duas formas em vez de devolver \"nada\" em silêncio.\nlet resposta = $json || {};\nif (typeof resposta.data === 'string') {\n  try { resposta = JSON.parse(resposta.data); } catch (e) { resposta = { error: 'resposta ilegivel' }; }\n}\nif (typeof resposta === 'string') {\n  try { resposta = JSON.parse(resposta); } catch (e) { resposta = { error: 'resposta ilegivel' }; }\n}\nif (resposta && typeof resposta.data === 'string') {\n  try { resposta = JSON.parse(resposta.data); } catch (e) { resposta = { error: 'resposta ilegivel' }; }\n}\n\nconst nada = [{ json: { acao: 'nada', client_db: db } }];\nif (!resposta || resposta.error) return nada;\n\nconst negocios = (resposta._embedded && resposta._embedded.leads) || [];\nif (!negocios.length) return nada;\n\nconst customerPorLead = {};\n(lote.mapa || []).forEach(function(m){ customerPorLead[String(m.crm_lead_id)] = m.customer_id; });\n\nconst saida = [];\nnegocios.forEach(function(neg){\n  const status = String(neg.status_id === null || neg.status_id === undefined ? '' : neg.status_id);\n  if (etapas.indexOf(status) === -1) return;\n\n  const customerId = customerPorLead[String(neg.id)];\n  if (!customerId) return;\n\n  const motivos = (neg._embedded && neg._embedded.loss_reason) || [];\n  const motivo = (motivos[0] && motivos[0].name ? String(motivos[0].name) : '').trim().slice(0, 120);\n\n  // Só UPDATE em customers: a etapa de perda não tem evento Meta, e é\n  // por isso que este workflow não fala com a CAPI em lugar nenhum.\n  const sql = 'UPDATE `' + db + '`.`customers` SET current_stage = ' + sqlVal(status) +\n    ', lost_reason = ' + sqlVal(motivo) + ', lost_at = NOW() WHERE id = ' + Number(customerId) + ';';\n\n  saida.push({ json: {\n    acao: 'atualiza',\n    sql: sql,\n    client_db: db,\n    customer_id: customerId,\n    crm_lead_id: neg.id,\n    status_id: status,\n    motivo: motivo\n  } });\n});\n\nreturn saida.length ? saida : nada;\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

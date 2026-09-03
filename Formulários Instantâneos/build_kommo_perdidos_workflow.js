@@ -301,7 +301,10 @@ const httpKommo = addNode({
         { name: "Authorization", value: "={{ 'Bearer ' + $json.kommo_access_token }}" }
       ]
     },
-    options: { timeout: 15000 }
+    // O Kommo responde com Content-Type application/hal+json, que o n8n
+    // não reconhece como JSON: sem isto a resposta chega como string
+    // crua em `data` e nenhum negócio é lido.
+    options: { timeout: 15000, response: { response: { responseFormat: "json" } } }
   },
   type: "n8n-nodes-base.httpRequest",
   typeVersion: 4.2,
@@ -332,10 +335,22 @@ const INTERPRETA_CODE = `function sqlVal(v) {
 const lote = $('Para Cada Lote').first().json;
 const db = String(lote.client_db).replace(/[^A-Za-z0-9_]/g, '');
 const etapas = (lote.etapas_perda || []).map(String);
-const resposta = $json || {};
+// A resposta pode chegar já como objeto ou como texto cru (o Kommo manda
+// application/hal+json, e nem toda versão do n8n desembrulha isso
+// sozinha). Aceita as duas formas em vez de devolver "nada" em silêncio.
+let resposta = $json || {};
+if (typeof resposta.data === 'string') {
+  try { resposta = JSON.parse(resposta.data); } catch (e) { resposta = { error: 'resposta ilegivel' }; }
+}
+if (typeof resposta === 'string') {
+  try { resposta = JSON.parse(resposta); } catch (e) { resposta = { error: 'resposta ilegivel' }; }
+}
+if (resposta && typeof resposta.data === 'string') {
+  try { resposta = JSON.parse(resposta.data); } catch (e) { resposta = { error: 'resposta ilegivel' }; }
+}
 
 const nada = [{ json: { acao: 'nada', client_db: db } }];
-if (resposta.error) return nada;
+if (!resposta || resposta.error) return nada;
 
 const negocios = (resposta._embedded && resposta._embedded.leads) || [];
 if (!negocios.length) return nada;
