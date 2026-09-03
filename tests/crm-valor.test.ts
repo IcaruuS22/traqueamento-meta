@@ -1,6 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { paraNumero, precoDoNegocio } from '../scripts/backfill-crm-value';
+import { valorDigitado } from '../src/lib/crm';
 
 /**
  * Leitura do valor do negócio no Kommo.
@@ -48,5 +49,23 @@ describe('valor do negócio vindo do Kommo', () => {
       precoDoNegocio({ id: 4, custom_fields_values: [{ field_name: 'Origem', values: [] }] }),
       0,
     );
+  });
+});
+
+describe('valor digitado no painel', () => {
+  test('aceita o jeito brasileiro e o do teclado numérico', () => {
+    assert.equal(valorDigitado('11210'), 11210);
+    assert.equal(valorDigitado('11210.50'), 11210.5);
+    assert.equal(valorDigitado('11.210,00'), 11210);
+    assert.equal(valorDigitado('R$ 11.210,00'), 11210);
+    assert.equal(valorDigitado(' 2500,5 '), 2500.5);
+  });
+
+  test('campo vazio zera o valor, e texto não vira número', () => {
+    // Apagar o campo é como se corrige um valor digitado errado.
+    assert.equal(valorDigitado(''), 0);
+    assert.equal(valorDigitado('   '), 0);
+    assert.equal(valorDigitado('abc'), null);
+    assert.equal(valorDigitado('-500'), null);
   });
 });

@@ -298,3 +298,21 @@ export function iniciaisDoNome(nome: string): string {
   if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
   return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
 }
+
+/**
+ * Valor digitado, em número.
+ *
+ * Aceita o jeito brasileiro de escrever ("11.210,00") e o do teclado
+ * numérico ("11210.00"), porque quem digita não vai lembrar de qual o
+ * campo quer. Campo vazio vale zero: é como se apaga um valor errado.
+ * Devolve `null` quando o texto não é número, e aí a tela recusa.
+ */
+export function valorDigitado(texto: string): number | null {
+  const limpo = texto.trim().replace(/[R$\s]/g, '');
+  if (!limpo) return 0;
+  const normalizado = limpo.includes(',')
+    ? limpo.split('.').join('').replace(',', '.')
+    : limpo;
+  const n = Number(normalizado);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}

@@ -31,6 +31,7 @@ export const ACOES = {
   LEAD_EXCLUIDO: 'lead_excluido',
   CRM_LEAD_MOVIDO: 'crm_lead_movido',
   CRM_LEAD_SALVO: 'crm_lead_salvo',
+  CRM_VALOR_SALVO: 'crm_valor_salvo',
   EVENTO_MAPEAMENTO_SALVO: 'evento_mapeamento_salvo',
   EVENTO_MAPEAMENTO_EXCLUIDO: 'evento_mapeamento_excluido',
   METRICAS_PREFS_SALVAS: 'metricas_prefs_salvas',

@@ -10,12 +10,13 @@ import {
   ROTULO_ORIGEM,
   chaveColuna,
   nomeDoCartao,
+  valorDigitado,
 } from '@/lib/crm';
-import { acaoMoverLeadCrm } from '@/lib/acoes/crm';
+import { acaoMoverLeadCrm, acaoSalvarValorLead } from '@/lib/acoes/crm';
 import { acaoExcluirLead } from '@/lib/acoes/leads';
 import { ehEtapaDePerda, MOTIVOS_PERDA_SUGERIDOS, TAMANHO_MOTIVO } from '@/lib/funil';
 import { textoDaMensagem } from '@/lib/whatsapp-conversas';
-import { fmtDataHora, ouTraco } from '@/lib/format';
+import { fmtBRL, fmtDataHora, ouTraco } from '@/lib/format';
 import { telefoneParaExibir } from '@/lib/exibicao';
 
 /**
@@ -86,6 +87,8 @@ export function ModalLeadCrm({
   const [movendo, setMovendo] = useState(false);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
+  const [valor, setValor] = useState('');
+  const [salvandoValor, setSalvandoValor] = useState(false);
 
   // Mandar para "perdido" não move na hora: primeiro pergunta o motivo.
   // Sem essa pausa o motivo nunca seria registrado — e é dele que sai o
@@ -116,6 +119,7 @@ export function ModalLeadCrm({
       .then((d) => {
         if (!ativo) return;
         setLead(d);
+        setValor(d.crm_value == null ? '' : String(d.crm_value));
       })
       .catch((e) => {
         if (ativo) setErro(e instanceof Error ? e.message : 'Falha ao carregar.');
@@ -142,6 +146,25 @@ export function ModalLeadCrm({
     // existe mais: sai do quadro e o modal fecha junto.
     aoExcluir(lead.id);
     aoFechar();
+  }
+
+  async function salvaValor() {
+    if (!lead) return;
+    const numero = valorDigitado(valor);
+    if (numero === null) {
+      setAviso({ tipo: 'erro', texto: 'Valor inválido. Use apenas números, como 11210,00.' });
+      return;
+    }
+    setSalvandoValor(true);
+    setAviso(null);
+    const r = await acaoSalvarValorLead({ cliente, customer_id: lead.id, valor: numero });
+    setSalvandoValor(false);
+    if (!r.ok) {
+      setAviso({ tipo: 'erro', texto: r.erro });
+      return;
+    }
+    setAviso({ tipo: 'ok', texto: r.sucesso });
+    setLead({ ...lead, crm_value: numero });
   }
 
   async function mudaEtapa(etapa: string, motivoPerda: string | null = null) {
@@ -321,6 +344,50 @@ export function ModalLeadCrm({
                 )}
               </Secao>
 
+              <Secao titulo="Valor do negócio">
+                <label
+                  className="mb-1 block text-xs font-medium text-[var(--text-tertiary)]"
+                  htmlFor="crm-valor"
+                >
+                  Valor fechado (R$)
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    id="crm-valor"
+                    className="field max-w-[200px]"
+                    inputMode="decimal"
+                    placeholder="0,00"
+                    value={valor}
+                    disabled={salvandoValor}
+                    onChange={(e) => setValor(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void salvaValor();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    disabled={salvandoValor}
+                    onClick={() => void salvaValor()}
+                  >
+                    {salvandoValor ? 'Salvando…' : 'Salvar valor'}
+                  </button>
+                  {lead.crm_value ? (
+                    <span className="text-body-small text-tertiary">
+                      Salvo: {fmtBRL(lead.crm_value)}
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-2 text-xs text-[var(--text-tertiary)]">
+                  A automação preenche isto com o valor do negócio no CRM. Editar aqui
+                  substitui o número e entra na receita e no ROAS do painel. Nada é reenviado
+                  à Meta: o que ela já recebeu foi contado lá.
+                </p>
+              </Secao>
+
               <Secao titulo="Dados do lead">
                 <dl className="rastreio-lista">
                   <Linha rotulo="Nome" valor={ouTraco(lead.first_name)} />
@@ -486,3 +553,4 @@ function CampoMotivo({
     </div>
   );
 }
+

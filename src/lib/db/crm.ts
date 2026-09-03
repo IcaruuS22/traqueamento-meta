@@ -190,6 +190,8 @@ export type DetalheLeadCrm = {
   phone: string | null;
   created_at: string;
   current_stage: string | null;
+  /** Valor do negócio no CRM. `null` quando o banco não tem a coluna. */
+  crm_value: number | null;
   origem: OrigemLead;
   etapa_form: string | null;
   etapa_whatsapp: string | null;
@@ -287,53 +289,64 @@ export async function buscaLeadCrm(
     }
   };
 
-  const [conversa, etapaForm, mensagens, etapasWhatsapp, motivosUsados, ctwa] = await Promise.all([
-    lacunas.ou(leConversa(), null),
-    lacunas.ou(
-      db.queryOne<{ content_name: string | null }>(
-        `SELECT content_name FROM ${db.tabela('crm_meta_event_map')}
-          WHERE status_id = ? LIMIT 1`,
-        [base.current_stage],
+  const [conversa, etapaForm, mensagens, etapasWhatsapp, motivosUsados, ctwa, valor] =
+    await Promise.all([
+      lacunas.ou(leConversa(), null),
+      lacunas.ou(
+        db.queryOne<{ content_name: string | null }>(
+          `SELECT content_name FROM ${db.tabela('crm_meta_event_map')}
+            WHERE status_id = ? LIMIT 1`,
+          [base.current_stage],
+        ),
+        null,
       ),
-      null,
-    ),
-    lacunas.ou(
-      db.query<MensagemPrevia>(
-        `SELECT id, created_at, direction, message_type, message_text
-           FROM ${db.tabela('whatsapp_messages')}
-          WHERE customer_id = ?
-          ORDER BY id DESC
-          LIMIT ${LIMITE_MENSAGENS_MODAL}`,
-        [customerId],
+      lacunas.ou(
+        db.query<MensagemPrevia>(
+          `SELECT id, created_at, direction, message_type, message_text
+             FROM ${db.tabela('whatsapp_messages')}
+            WHERE customer_id = ?
+            ORDER BY id DESC
+            LIMIT ${LIMITE_MENSAGENS_MODAL}`,
+          [customerId],
+        ),
+        [] as MensagemPrevia[],
       ),
-      [] as MensagemPrevia[],
-    ),
-    lacunas.ou(
-      db.query<{ estagio: string; content_name: string | null }>(
-        `SELECT estagio, content_name FROM ${db.tabela('whatsapp_event_map')}
-          WHERE ativo = 1 ORDER BY id ASC`,
+      lacunas.ou(
+        db.query<{ estagio: string; content_name: string | null }>(
+          `SELECT estagio, content_name FROM ${db.tabela('whatsapp_event_map')}
+            WHERE ativo = 1 ORDER BY id ASC`,
+        ),
+        [] as { estagio: string; content_name: string | null }[],
       ),
-      [] as { estagio: string; content_name: string | null }[],
-    ),
-    lacunas.ou(
-      db.query<{ motivo: string }>(
-        `SELECT DISTINCT lost_reason AS motivo
-           FROM ${db.tabela('whatsapp_conversations')}
-          WHERE lost_reason IS NOT NULL AND lost_reason <> ''
-          ORDER BY lost_reason ASC
-          LIMIT ${LIMITE_MOTIVOS_USADOS}`,
+      lacunas.ou(
+        db.query<{ motivo: string }>(
+          `SELECT DISTINCT lost_reason AS motivo
+             FROM ${db.tabela('whatsapp_conversations')}
+            WHERE lost_reason IS NOT NULL AND lost_reason <> ''
+            ORDER BY lost_reason ASC
+            LIMIT ${LIMITE_MOTIVOS_USADOS}`,
+        ),
+        [] as { motivo: string }[],
       ),
-      [] as { motivo: string }[],
-    ),
-    lacunas.ou(
-      db.queryOne<{ ctwa: string | null }>(
-        `SELECT MAX(referral_ctwa_clid) AS ctwa FROM ${db.tabela('whatsapp_messages')}
-          WHERE customer_id = ?`,
-        [customerId],
+      lacunas.ou(
+        db.queryOne<{ ctwa: string | null }>(
+          `SELECT MAX(referral_ctwa_clid) AS ctwa FROM ${db.tabela('whatsapp_messages')}
+            WHERE customer_id = ?`,
+          [customerId],
+        ),
+        null,
       ),
-      null,
-    ),
-  ]);
+      // Em consulta própria, e não junto do SELECT de cima: banco sem a
+      // migração de `crm_value` derrubaria o modal inteiro por causa de
+      // um campo só.
+      lacunas.ou(
+        db.queryOne<{ crm_value: string | number | null }>(
+          `SELECT crm_value FROM ${db.tabela('customers')} WHERE id = ? LIMIT 1`,
+          [customerId],
+        ),
+        null,
+      ),
+    ]);
 
   const temConversa = conversa !== null;
   const origem: OrigemLead = ehContatoDeWhatsapp(
@@ -356,6 +369,7 @@ export async function buscaLeadCrm(
     tem_conversa: temConversa,
     ultima_mensagem_em: conversa?.last_message_at ?? null,
     ctwa_clid: ctwa?.ctwa ?? null,
+    crm_value: valor?.crm_value == null ? null : Number(valor.crm_value),
     // A prévia vem do banco em ordem decrescente; a tela lê de cima para
     // baixo, como na conversa.
     mensagens: mensagens.slice().reverse(),
@@ -412,3 +426,61 @@ export async function etapaWhatsappAtiva(db: BancoCliente, etapa: string): Promi
   return Boolean(linha);
 }
 
+/**
+ * Grava à mão o valor do negócio de um lead.
+ *
+ * O caminho normal é a automação: o fluxo do n8n consulta o preço no
+ * Kommo e escreve aqui. Esta função é para quando esse caminho não
+ * responde — cliente que não usa o campo de valor do CRM, negócio
+ * fechado por fora, correção de um preço que mudou depois.
+ *
+ * O valor também vai para o evento enviado à Meta mais recente, porque é
+ * de `meta_capi_events.value` que sai a receita do painel; os outros
+ * eventos enviados do mesmo lead são zerados, já que a receita soma
+ * todos eles e um lead que fechou por 11.210 não pode somar esse valor
+ * uma vez por etapa por que passou.
+ *
+ * Nada é reenviado à Meta: o evento que ela recebeu já foi contado lá, e
+ * mandar de novo com o mesmo `event_id` seria descartado por
+ * deduplicação — com um id novo, viraria conversão duplicada.
+ *
+ * `evento_atualizado: false` significa que o lead ainda não tem evento
+ * enviado. O valor fica guardado no lead, mas não entra na receita
+ * enquanto o evento não sair.
+ */
+export async function salvaValorLead(
+  db: BancoCliente,
+  customerId: number,
+  valor: number,
+): Promise<{ existia: boolean; evento_atualizado: boolean }> {
+  return transacao(async (conn) => {
+    const [r] = await conn.query(
+      `UPDATE ${db.tabela('customers')} SET crm_value = ? WHERE id = ?`,
+      [valor, customerId],
+    );
+    const existia = ((r as { affectedRows?: number }).affectedRows ?? 0) > 0;
+    if (!existia) return { existia: false, evento_atualizado: false };
+
+    const [linhas] = await conn.query(
+      `SELECT id FROM ${db.tabela('meta_capi_events')}
+        WHERE customer_id = ? AND status = 'SENT'
+        ORDER BY id DESC LIMIT 1`,
+      [customerId],
+    );
+    const alvo = (linhas as { id: number }[])[0]?.id;
+    if (!alvo) return { existia: true, evento_atualizado: false };
+
+    await conn.query(
+      `UPDATE ${db.tabela('meta_capi_events')}
+          SET value = ?, currency = COALESCE(NULLIF(currency, ''), 'BRL')
+        WHERE id = ?`,
+      [valor, alvo],
+    );
+    await conn.query(
+      `UPDATE ${db.tabela('meta_capi_events')} SET value = 0
+        WHERE customer_id = ? AND status = 'SENT' AND id <> ? AND value > 0`,
+      [customerId, alvo],
+    );
+    return { existia: true, evento_atualizado: true };
+  });
+}
