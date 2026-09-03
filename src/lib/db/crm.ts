@@ -75,6 +75,7 @@ async function leCartoes(
   periodo: Periodo,
   filtros: FiltrosCrm,
   comConversas: boolean,
+  comPerda: boolean,
 ): Promise<LinhaCartao[]> {
   const data = condicaoTimestamp('c.created_at', periodo.inicioSec, periodo.fimSec);
   const condicoes: { sql: string; params: unknown[] }[] = [data];
@@ -112,9 +113,14 @@ async function leCartoes(
     : `NULL AS status_conversa, NULL AS tags, 0 AS unread_count, NULL AS last_message_at,
        0 AS tem_conversa`;
 
+  // Banco sem a migração da etapa de perda troca a coluna por um
+  // literal: o quadro inteiro não pode cair por causa do motivo.
+  const campoPerda = comPerda ? "NULLIF(c.lost_reason, '')" : 'NULL';
+
   return db.query<LinhaCartao>(
     `SELECT c.id, c.first_name, c.last_name, c.email, c.phone, c.created_at,
             c.current_stage, NULLIF(c.meta_lead_id, '') AS meta_lead_id,
+            ${campoPerda} AS lost_reason,
             ${camposConversa},
             COALESCE(NULLIF(c.meta_campaign_name, ''), NULLIF(c.utm_campaign, '')) AS campanha,
             (COALESCE(c.meta_ad_id, '') <> ''
@@ -139,13 +145,28 @@ export async function buscaQuadroCrm(
   const lacunas = new LacunasDeEsquema();
 
   const [etapasForm, etapasWhatsapp, cartoesBrutos] = await Promise.all([
+    // A etapa de perda fica gravada com `ativo = 0` — é isso que impede
+    // o n8n de casar evento com ela — então o quadro precisa pedir as
+    // duas coisas para a coluna continuar aparecendo.
     lacunas.ou(
-      db.query<LinhaEtapaForm>(
-        `SELECT status_id, content_name
-           FROM ${db.tabela('crm_meta_event_map')}
-          WHERE ativo = 1
-          ORDER BY id ASC`,
-      ),
+      (async () => {
+        try {
+          return await db.query<LinhaEtapaForm>(
+            `SELECT status_id, content_name, is_lost
+               FROM ${db.tabela('crm_meta_event_map')}
+              WHERE ativo = 1 OR is_lost = 1
+              ORDER BY id ASC`,
+          );
+        } catch (erro) {
+          if (!lacunaDeEsquema(erro)) throw erro;
+          return await db.query<LinhaEtapaForm>(
+            `SELECT status_id, content_name, 0 AS is_lost
+               FROM ${db.tabela('crm_meta_event_map')}
+              WHERE ativo = 1
+              ORDER BY id ASC`,
+          );
+        }
+      })(),
       [] as LinhaEtapaForm[],
     ),
     lacunas.ou(
@@ -160,11 +181,21 @@ export async function buscaQuadroCrm(
     // Sem `whatsapp_conversations` o quadro ainda faz sentido: vira o
     // funil de formulário, e a lacuna aparece no aviso da tela.
     (async () => {
-      const comConversas = await lacunas.ou<LinhaCartao[] | null>(
-        leCartoes(db, periodo, filtros, true),
-        null,
-      );
-      return comConversas === null ? leCartoes(db, periodo, filtros, false) : comConversas;
+      const leTudo = async (comPerda: boolean) => {
+        const comConversas = await lacunas.ou<LinhaCartao[] | null>(
+          leCartoes(db, periodo, filtros, true, comPerda),
+          null,
+        );
+        return comConversas === null
+          ? leCartoes(db, periodo, filtros, false, comPerda)
+          : comConversas;
+      };
+      try {
+        return await leTudo(true);
+      } catch (erro) {
+        if (!lacunaDeEsquema(erro)) throw erro;
+        return await leTudo(false);
+      }
     })(),
   ]);
 
@@ -196,6 +227,8 @@ export type DetalheLeadCrm = {
   etapa_form: string | null;
   etapa_whatsapp: string | null;
   motivo_perda: string | null;
+  /** Quando o negócio foi dado como perdido; `null` se não foi. */
+  perdido_em: string | null;
   /** Motivos que este cliente já usou, para o campo sugerir os dele. */
   motivos_usados: string[];
   notes: string | null;
@@ -289,7 +322,7 @@ export async function buscaLeadCrm(
     }
   };
 
-  const [conversa, etapaForm, mensagens, etapasWhatsapp, motivosUsados, ctwa, valor] =
+  const [conversa, etapaForm, mensagens, etapasWhatsapp, motivosUsados, ctwa, valor, perda] =
     await Promise.all([
       lacunas.ou(leConversa(), null),
       lacunas.ou(
@@ -346,6 +379,17 @@ export async function buscaLeadCrm(
         ),
         null,
       ),
+      // Perda do lead de formulário: quem grava é a automação
+      // "Kommo - Sincroniza Perdidos", lendo o motivo do próprio CRM.
+      // Mesmo motivo da consulta acima para ela ser separada.
+      lacunas.ou(
+        db.queryOne<{ lost_reason: string | null; lost_at: string | null }>(
+          `SELECT NULLIF(lost_reason, '') AS lost_reason, lost_at
+             FROM ${db.tabela('customers')} WHERE id = ? LIMIT 1`,
+          [customerId],
+        ),
+        null,
+      ),
     ]);
 
   const temConversa = conversa !== null;
@@ -362,7 +406,10 @@ export async function buscaLeadCrm(
     origem,
     etapa_form: (etapaForm?.content_name ?? '').trim() || etapaDoFunilForm(base.current_stage),
     etapa_whatsapp: conversa?.status ?? null,
-    motivo_perda: conversa?.lost_reason ?? null,
+    // O lead de formulário perde no Kommo, o de WhatsApp perde no
+    // painel; o modal mostra o que existir, sem precisar saber qual é.
+    motivo_perda: conversa?.lost_reason ?? perda?.lost_reason ?? null,
+    perdido_em: perda?.lost_at ?? null,
     motivos_usados: motivosUsados.map((m) => m.motivo),
     notes: conversa?.notes ?? null,
     tags: conversa?.tags ?? null,

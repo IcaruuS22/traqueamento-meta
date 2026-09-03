@@ -41,6 +41,14 @@ CREATE TABLE IF NOT EXISTS customers (
   -- sobrescrito quando o webhook traz preço maior que zero, para uma
   -- mudança de etapa sem preço não zerar o que já estava salvo.
   crm_value DECIMAL(14,2) NULL,
+  -- Perda do funil de Formulários. Quem escreve é a automação
+  -- "Kommo - Sincroniza Perdidos": ela confere no Kommo os leads que
+  -- ainda não estão marcados, e nos que caíram grava o motivo (o
+  -- "loss_reason" do negócio) junto com a data. lost_at IS NULL é a
+  -- própria fila da automação, por isso ele nunca é preenchido sem o
+  -- lead estar de fato numa etapa de perda.
+  lost_reason VARCHAR(120) NULL,
+  lost_at TIMESTAMP NULL DEFAULT NULL,
   first_name VARCHAR(255),
   last_name VARCHAR(255),
   email VARCHAR(255),
@@ -98,6 +106,13 @@ CREATE TABLE IF NOT EXISTS crm_meta_event_map (
   -- bate com um status_id is_conversion=1). Configurável na aba
   -- Eventos do painel.
   is_conversion BOOLEAN DEFAULT FALSE NOT NULL,
+  -- Etapa de perda do funil do Kommo. Ela não manda evento nenhum para
+  -- a Meta: existe para o lead perdido ter para onde ir no quadro e
+  -- para o motivo da perda ter onde aparecer. Linha com is_lost = 1 é
+  -- gravada pelo painel com ativo = 0 e meta_event vazio — é o
+  -- ativo = 0 que impede o fluxo de eventos de casar com ela. O quadro
+  -- do CRM lê "ativo = 1 OR is_lost = 1" justamente por isso.
+  is_lost BOOLEAN DEFAULT FALSE NOT NULL,
   CONSTRAINT crm_meta_event_map_unique UNIQUE (pipeline_id, status_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

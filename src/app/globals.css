@@ -1713,6 +1713,19 @@ select.filtro-campo {
   height: 11px;
   flex: none;
 }
+/* Espelho da tag de ganho, do outro lado do funil. */
+.tag-perdido {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--red-50);
+  color: var(--red-700);
+}
+.tag-perdido svg {
+  width: 11px;
+  height: 11px;
+  flex: none;
+}
 /* Tag da plataforma no card do CRM. O azul é o da marca Meta (#0866ff)
    e não muda com o tema: cor de marca não é cor de interface, e o
    contraste com branco já serve nos dois fundos. */

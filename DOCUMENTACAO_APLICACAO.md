@@ -971,3 +971,67 @@ aviso de quantas campanhas foram escondidas, para a soma da coluna Gasto não
 parecer erro de conta.
 
 Verificação: `npx tsc --noEmit` limpo e 172/172 testes passando.
+
+## Etapa de perda do funil de formulários
+
+O funil do Kommo tem etapa de negócio perdido, e ela não existia no painel.
+Agora existe, com uma regra dura: **etapa de perda não envia evento nenhum
+para a Meta**. O lead só é movido para ela, e o motivo da perda, quando o CRM
+informa algum, aparece no card e no modal.
+
+### Por que a garantia mora no dado, e não no workflow
+
+O workflow de eventos já importado nos clientes procura o evento assim:
+
+`SELECT * FROM crm_meta_event_map WHERE pipeline_id = ? AND status_id = ? AND ativo = 1`
+
+Então uma etapa marcada como de perda é gravada sempre com `ativo = 0`,
+`meta_event = ''` e `is_conversion = 0`. Nenhuma linha de perda casa com
+aquela consulta — a garantia vale para os fluxos que já estão rodando em
+produção, sem reimportar workflow nenhum.
+
+O preço disso é que as leituras do painel passaram a pedir
+`WHERE ativo = 1 OR is_lost = 1`, senão a coluna sumiria do quadro. Toda
+leitura nova é tolerante à falta da coluna: banco de cliente sem a migração
+repete a consulta com `0 AS is_lost` em vez de perder o quadro inteiro.
+
+### O que mudou
+
+- **Banco (por cliente)**: `Banco de Dados/migracao_etapa_perdido_form.sql` —
+  `crm_meta_event_map.is_lost`, `customers.lost_reason` e `customers.lost_at`.
+  O template de banco novo já nasce com as três.
+- **Banco (central)**: `Banco de Dados/migracao_kommo_subdominio.sql` —
+  `ad_accounts.kommo_subdomain`. O subdomínio só existia dentro do webhook do
+  Kommo; um workflow por agenda não recebe webhook e sem isso não sabe em qual
+  conta perguntar.
+- **Aba Eventos**: caixa "Etapa de perda" na linha do mapeamento. Marcando
+  ela, o campo Evento Meta é desabilitado e as caixas Ativo e Conversão saem
+  do caminho — é a UI dizendo a mesma coisa que o banco garante.
+- **Quadro e listas**: selo "Perdido" (vermelho, espelho do "Ganho"), com o
+  motivo no title. No modal do lead de formulário, "Motivo da perda" e
+  "Perdido em".
+- **/admin/clientes**: campo do subdomínio do Kommo por cliente, e também no
+  cadastro de cliente novo. Aceita a URL colada e guarda só o subdomínio.
+
+### A automação que varre o que já está no banco
+
+`Formulários Instantâneos/build_kommo_perdidos_workflow.js` gera o workflow
+**Kommo - Sincroniza Perdidos**, separado do fluxo de eventos. De 15 em 15
+minutos ele pega os leads com `crm_lead_id` preenchido e `lost_at` nulo,
+pergunta ao Kommo em lotes de 50 ids
+(`GET /api/v4/leads?with=loss_reason&filter[id][]=...`) e, para quem está numa
+etapa marcada como de perda **daquele cliente** (nunca o status 143 do Kommo
+chumbado no código), grava `current_stage`, `lost_reason` e `lost_at`. Só
+UPDATE em `customers`: ele não fala com a CAPI em lugar nenhum.
+
+Multi-tenant no mesmo desenho do workflow de classificação por IA: consultas
+por cliente numa passada só, cada linha carregando `client_db`, um único loop
+(o aninhado seria dado como concluído no primeiro cliente e pularia os demais
+em silêncio), round-robin entre clientes e teto global por ciclo. Cliente sem
+subdomínio, sem token ou sem etapa de perda marcada é pulado sem erro.
+
+Como `lost_at` é a própria fila, um lead já dado como perdido nunca é
+consultado de novo; quem ainda não está perdido volta no ciclo seguinte, que é
+como uma perda futura acaba sendo capturada.
+
+Verificação: `npx tsc --noEmit` limpo e 174/174 testes passando.

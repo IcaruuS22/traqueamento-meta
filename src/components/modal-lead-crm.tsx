@@ -336,6 +336,18 @@ export function ModalLeadCrm({
                 ) : (
                   <dl className="rastreio-lista">
                     <Linha rotulo="Etapa no CRM" valor={ouTraco(lead.etapa_form)} />
+                    {/* Perda do funil de formulário: quem grava é a
+                        automação "Kommo - Sincroniza Perdidos", lendo o
+                        motivo do próprio Kommo. Nada é enviado à Meta. */}
+                    {lead.perdido_em ? (
+                      <>
+                        <Linha
+                          rotulo="Motivo da perda"
+                          valor={lead.motivo_perda || 'não informado pelo CRM'}
+                        />
+                        <Linha rotulo="Perdido em" valor={fmtDataHora(lead.perdido_em)} />
+                      </>
+                    ) : null}
                     <Linha
                       rotulo="Quem escreve"
                       valor="O CRM do cliente, pela automação. Por isso o card não arrasta e a etapa não é editável aqui."

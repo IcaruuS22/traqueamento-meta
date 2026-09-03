@@ -37,6 +37,7 @@ function linha(parcial: Partial<LinhaCartao> & { id: number }): LinhaCartao {
     tem_conversa: 0,
     campanha: null,
     de_anuncio: 0,
+    lost_reason: null,
     ...parcial,
   };
 }
@@ -72,6 +73,39 @@ describe('colunas', () => {
     assert.equal(ultima.chave, CHAVE_SEM_ETAPA);
     assert.equal(ultima.origem, null);
     assert.equal(ultima.aceita_solta, false);
+  });
+
+  test('a etapa de perda é coluna, e nenhuma outra é marcada como perda', () => {
+    // Ela vem do banco com `ativo = 0` (é isso que impede o n8n de casar
+    // evento com ela), então quem a lê pede `ativo = 1 OR is_lost = 1`.
+    const etapas = [...ETAPAS_FORM, { status_id: '143p', content_name: 'Perdido', is_lost: 1 }];
+    const { colunas } = montaQuadro(etapas, ETAPAS_WPP, [], null);
+
+    const perda = colunas.filter((c) => c.perda);
+    assert.deepEqual(
+      perda.map((c) => c.chave),
+      ['form:143p'],
+    );
+    assert.equal(perda[0].aceita_solta, false);
+  });
+
+  test('card na etapa de perda sai perdido, com o motivo do CRM', () => {
+    const etapas = [...ETAPAS_FORM, { status_id: '143p', content_name: 'Perdido', is_lost: 1 }];
+    const { cartoes } = montaQuadro(
+      etapas,
+      ETAPAS_WPP,
+      [
+        linha({ id: 1, current_stage: '143p', lost_reason: 'Preço' }),
+        linha({ id: 2, current_stage: '142' }),
+      ],
+      null,
+    );
+
+    const porId = new Map(cartoes.map((c) => [c.id, c]));
+    assert.equal(porId.get(1)!.perdido, true);
+    assert.equal(porId.get(1)!.motivo_perda, 'Preço');
+    assert.equal(porId.get(2)!.perdido, false);
+    assert.equal(porId.get(2)!.motivo_perda, null);
   });
 
   test('sem nenhuma etapa cadastrada, tem_etapas é falso', () => {

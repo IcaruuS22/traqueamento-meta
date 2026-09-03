@@ -26,6 +26,12 @@ CREATE TABLE IF NOT EXISTS ad_accounts (
   meta_pixel_dataset_id VARCHAR(255),
   meta_access_token VARCHAR(512),
   kommo_access_token TEXT,
+  -- Subdomínio da conta no Kommo ("minhaempresa", não a URL inteira).
+  -- O fluxo de eventos recebe isso dentro do webhook; a automação
+  -- "Kommo - Sincroniza Perdidos" acorda sozinha e precisa do endereço
+  -- salvo para saber a quem perguntar. Vazio = a automação pula o
+  -- cliente.
+  kommo_subdomain VARCHAR(120) NULL DEFAULT NULL,
   content_category VARCHAR(255),
   -- Campo personalizado do Kommo que guarda o valor do negócio: o
   -- rótulo exato ou o id numérico do campo. NULL = usa o campo nativo

@@ -5,6 +5,7 @@ import type { Lead } from '@/lib/db/metricas';
 import { fmtDataHora, fmtDecorrido, ouTraco } from '@/lib/format';
 import { nomeParaExibir, telefoneParaExibir } from '@/lib/exibicao';
 import { BadgeGanho } from '@/components/badge-ganho';
+import { BadgePerdido } from '@/components/badge-perdido';
 
 /**
  * Tabela "Últimos leads" com filtros e "Carregar mais".
@@ -200,6 +201,7 @@ export function ListaLeads({
                   <span className="inline-flex flex-wrap items-center gap-1.5">
                     {ouTraco(l.current_stage)}
                     <BadgeGanho etapa={l.current_stage} />
+                    <BadgePerdido perdido={Number(l.is_lost) === 1} motivo={l.lost_reason} />
                   </span>
                 </td>
                 <td className="whitespace-nowrap">{fmtDataHora(l.created_at)}</td>

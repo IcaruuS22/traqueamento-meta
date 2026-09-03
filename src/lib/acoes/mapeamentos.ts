@@ -71,7 +71,10 @@ const salvarFormSchema = z.object({
   cliente: clienteSchema,
   pipeline_id: z.string().trim().max(255),
   status_id: z.string().trim().max(255),
-  meta_event: z.string().trim().max(255),
+  // Opcional no schema, obrigatório na regra: etapa de perda envia o
+  // campo desabilitado, e campo desabilitado não é enviado pelo
+  // navegador. A exigência real está logo abaixo, junto do resto.
+  meta_event: z.string().trim().max(255).optional(),
   content_name: z.string().trim().max(255).optional(),
   currency: z.string().trim().max(3).optional(),
   value_type: z.enum(TIPOS_DE_VALOR).optional(),
@@ -89,8 +92,12 @@ export async function acaoSalvarEventoForm(
 
   const { usuario, conta, db } = await requireClientAccess(dados.cliente);
 
-  // Mesma exigência e mesmo texto do endpoint antigo.
-  if (!dados.pipeline_id || !dados.status_id || !dados.meta_event) {
+  // Etapa de perda é o único caso em que a linha existe sem evento: ela
+  // não manda nada para a Meta, só dá lugar ao lead perdido no quadro e
+  // ao motivo da perda. Fora dela, a exigência e o texto continuam os
+  // do endpoint antigo.
+  const perda = marcada(form, 'is_lost');
+  if (!dados.pipeline_id || !dados.status_id || (!perda && !dados.meta_event)) {
     return {
       erro: 'Campos obrigatórios ausentes: pipeline_id, status_id e evento Meta são obrigatórios.',
     };
@@ -99,16 +106,20 @@ export async function acaoSalvarEventoForm(
   const entrada = {
     pipeline_id: dados.pipeline_id,
     status_id: dados.status_id,
-    meta_event: dados.meta_event,
+    // Evento digitado antes de marcar a etapa como de perda é apagado
+    // aqui: guardá-lo deixaria a linha parecendo que dispara algo.
+    meta_event: perda ? '' : (dados.meta_event ?? ''),
     content_name: ouNulo(dados.content_name),
     currency: (dados.currency || 'BRL').toUpperCase(),
     value_type: dados.value_type ?? ('price' as const),
     ativo: marcada(form, 'ativo'),
     is_conversion: marcada(form, 'is_conversion'),
+    is_lost: perda,
   };
 
+  let perdaGravada = true;
   try {
-    await salvaMapeamentoForm(db, entrada);
+    ({ perda_gravada: perdaGravada } = await salvaMapeamentoForm(db, entrada));
   } catch (erro) {
     return falha(erro, 'Já existe um mapeamento para este funil e estágio.');
   }
@@ -122,7 +133,19 @@ export async function acaoSalvarEventoForm(
   });
 
   revalidatePath(`/app/${encodeURIComponent(conta.client_db_name)}/formularios/config`);
-  return { sucesso: 'Evento salvo com sucesso.' };
+  if (perda && !perdaGravada) {
+    return {
+      erro:
+        'O mapeamento foi salvo, mas a marcação de etapa de perda não: o banco deste cliente ' +
+        'ainda não tem a coluna. Rode "Banco de Dados/migracao_etapa_perdido_form.sql" e salve ' +
+        'de novo.',
+    };
+  }
+  return {
+    sucesso: perda
+      ? 'Etapa de perda salva. Ela não envia evento nenhum para a Meta.'
+      : 'Evento salvo com sucesso.',
+  };
 }
 
 export async function acaoExcluirEventoForm(form: FormData): Promise<void> {

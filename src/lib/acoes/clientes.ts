@@ -10,6 +10,7 @@ import {
   criaAdAccount,
   removeAdAccount,
   salvaCampoValorCrm,
+  salvaSubdominioKommo,
 } from '@/lib/db/cliente';
 import { apagaBancoDoCliente, criaBancoDoCliente } from '@/lib/db/provisiona';
 import { salvaInvestimentoMensal } from '@/lib/db/orcamento';
@@ -44,6 +45,7 @@ const schema = z.object({
   meta_access_token: z.string().trim().min(20, 'Token da Meta parece curto demais').max(512),
   crm_account_id: z.string().trim().max(255).optional(),
   kommo_access_token: z.string().trim().max(4000).optional(),
+  kommo_subdomain: z.string().trim().max(120).optional(),
   content_category: z.string().trim().max(255).optional(),
 });
 
@@ -60,6 +62,7 @@ export async function acaoCriarCliente(
     meta_access_token: form.get('meta_access_token'),
     crm_account_id: form.get('crm_account_id') || undefined,
     kommo_access_token: form.get('kommo_access_token') || undefined,
+    kommo_subdomain: form.get('kommo_subdomain') || undefined,
     content_category: form.get('content_category') || undefined,
   });
   if (!parsed.success) {
@@ -107,6 +110,7 @@ export async function acaoCriarCliente(
       meta_pixel_dataset_id: dados.meta_pixel_dataset_id,
       meta_access_token: dados.meta_access_token,
       kommo_access_token: dados.kommo_access_token ?? null,
+      kommo_subdomain: soOSubdominio(dados.kommo_subdomain ?? '') || null,
       content_category: dados.content_category ?? null,
       client_db_name: clientDb,
     });
@@ -386,5 +390,82 @@ export async function acaoSalvarCampoValorCrm(
       campo === null
         ? 'Configuração removida. O valor volta a ser procurado pelos rótulos conhecidos.'
         : `Campo do valor salvo: ${campo}. Vale para os próximos eventos.`,
+  };
+}
+
+/**
+ * Subdomínio do Kommo do cliente — o "minhaempresa" de
+ * https://minhaempresa.kommo.com.
+ *
+ * O fluxo de eventos recebe isso dentro do webhook; a automação que
+ * sincroniza os perdidos roda por agenda e não tem webhook, então
+ * precisa do subdomínio gravado. Em branco, ela apenas pula o cliente.
+ */
+const schemaSubdominioKommo = z.object({
+  client_db: z.string().trim().min(1).max(64),
+  kommo_subdomain: z.string().trim().max(120),
+});
+
+/** Aceita a URL inteira colada e guarda só o subdomínio. */
+function soOSubdominio(valor: string): string {
+  const sem = valor
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/.*$/, '')
+    .replace(/\.kommo\.com$/i, '')
+    .trim();
+  return sem.toLowerCase();
+}
+
+export async function acaoSalvarSubdominioKommo(
+  _estado: EstadoFormulario,
+  form: FormData,
+): Promise<EstadoFormulario> {
+  const admin = await requireAdmin();
+
+  const parsed = schemaSubdominioKommo.safeParse({
+    client_db: form.get('client_db'),
+    kommo_subdomain: form.get('kommo_subdomain') ?? '',
+  });
+  if (!parsed.success) return { erro: 'Dados inválidos' };
+
+  const conta = await buscaAdAccount(parsed.data.client_db);
+  if (!conta) return { erro: 'Cliente não encontrado no catálogo.' };
+
+  const bruto = soOSubdominio(parsed.data.kommo_subdomain);
+  if (bruto !== '' && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(bruto)) {
+    return {
+      erro: 'Subdomínio inválido. Use só o nome da conta, como "minhaempresa".',
+    };
+  }
+  const subdominio = bruto === '' ? null : bruto;
+
+  try {
+    await salvaSubdominioKommo(conta.client_db_name, subdominio);
+  } catch (erro) {
+    if (lacunaDeEsquema(erro)) {
+      return {
+        erro:
+          'O banco central ainda não tem a coluna do subdomínio do Kommo. ' +
+          'Rode "Banco de Dados/migracao_kommo_subdominio.sql" e tente de novo.',
+      };
+    }
+    console.error('[clientes] falha ao salvar o subdomínio do Kommo', conta.client_db_name, erro);
+    return { erro: 'Não foi possível salvar o subdomínio do Kommo.' };
+  }
+
+  await registraAuditoria({
+    userId: admin.id,
+    userEmail: admin.email,
+    acao: ACOES.CLIENTE_SUBDOMINIO_KOMMO_ALTERADO,
+    clientDb: conta.client_db_name,
+    detalhe: { kommo_subdomain: subdominio },
+  });
+
+  revalidatePath('/admin/clientes');
+  return {
+    sucesso:
+      subdominio === null
+        ? 'Subdomínio removido. A automação de perdidos vai pular este cliente.'
+        : `Subdomínio salvo: ${subdominio}.kommo.com`,
   };
 }

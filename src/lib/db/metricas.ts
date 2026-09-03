@@ -48,6 +48,10 @@ export type Lead = {
   current_stage: string | null;
   created_at: string;
   last_moved_at: string | null;
+  /** 1 quando a etapa é a de perda do funil; 0 ou ausente se não for. */
+  is_lost?: number | null;
+  /** Motivo da perda vindo do CRM, quando houver. */
+  lost_reason?: string | null;
 };
 
 /** Filtros da tabela "Últimos leads" — etapa e busca por nome. */
@@ -357,20 +361,30 @@ export async function ultimosLeads(
   filtro: FiltroLista = {},
 ): Promise<Lead[]> {
   const w = comFiltroDeLista(f, filtro);
-  return db.query<Lead>(
-    `SELECT c.id, c.first_name, c.last_name, c.email, c.phone,
-            COALESCE(em.content_name, c.current_stage) AS current_stage,
-            c.created_at,
-            (SELECT CASE WHEN COUNT(*) > 1 THEN MAX(e.created_at) END
-               FROM ${db.tabela('meta_capi_events')} e
-              WHERE e.customer_id = c.id AND e.status = 'SENT') AS last_moved_at
-       FROM ${db.tabela('customers')} c
-       LEFT JOIN ${db.tabela('crm_meta_event_map')} em ON em.status_id = c.current_stage
-       ${w.sql}
-      ORDER BY c.created_at DESC
-      LIMIT ? OFFSET ?`,
-    [...w.params, limite, offset],
-  );
+  // Banco sem a migração da etapa de perda troca as duas colunas por
+  // literais: a lista de leads não pode sumir por causa do selo.
+  const seleciona = (perda: string, motivo: string) =>
+    db.query<Lead>(
+      `SELECT c.id, c.first_name, c.last_name, c.email, c.phone,
+              COALESCE(em.content_name, c.current_stage) AS current_stage,
+              c.created_at, ${perda} AS is_lost, ${motivo} AS lost_reason,
+              (SELECT CASE WHEN COUNT(*) > 1 THEN MAX(e.created_at) END
+                 FROM ${db.tabela('meta_capi_events')} e
+                WHERE e.customer_id = c.id AND e.status = 'SENT') AS last_moved_at
+         FROM ${db.tabela('customers')} c
+         LEFT JOIN ${db.tabela('crm_meta_event_map')} em ON em.status_id = c.current_stage
+         ${w.sql}
+        ORDER BY c.created_at DESC
+        LIMIT ? OFFSET ?`,
+      [...w.params, limite, offset],
+    );
+
+  try {
+    return await seleciona('em.is_lost', "NULLIF(c.lost_reason, '')");
+  } catch (erro) {
+    if (!lacunaDeEsquema(erro)) throw erro;
+    return await seleciona('0', 'NULL');
+  }
 }
 
 /**

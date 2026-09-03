@@ -70,22 +70,45 @@ function Rotulo({
   );
 }
 
+/**
+ * Caixa não controlada por padrão (o navegador guarda o estado), e
+ * controlada quando quem chama precisa reagir à marcação — é o caso da
+ * etapa de perda, que muda o resto do formulário.
+ */
 function Caixa({
   nome,
   rotulo,
   padrao,
   dica,
   form,
+  marcada,
+  aoMudar,
+  desabilitada = false,
 }: {
   nome: string;
   rotulo: string;
   padrao: boolean;
   dica: string;
   form: string;
+  marcada?: boolean;
+  aoMudar?: (valor: boolean) => void;
+  desabilitada?: boolean;
 }) {
+  const controlada = marcada !== undefined;
   return (
-    <label className="flex items-center gap-2 text-sm" title={dica}>
-      <input type="checkbox" name={nome} defaultChecked={padrao} form={form} />
+    <label
+      className={`flex items-center gap-2 text-sm ${desabilitada ? 'opacity-50' : ''}`}
+      title={dica}
+    >
+      <input
+        type="checkbox"
+        name={nome}
+        form={form}
+        disabled={desabilitada}
+        {...(controlada
+          ? { checked: marcada, onChange: (e) => aoMudar?.(e.target.checked) }
+          : { defaultChecked: padrao })}
+      />
       <span>{rotulo}</span>
     </label>
   );
@@ -174,6 +197,11 @@ function LinhaEventoForm({
 
   const idForm = useId();
 
+  // Etapa de perda muda o resto da linha na hora: o Evento Meta deixa de
+  // ser obrigatório (e de ser enviado), e as duas caixas de baixo perdem
+  // o sentido. Por isso esta caixa é controlada e as outras não.
+  const [perda, setPerda] = useState(item?.is_lost ?? false);
+
   useEffect(() => {
     if (estado.sucesso && aoSalvarNova) aoSalvarNova();
   }, [estado.sucesso, aoSalvarNova]);
@@ -216,14 +244,15 @@ function LinhaEventoForm({
               placeholder="7654321"
             />
           </Rotulo>
-          <Rotulo texto="Evento Meta">
+          <Rotulo texto={perda ? 'Evento Meta (nenhum: etapa de perda)' : 'Evento Meta'}>
             <input
               name="meta_event"
               defaultValue={item?.meta_event ?? ''}
-              required
+              required={!perda}
+              disabled={perda}
               list={ID_DATALIST}
               className="field"
-              placeholder="Lead"
+              placeholder={perda ? '—' : 'Lead'}
             />
           </Rotulo>
           <Rotulo texto="Nome do conteúdo (opcional)">
@@ -260,6 +289,7 @@ function LinhaEventoForm({
           nome="ativo"
           rotulo="Ativo"
           padrao={item ? item.ativo : true}
+          desabilitada={perda}
           dica="Desmarcado, o estágio não dispara evento para a Meta."
         />
         <Caixa
@@ -267,9 +297,27 @@ function LinhaEventoForm({
           nome="is_conversion"
           rotulo="Conta como conversão"
           padrao={item ? item.is_conversion : false}
+          desabilitada={perda}
           dica="Usado no cálculo de CAC e taxa de conversão da aba Campanhas."
         />
+        <Caixa
+          form={idForm}
+          nome="is_lost"
+          rotulo="Etapa de perda"
+          padrao={false}
+          marcada={perda}
+          aoMudar={setPerda}
+          dica="A etapa em que o Kommo coloca o negócio perdido. Não envia evento nenhum."
+        />
       </div>
+
+      {perda ? (
+        <p className="mt-2 text-body-small text-tertiary">
+          Etapa de perda: o lead aparece nesta coluna do quadro com o motivo da perda, e nada é
+          enviado à Meta. Quem move o lead até aqui e traz o motivo é a automação{' '}
+          <strong>Kommo - Sincroniza Perdidos</strong>, no n8n.
+        </p>
+      ) : null}
 
       {item ? (
         <p className="mt-2 text-body-small text-tertiary">

@@ -1,5 +1,12 @@
 import 'server-only';
-import { query, queryOne, execute, transacao, LacunasDeEsquema } from '@/lib/db/pool';
+import {
+  query,
+  queryOne,
+  execute,
+  transacao,
+  LacunasDeEsquema,
+  lacunaDeEsquema,
+} from '@/lib/db/pool';
 import { sanitizaNomeBanco } from '@/lib/nomes-banco';
 
 /**
@@ -156,6 +163,47 @@ export async function salvaCampoValorCrm(
   );
 }
 
+/**
+ * Subdomínio do Kommo de cada cliente.
+ *
+ * No fluxo de eventos o subdomínio chega dentro do webhook do próprio
+ * Kommo, então nunca precisou ficar gravado. A automação
+ * "Kommo - Sincroniza Perdidos" roda por agenda, sem webhook nenhum, e
+ * sem isto não sabe em qual conta perguntar. Cliente sem subdomínio é
+ * apenas pulado por ela.
+ */
+export async function leSubdominiosKommo(): Promise<Map<string, string | null>> {
+  const lacunas = new LacunasDeEsquema();
+  const linhas = await lacunas.ou(
+    query<{ client_db_name: string; kommo_subdomain: string | null }>(
+      `SELECT client_db_name, kommo_subdomain FROM trakeamento_controle.ad_accounts
+        WHERE client_db_name IS NOT NULL AND client_db_name <> ''`,
+    ),
+    [],
+  );
+
+  const mapa = new Map<string, string | null>();
+  for (const l of linhas) {
+    const sub = (l.kommo_subdomain ?? '').trim();
+    mapa.set(l.client_db_name, sub === '' ? null : sub);
+  }
+  return mapa;
+}
+
+/** Grava o subdomínio do Kommo. `null` tira o cliente da automação. */
+export async function salvaSubdominioKommo(
+  clientDb: string,
+  subdominio: string | null,
+): Promise<void> {
+  const nome = sanitizaNomeBanco(clientDb);
+  if (!nome) throw new Error('Nome de banco de cliente inválido');
+
+  await execute(
+    `UPDATE trakeamento_controle.ad_accounts SET kommo_subdomain = ? WHERE client_db_name = ?`,
+    [subdominio, nome],
+  );
+}
+
 export type NovaAdAccount = {
   account_name: string;
   ad_account_id: string;
@@ -163,6 +211,8 @@ export type NovaAdAccount = {
   meta_pixel_dataset_id: string | null;
   meta_access_token: string | null;
   kommo_access_token: string | null;
+  /** Só o nome da conta: "minhaempresa", não a URL inteira. */
+  kommo_subdomain: string | null;
   content_category: string | null;
   client_db_name: string;
 };
@@ -212,26 +262,45 @@ export async function conflitoDeAdAccount(dados: {
   return `Já existe um cliente ("${existente.account_name}") com o mesmo ${rotulos[existente.campo] ?? existente.campo}.`;
 }
 
-/** Registra o cliente no catálogo central. Último passo da criação. */
+/**
+ * Registra o cliente no catálogo central. Último passo da criação.
+ *
+ * Banco central sem a migração do subdomínio grava sem ele: cadastrar
+ * cliente é operação crítica demais para parar por causa de um campo que
+ * só a automação de perdidos usa. O admin preenche depois, na lista.
+ */
 export async function criaAdAccount(dados: NovaAdAccount): Promise<number> {
-  const { insertId } = await execute(
-    `INSERT INTO trakeamento_controle.ad_accounts
-       (account_name, ad_account_id, crm_account_id, meta_pixel_dataset_id,
-        meta_access_token, kommo_access_token, content_category,
-        client_db_name, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')`,
-    [
-      dados.account_name,
-      dados.ad_account_id,
-      dados.crm_account_id,
-      dados.meta_pixel_dataset_id,
-      dados.meta_access_token,
-      dados.kommo_access_token,
-      dados.content_category,
-      dados.client_db_name,
-    ],
-  );
-  return insertId;
+  const insere = async (comSubdominio: boolean) => {
+    const coluna = comSubdominio ? ', kommo_subdomain' : '';
+    const valor = comSubdominio ? ', ?' : '';
+    const extra = comSubdominio ? [dados.kommo_subdomain] : [];
+    const { insertId } = await execute(
+      `INSERT INTO trakeamento_controle.ad_accounts
+         (account_name, ad_account_id, crm_account_id, meta_pixel_dataset_id,
+          meta_access_token, kommo_access_token, content_category,
+          client_db_name, status${coluna})
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE'${valor})`,
+      [
+        dados.account_name,
+        dados.ad_account_id,
+        dados.crm_account_id,
+        dados.meta_pixel_dataset_id,
+        dados.meta_access_token,
+        dados.kommo_access_token,
+        dados.content_category,
+        dados.client_db_name,
+        ...extra,
+      ],
+    );
+    return insertId;
+  };
+
+  try {
+    return await insere(true);
+  } catch (erro) {
+    if (!lacunaDeEsquema(erro)) throw erro;
+    return await insere(false);
+  }
 }
 
 

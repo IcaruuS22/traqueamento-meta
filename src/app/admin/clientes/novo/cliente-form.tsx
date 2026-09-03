@@ -76,6 +76,16 @@ export function ClienteForm() {
             type="password"
             autoComplete="off"
           />
+          <Campo
+            label="Subdomínio do Kommo"
+            name="kommo_subdomain"
+            maxLength={120}
+            placeholder="minhaempresa"
+            dica={
+              'Só o nome da conta, sem https e sem .kommo.com. É o que a automação de ' +
+              'negócios perdidos usa para consultar o CRM.'
+            }
+          />
         </div>
       </fieldset>
 

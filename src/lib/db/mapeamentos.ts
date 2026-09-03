@@ -1,6 +1,6 @@
 import 'server-only';
 import type { BancoCliente } from '@/lib/db/cliente';
-import { LacunasDeEsquema } from '@/lib/db/pool';
+import { LacunasDeEsquema, lacunaDeEsquema } from '@/lib/db/pool';
 import type { TipoDeValor } from '@/lib/meta-eventos';
 
 /**
@@ -43,6 +43,11 @@ export type MapeamentoForm = {
   value_type: string | null;
   ativo: boolean;
   is_conversion: boolean;
+  /**
+   * Etapa de perda do funil do Kommo: o lead entra nela e nada é
+   * enviado à Meta. Anda sempre com `ativo = 0` — ver `salvaMapeamentoForm`.
+   */
+  is_lost: boolean;
 };
 
 export type MapeamentoWhatsapp = {
@@ -57,9 +62,10 @@ export type MapeamentoWhatsapp = {
 };
 
 /** O MySQL devolve BOOLEAN como 0/1 e DECIMAL como texto. */
-type LinhaForm = Omit<MapeamentoForm, 'ativo' | 'is_conversion'> & {
+type LinhaForm = Omit<MapeamentoForm, 'ativo' | 'is_conversion' | 'is_lost'> & {
   ativo: number;
   is_conversion: number;
+  is_lost: number;
 };
 type LinhaWhatsapp = Omit<MapeamentoWhatsapp, 'ativo' | 'is_conversion' | 'value'> & {
   ativo: number;
@@ -80,13 +86,26 @@ export async function listaMapeamentosForm(
   db: BancoCliente,
 ): Promise<ListaMapeamentos<MapeamentoForm>> {
   const lacunas = new LacunasDeEsquema();
-  const linhas = await lacunas.ou(
+  // Banco sem a migração da etapa de perda repete a consulta com
+  // `is_lost` fixo em 0: perder a tela inteira de configuração por causa
+  // de uma coluna seria pior do que não oferecer a marcação de perda.
+  const seleciona = (isLost: string) =>
     db.query<LinhaForm>(
       `SELECT id, pipeline_id, status_id, meta_event, content_name, currency,
-              value_type, ativo, is_conversion
+              value_type, ativo, is_conversion, ${isLost} AS is_lost
          FROM ${db.tabela('crm_meta_event_map')}
         ORDER BY id ASC`,
-    ),
+    );
+
+  const linhas = await lacunas.ou(
+    (async () => {
+      try {
+        return await seleciona('is_lost');
+      } catch (erro) {
+        if (!lacunaDeEsquema(erro)) throw erro;
+        return await seleciona('0');
+      }
+    })(),
     [],
   );
 
@@ -95,6 +114,7 @@ export async function listaMapeamentosForm(
       ...l,
       ativo: Boolean(l.ativo),
       is_conversion: Boolean(l.is_conversion),
+      is_lost: Boolean(l.is_lost),
     })),
     lacunas_de_esquema: lacunas.lista(),
   };
@@ -109,40 +129,66 @@ export type EntradaMapeamentoForm = {
   value_type: TipoDeValor;
   ativo: boolean;
   is_conversion: boolean;
+  is_lost: boolean;
 };
 
 /**
  * Upsert por `(pipeline_id, status_id)` — a chave única da tabela.
  * Salvar duas vezes a mesma combinação atualiza, nunca duplica.
+ *
+ * Etapa de perda é gravada com `ativo = 0` e sem conversão, sempre. É
+ * essa gravação, e não uma regra dentro do n8n, que garante que a etapa
+ * não dispare evento: o fluxo de eventos procura o mapeamento com
+ * `ativo = 1`, então uma etapa de perda simplesmente não é encontrada
+ * por ele — e isso vale para os fluxos já importados, sem reimportar
+ * nada. O quadro do CRM continua mostrando a coluna porque lê
+ * `ativo = 1 OR is_lost = 1`.
+ *
+ * Banco sem a coluna `is_lost` grava o resto do mapeamento normalmente;
+ * quem chamou recebe `false` e avisa que a marcação não foi salva.
  */
 export async function salvaMapeamentoForm(
   db: BancoCliente,
   entrada: EntradaMapeamentoForm,
-): Promise<void> {
-  await db.execute(
-    `INSERT INTO ${db.tabela('crm_meta_event_map')}
-       (pipeline_id, status_id, meta_event, content_name, currency, value_type, ativo, is_conversion)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-       meta_event = ?, content_name = ?, currency = ?, value_type = ?,
-       ativo = ?, is_conversion = ?`,
-    [
-      entrada.pipeline_id,
-      entrada.status_id,
+): Promise<{ perda_gravada: boolean }> {
+  const ativo = entrada.is_lost ? 0 : entrada.ativo ? 1 : 0;
+  const conversao = entrada.is_lost ? 0 : entrada.is_conversion ? 1 : 0;
+
+  const grava = async (comPerda: boolean) => {
+    const colunas = comPerda ? ', is_lost' : '';
+    const valores = comPerda ? ', ?' : '';
+    const atualiza = comPerda ? ', is_lost = ?' : '';
+    const perda = comPerda ? [entrada.is_lost ? 1 : 0] : [];
+    const campos = [
       entrada.meta_event,
       entrada.content_name,
       entrada.currency,
       entrada.value_type,
-      entrada.ativo ? 1 : 0,
-      entrada.is_conversion ? 1 : 0,
-      entrada.meta_event,
-      entrada.content_name,
-      entrada.currency,
-      entrada.value_type,
-      entrada.ativo ? 1 : 0,
-      entrada.is_conversion ? 1 : 0,
-    ],
-  );
+      ativo,
+      conversao,
+      ...perda,
+    ];
+
+    await db.execute(
+      `INSERT INTO ${db.tabela('crm_meta_event_map')}
+         (pipeline_id, status_id, meta_event, content_name, currency, value_type,
+          ativo, is_conversion${colunas})
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?${valores})
+       ON DUPLICATE KEY UPDATE
+         meta_event = ?, content_name = ?, currency = ?, value_type = ?,
+         ativo = ?, is_conversion = ?${atualiza}`,
+      [entrada.pipeline_id, entrada.status_id, ...campos, ...campos],
+    );
+  };
+
+  try {
+    await grava(true);
+    return { perda_gravada: true };
+  } catch (erro) {
+    if (!lacunaDeEsquema(erro)) throw erro;
+    await grava(false);
+    return { perda_gravada: false };
+  }
 }
 
 /** Devolve `false` quando não havia linha com aquele id. */

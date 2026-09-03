@@ -17,6 +17,7 @@
  */
 
 import { rotuloEstagio } from '@/lib/whatsapp-conversas';
+import { ehEtapaDePerda } from '@/lib/funil';
 import { nomeParaExibir, telefoneParaExibir } from '@/lib/exibicao';
 
 export const ORIGENS = ['form', 'whatsapp'] as const;
@@ -82,6 +83,13 @@ export type ColunaCrm = {
    * dessincronizaria o funil e ainda contaria conversão que não houve.
    */
   aceita_solta: boolean;
+  /**
+   * Coluna de negócio perdido. Só existe no funil de formulários, onde
+   * é marcada na aba Eventos (`crm_meta_event_map.is_lost`); no funil de
+   * WhatsApp a perda é reconhecida pelo nome do estágio, por
+   * `ehEtapaDePerda`. Coluna de perda não envia evento nenhum.
+   */
+  perda: boolean;
 };
 
 export type CartaoCrm = {
@@ -105,6 +113,10 @@ export type CartaoCrm = {
   tags: string | null;
   /** Tem identificador de anúncio da Meta (lead ad ou clique-para-WhatsApp). */
   de_anuncio: boolean;
+  /** Está numa etapa de perda. */
+  perdido: boolean;
+  /** Por que o negócio caiu, quando o CRM informou. */
+  motivo_perda: string | null;
 };
 
 export function nomeDoCartao(c: {
@@ -123,7 +135,12 @@ export function chaveColuna(origem: OrigemLead | null, valor: string | null): st
   return `${origem}:${valor}`;
 }
 
-export type LinhaEtapaForm = { status_id: string | null; content_name: string | null };
+export type LinhaEtapaForm = {
+  status_id: string | null;
+  content_name: string | null;
+  /** `crm_meta_event_map.is_lost`; ausente em banco sem a migração. */
+  is_lost?: number | boolean | null;
+};
 export type LinhaEtapaWhatsapp = { estagio: string | null; content_name: string | null };
 
 export type LinhaCartao = {
@@ -142,6 +159,8 @@ export type LinhaCartao = {
   tem_conversa: number | string;
   campanha: string | null;
   de_anuncio: number | string | null;
+  /** `customers.lost_reason`; `null` em banco sem a migração. */
+  lost_reason: string | null;
 };
 
 /**
@@ -181,6 +200,10 @@ export function montaQuadro(
 ): { colunas: ColunaCrm[]; cartoes: CartaoCrm[]; total: number; tem_etapas: boolean } {
   const colunas: ColunaCrm[] = [];
   const rotuloPorChave = new Map<string, string>();
+  // Etapas de perda do funil do Kommo, pelo valor cru gravado em
+  // `customers.current_stage`. É o que marca o card como perdido — o
+  // nome da etapa não serve, porque é texto que o cliente escolheu.
+  const perdaForm = new Set<string>();
 
   const registra = (coluna: ColunaCrm) => {
     if (rotuloPorChave.has(coluna.chave)) return;
@@ -195,6 +218,8 @@ export function montaQuadro(
   for (const e of origemFiltrada === 'whatsapp' ? [] : etapasForm) {
     const valor = (e.status_id ?? '').trim();
     if (!valor) continue;
+    const perda = Boolean(e.is_lost);
+    if (perda) perdaForm.add(valor);
     registra({
       chave: chaveColuna('form', valor),
       rotulo: (e.content_name ?? '').trim() || valor,
@@ -202,6 +227,7 @@ export function montaQuadro(
       valor,
       // Etapa do Kommo é espelho: o quadro mostra, o CRM do cliente move.
       aceita_solta: false,
+      perda,
     });
   }
 
@@ -214,6 +240,7 @@ export function montaQuadro(
       origem: 'whatsapp',
       valor,
       aceita_solta: true,
+      perda: ehEtapaDePerda(valor),
     });
   }
 
@@ -252,6 +279,7 @@ export function montaQuadro(
         origem: null,
         valor: etapa,
         aceita_solta: false,
+        perda: origem === 'whatsapp' && ehEtapaDePerda(etapa),
       });
     }
 
@@ -272,6 +300,12 @@ export function montaQuadro(
       campanha: l.campanha,
       tags: l.tags,
       de_anuncio: Number(l.de_anuncio) === 1,
+      perdido: etapa
+        ? origem === 'whatsapp'
+          ? ehEtapaDePerda(etapa)
+          : perdaForm.has(etapa)
+        : false,
+      motivo_perda: (l.lost_reason ?? '').trim() || null,
     });
   }
 
@@ -282,6 +316,7 @@ export function montaQuadro(
     origem: null,
     valor: null,
     aceita_solta: false,
+    perda: false,
   });
 
   // O rótulo do card só é conhecido depois que as colunas extras entram.

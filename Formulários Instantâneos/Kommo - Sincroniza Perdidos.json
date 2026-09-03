@@ -1,0 +1,446 @@
+{
+  "name": "Kommo - Sincroniza Perdidos",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Kommo - Sincroniza Perdidos\n\n**O que este workflow faz:** de 15 em 15 minutos, pega os leads de formulário que já existem no banco de cada cliente, pergunta ao Kommo em que etapa cada negócio está e, para os que estão numa etapa marcada como **etapa de perda**, move o lead para essa etapa e grava o motivo da perda informado pelo próprio Kommo.\n\n**Ele NÃO envia evento nenhum para a Meta.** A etapa de perda fica gravada com `ativo = 0` em `crm_meta_event_map`, justamente para que o fluxo de eventos nunca case com ela; aqui só há UPDATE em `customers`.\n\n**Configuração necessária (uma única vez):**\n1. Marque a etapa de perda de cada cliente na aba **Eventos** do painel (caixa \"Etapa de perda\").\n2. Preencha o **subdomínio do Kommo** de cada cliente em **/admin/clientes** — sem ele o cliente é pulado, porque um workflow por agenda não recebe o webhook de onde o subdomínio costuma vir.\n3. Rode as migrações `Banco de Dados/migracao_etapa_perdido_form.sql` (em cada banco de cliente) e `Banco de Dados/migracao_kommo_subdominio.sql` (no banco central).\n4. Depois de importar, **ATIVE este workflow** — sem isso o Schedule Trigger nunca dispara.\n\n**Fila:** só entra lead com `crm_lead_id` preenchido e `lost_at` nulo. Quem já foi marcado como perdido sai da fila para sempre; quem não estiver perdido volta a ser consultado no ciclo seguinte, que é como um negócio perdido depois acaba sendo capturado.\n\n**Por que não existe loop dentro de loop:** as consultas por cliente rodam de uma vez só para todos, cada linha carregando a coluna `client_db` para não se perder de qual cliente veio. Há UM loop, sobre os lotes de ids. Loop aninhado no n8n não reinicia o contador do loop interno: ele ficaria concluído depois do primeiro cliente e todos os demais seriam pulados em silêncio.",
+        "height": 620,
+        "width": 580,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1180,
+        -120
+      ],
+      "typeVersion": 1,
+      "id": "sticky-kommo-perdidos",
+      "name": "Sticky Note Kommo Perdidos"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "schedule-1",
+      "name": "A Cada 15 Minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1180,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT a.* FROM `trakeamento_controle`.`ad_accounts` a WHERE a.status = 'ACTIVE' AND COALESCE(a.kommo_access_token, '') <> '' AND COALESCE(a.kommo_subdomain, '') <> ''",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -960,
+        560
+      ],
+      "id": "mysql-2",
+      "name": "Busca Contas Kommo",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().filter(function(i){ return i.json && i.json.client_db_name; });\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -740,
+        560
+      ],
+      "id": "code-3",
+      "name": "Filtra Contas Validas"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT '{{ $json.client_db_name.replace(/[^A-Za-z0-9_]/g, '') }}' AS client_db, status_id FROM `{{ $json.client_db_name.replace(/[^A-Za-z0-9_]/g, '') }}`.`crm_meta_event_map` WHERE is_lost = 1",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -520,
+        560
+      ],
+      "id": "mysql-4",
+      "name": "Busca Etapas de Perda",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $('Filtra Contas Validas').all();\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        560
+      ],
+      "id": "code-5",
+      "name": "Reemite Contas"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT '{{ $json.client_db_name.replace(/[^A-Za-z0-9_]/g, '') }}' AS client_db, id AS customer_id, crm_lead_id FROM `{{ $json.client_db_name.replace(/[^A-Za-z0-9_]/g, '') }}`.`customers` WHERE COALESCE(crm_lead_id, '') <> '' AND lost_at IS NULL ORDER BY id DESC LIMIT 500",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -80,
+        560
+      ],
+      "id": "mysql-6",
+      "name": "Busca Leads a Verificar",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const IDS_POR_LOTE = 50;\nconst MAX_LOTES = 20;\n\nconst contas = $('Filtra Contas Validas').all().map(function(i){ return i.json; });\nconst etapasRaw = $('Busca Etapas de Perda').all().map(function(i){ return i.json; });\nconst leads = $input.all().map(function(i){ return i.json; })\n  .filter(function(l){ return l && l.client_db && l.customer_id && l.crm_lead_id; });\n\nconst contaPorDb = {};\ncontas.forEach(function(c){ contaPorDb[c.client_db_name] = c; });\n\nconst etapasPorDb = {};\netapasRaw.forEach(function(e){\n  if (!e || !e.client_db || e.status_id === null || e.status_id === undefined) return;\n  if (!etapasPorDb[e.client_db]) etapasPorDb[e.client_db] = [];\n  etapasPorDb[e.client_db].push(String(e.status_id));\n});\n\n// Cliente sem etapa de perda marcada não tem para onde mover lead\n// nenhum: fica de fora sem que nada seja gravado, e volta sozinho no\n// ciclo seguinte à marcação na aba Eventos.\nconst porCliente = {};\nleads.forEach(function(l){\n  const conta = contaPorDb[l.client_db];\n  const etapas = etapasPorDb[l.client_db] || [];\n  if (!conta || etapas.length === 0) return;\n  if (!porCliente[l.client_db]) porCliente[l.client_db] = [];\n  porCliente[l.client_db].push(l);\n});\n\n// Um lote = uma chamada ao Kommo.\nconst lotesPorCliente = {};\nObject.keys(porCliente).forEach(function(db){\n  const conta = contaPorDb[db];\n  const lista = porCliente[db];\n  const lotes = [];\n  for (let i = 0; i < lista.length; i += IDS_POR_LOTE) {\n    const pedaco = lista.slice(i, i + IDS_POR_LOTE);\n    const filtro = pedaco.map(function(l){\n      return 'filter[id][]=' + encodeURIComponent(String(l.crm_lead_id));\n    }).join('&');\n    lotes.push({\n      client_db: db,\n      subdominio: String(conta.kommo_subdomain || ''),\n      kommo_access_token: String(conta.kommo_access_token || ''),\n      etapas_perda: etapasPorDb[db] || [],\n      // O id do negócio no Kommo é o que volta na resposta; o mapa é o\n      // que liga cada um de volta ao customer_id certo deste banco.\n      mapa: pedaco.map(function(l){\n        return { crm_lead_id: String(l.crm_lead_id), customer_id: Number(l.customer_id) };\n      }),\n      url: 'https://' + String(conta.kommo_subdomain || '') +\n        '.kommo.com/api/v4/leads?with=loss_reason&limit=250&' + filtro\n    });\n  }\n  lotesPorCliente[db] = lotes;\n});\n\n// Round-robin entre clientes até bater o teto global.\nconst dbs = Object.keys(lotesPorCliente);\nconst fila = [];\nlet idx = 0;\nwhile (fila.length < MAX_LOTES) {\n  let adicionou = false;\n  for (let d = 0; d < dbs.length && fila.length < MAX_LOTES; d++) {\n    const lotes = lotesPorCliente[dbs[d]];\n    if (idx < lotes.length) { fila.push(lotes[idx]); adicionou = true; }\n  }\n  if (!adicionou) break;\n  idx++;\n}\n\nreturn fila.map(function(f){ return { json: f }; });\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        140,
+        560
+      ],
+      "id": "code-7",
+      "name": "Monta Lotes Kommo"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        360,
+        560
+      ],
+      "id": "splitinbatches-8",
+      "name": "Para Cada Lote"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { message: 'Ciclo de sincronização de perdidos concluído.', lotes_processados: $input.all().length } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        580,
+        340
+      ],
+      "id": "code-9",
+      "name": "Ciclo Concluido"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.kommo_access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        580,
+        560
+      ],
+      "id": "http-10",
+      "name": "Busca Negocios no Kommo",
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "function sqlVal(v) {\n  if (v === null || v === undefined || v === '') return 'NULL';\n  return JSON.stringify(String(v));\n}\n\nconst lote = $('Para Cada Lote').first().json;\nconst db = String(lote.client_db).replace(/[^A-Za-z0-9_]/g, '');\nconst etapas = (lote.etapas_perda || []).map(String);\nconst resposta = $json || {};\n\nconst nada = [{ json: { acao: 'nada', client_db: db } }];\nif (resposta.error) return nada;\n\nconst negocios = (resposta._embedded && resposta._embedded.leads) || [];\nif (!negocios.length) return nada;\n\nconst customerPorLead = {};\n(lote.mapa || []).forEach(function(m){ customerPorLead[String(m.crm_lead_id)] = m.customer_id; });\n\nconst saida = [];\nnegocios.forEach(function(neg){\n  const status = String(neg.status_id === null || neg.status_id === undefined ? '' : neg.status_id);\n  if (etapas.indexOf(status) === -1) return;\n\n  const customerId = customerPorLead[String(neg.id)];\n  if (!customerId) return;\n\n  const motivos = (neg._embedded && neg._embedded.loss_reason) || [];\n  const motivo = (motivos[0] && motivos[0].name ? String(motivos[0].name) : '').trim().slice(0, 120);\n\n  // Só UPDATE em customers: a etapa de perda não tem evento Meta, e é\n  // por isso que este workflow não fala com a CAPI em lugar nenhum.\n  const sql = 'UPDATE `' + db + '`.`customers` SET current_stage = ' + sqlVal(status) +\n    ', lost_reason = ' + sqlVal(motivo) + ', lost_at = NOW() WHERE id = ' + Number(customerId) + ';';\n\n  saida.push({ json: {\n    acao: 'atualiza',\n    sql: sql,\n    client_db: db,\n    customer_id: customerId,\n    crm_lead_id: neg.id,\n    status_id: status,\n    motivo: motivo\n  } });\n});\n\nreturn saida.length ? saida : nada;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        560
+      ],
+      "id": "code-11",
+      "name": "Interpreta Perdidos"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-c-12",
+              "leftValue": "={{ $json.acao }}",
+              "rightValue": "atualiza",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1020,
+        560
+      ],
+      "id": "if-13",
+      "name": "Tem Perdido?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1240,
+        560
+      ],
+      "id": "mysql-14",
+      "name": "Move Lead Para Perdido",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "connections": {
+    "A Cada 15 Minutos": {
+      "main": [
+        [
+          {
+            "node": "Busca Contas Kommo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Contas Kommo": {
+      "main": [
+        [
+          {
+            "node": "Filtra Contas Validas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtra Contas Validas": {
+      "main": [
+        [
+          {
+            "node": "Busca Etapas de Perda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Etapas de Perda": {
+      "main": [
+        [
+          {
+            "node": "Reemite Contas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reemite Contas": {
+      "main": [
+        [
+          {
+            "node": "Busca Leads a Verificar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Leads a Verificar": {
+      "main": [
+        [
+          {
+            "node": "Monta Lotes Kommo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monta Lotes Kommo": {
+      "main": [
+        [
+          {
+            "node": "Para Cada Lote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Para Cada Lote": {
+      "main": [
+        [
+          {
+            "node": "Ciclo Concluido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Busca Negocios no Kommo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Negocios no Kommo": {
+      "main": [
+        [
+          {
+            "node": "Interpreta Perdidos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Interpreta Perdidos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Interpreta Perdidos": {
+      "main": [
+        [
+          {
+            "node": "Tem Perdido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Perdido?": {
+      "main": [
+        [
+          {
+            "node": "Move Lead Para Perdido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Para Cada Lote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move Lead Para Perdido": {
+      "main": [
+        [
+          {
+            "node": "Para Cada Lote",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Para Cada Lote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "meta": {
+    "instanceId": "manual-build"
+  },
+  "id": "KommoSincronizaPerdidos",
+  "tags": []
+}
