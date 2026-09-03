@@ -7,7 +7,8 @@ import { Card, Vazio } from '@/components/dados';
 import { PageHero } from '@/components/hero';
 import { SeletorPeriodo } from '@/components/seletores';
 import { primeiroLeadEm } from '@/lib/db/metricas';
-import { TabelaCampanhas } from '@/components/tabela-campanhas';
+import { TabelaCampanhas, type ColunasVisiveis } from '@/components/tabela-campanhas';
+import { metricasDoGrupo } from '@/lib/metricas-catalogo';
 import { SeletorMetricas } from '@/components/seletor-metricas';
 import { BotoesMeta } from '@/components/botoes-meta';
 import { fmtBRL } from '@/lib/format';
@@ -62,11 +63,12 @@ export default async function PaginaCampanhas({
     primeiroLeadEm(db),
   ]);
 
-  const colunas = {
-    receita: visiveis.get('campanhas_receita') !== false,
-    roas: visiveis.get('campanhas_roas') !== false,
-    roi: visiveis.get('campanhas_roi') !== false,
-  };
+  // O catálogo guarda as colunas como 'campanhas_<chave>'; a tabela as
+  // conhece pela chave crua. Uma coluna sem preferência salva aparece.
+  const colunas: ColunasVisiveis = {};
+  for (const m of metricasDoGrupo('campanhas')) {
+    colunas[m.key.replace('campanhas_', '')] = visiveis.get(m.key) !== false;
+  }
 
   // Gasto que existe em `meta_insights_daily` mas não em nenhuma linha da
   // tabela — campanha excluída da conta no Meta. Sem dizer isso, a soma da
@@ -114,7 +116,8 @@ export default async function PaginaCampanhas({
       ) : null}
 
       <p className="mb-4 text-body-small text-tertiary">
-        {rotuloPeriodo(periodo)} · ativas e pausadas, ordenadas pelas ativas primeiro
+        {rotuloPeriodo(periodo)} · ativas e pausadas, ordenadas pelas ativas primeiro. Dá para
+        esconder as inativas na caixa acima da tabela.
       </p>
 
       <Card>

@@ -934,3 +934,40 @@ Verificação: `tsc --noEmit` limpo, 172/172 testes, e o node "Resolve Valor do
 Negócio" simulado sobre o JSON gerado (corpo em texto, campo por id, campo por
 rótulo, campo inexistente, HTTP com erro e lead ausente). Não verificado em
 navegador — as telas exigem sessão autenticada contra dados reais.
+
+## Colunas da tabela de Campanhas e filtro de inativas
+
+Antes só Receita, ROAS e ROI podiam ser escondidas; as outras treze colunas
+eram fixas. Agora todas as colunas da aba Campanhas entram no botão
+"Personalizar", inclusive o Funil de eventos. Ficam de fora Nome e Status:
+sem o nome a linha não identifica de qual campanha é, e sem o status não há
+como ligar e desligar a entrega na Meta.
+
+### Como funciona
+
+- `src/lib/metricas-catalogo.ts` ganhou uma entrada `grupo: 'campanhas'` por
+  coluna, com a chave `campanhas_<chave da coluna>` na mesma ordem da tabela.
+  As novas nascem visíveis e são preferências **globais**, como as do grid de
+  KPIs; Receita, ROAS e ROI continuam por cliente e desligadas por padrão.
+- A página de Campanhas monta o mapa de visibilidade a partir do catálogo e
+  passa para a tabela; coluna sem preferência salva aparece.
+- `src/components/tabela-campanhas.tsx` filtra as colunas pela chave
+  (`colunas[c.chave] !== false`) em vez do antigo campo `opcional`, e o
+  cabeçalho, as células e o rodapé continuam saindo da mesma lista.
+- Nada mudou no banco: é a mesma tabela `painel_metric_prefs` e a mesma ação
+  de salvar preferência.
+
+### Ocultar campanhas inativas
+
+Caixa "Ocultar campanhas inativas" acima da tabela. Inativa é o que não
+entrega — pausada, arquivada e excluída. Os status intermediários da Meta
+(`IN_PROCESS`, `WITH_ISSUES`) continuam entregando e por isso permanecem na
+lista mesmo com o filtro ligado.
+
+O filtro é de tela, não de consulta: as linhas já vieram todas do servidor.
+Ele vale também para os conjuntos e anúncios carregados ao expandir uma
+linha, e o rodapé de totais passa a somar só o que está visível — com um
+aviso de quantas campanhas foram escondidas, para a soma da coluna Gasto não
+parecer erro de conta.
+
+Verificação: `npx tsc --noEmit` limpo e 172/172 testes passando.

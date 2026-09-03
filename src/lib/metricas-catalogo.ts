@@ -37,12 +37,30 @@ export const CATALOGO_METRICAS: Metrica[] = [
   { key: 'taxa_conversao', label: 'Taxa de Conversão do Funil' },
   { key: 'receita', label: 'Receita', porCliente: true, padrao: false },
   { key: 'roas', label: 'ROAS', porCliente: true, padrao: false },
-  // Colunas opcionais da tabela de Campanhas — mesmo catálogo e mesma
-  // tabela de preferências, separadas por grupo para não aparecerem no
-  // seletor errado.
+  // Colunas da tabela de Campanhas — mesmo catálogo e mesma tabela de
+  // preferências, separadas por grupo para não aparecerem no seletor
+  // errado. A chave é 'campanhas_' + a chave da coluna em
+  // 'components/tabela-campanhas.tsx'; a ordem aqui é a ordem da tabela.
+  //
+  // Nome e Status não entram: sem eles a linha não identifica de qual
+  // campanha é, nem dá para ligar e desligar a entrega.
+  { key: 'campanhas_orcamento', label: 'Orçamento', grupo: 'campanhas' },
+  { key: 'campanhas_spend', label: 'Gasto', grupo: 'campanhas' },
+  { key: 'campanhas_impressions', label: 'Impressões', grupo: 'campanhas' },
+  { key: 'campanhas_reach', label: 'Alcance', grupo: 'campanhas' },
+  { key: 'campanhas_frequency', label: 'Frequência', grupo: 'campanhas' },
+  { key: 'campanhas_clicks', label: 'Cliques', grupo: 'campanhas' },
+  { key: 'campanhas_ctr', label: 'CTR', grupo: 'campanhas' },
+  { key: 'campanhas_cpc', label: 'CPC', grupo: 'campanhas' },
+  { key: 'campanhas_cpm', label: 'CPM', grupo: 'campanhas' },
+  { key: 'campanhas_leads', label: 'Leads', grupo: 'campanhas' },
+  { key: 'campanhas_conversoes', label: 'Conversões', grupo: 'campanhas' },
+  { key: 'campanhas_cpl', label: 'CPL', grupo: 'campanhas' },
+  { key: 'campanhas_cac', label: 'CAC', grupo: 'campanhas' },
   { key: 'campanhas_receita', label: 'Receita', porCliente: true, padrao: false, grupo: 'campanhas' },
   { key: 'campanhas_roas', label: 'ROAS', porCliente: true, padrao: false, grupo: 'campanhas' },
   { key: 'campanhas_roi', label: 'ROI', porCliente: true, padrao: false, grupo: 'campanhas' },
+  { key: 'campanhas_funil', label: 'Funil de eventos', grupo: 'campanhas' },
 ];
 
 const POR_CHAVE = new Map(CATALOGO_METRICAS.map((m) => [m.key, m]));

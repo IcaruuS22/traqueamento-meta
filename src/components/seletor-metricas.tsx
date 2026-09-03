@@ -89,7 +89,10 @@ export function SeletorMetricas({
             {grupo === 'campanhas' ? 'Colunas da tabela' : 'Métricas visíveis'}
           </p>
 
-          <div className="space-y-2" data-pendente={pendente || undefined}>
+          <div
+            className="max-h-[60vh] space-y-2 overflow-y-auto"
+            data-pendente={pendente || undefined}
+          >
             {metricas.map((m) => (
               <label key={m.key} className="flex items-center gap-2 text-sm">
                 <input

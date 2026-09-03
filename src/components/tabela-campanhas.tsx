@@ -26,9 +26,10 @@ import { fmtBRL, fmtInt, fmtDec, fmtPct, fmtRoas, fmtRoi } from '@/lib/format';
  * porque carregar os três níveis de antemão são dezenas de consultas por
  * render para dados que quase nunca são abertos.
  *
- * São 19 colunas: a tabela rola na horizontal e a coluna Nome fica presa à
- * esquerda (`col-fixa`), senão quem rola até o ROI não sabe mais de qual
- * campanha é a linha.
+ * São até 19 colunas — quais aparecem é escolha do cliente, no seletor de
+ * métricas do cabeçalho. Com a tabela cheia ela rola na horizontal, e a
+ * coluna Nome fica presa à esquerda (`col-fixa`): senão quem rola até o
+ * ROI não sabe mais de qual campanha é a linha.
  */
 
 const FILHO: Record<NivelHierarquia, NivelHierarquia | null> = {
@@ -49,7 +50,24 @@ const ROTULO_NIVEL: Record<NivelHierarquia, string> = {
   ad: 'Anúncio',
 };
 
-export type ColunasOpcionais = { receita: boolean; roas: boolean; roi: boolean };
+/**
+ * Quais colunas aparecem, pela chave de `COLUNAS` (mais 'funil', que não é
+ * métrica e não está lá). Chave ausente conta como visível: a tabela nasce
+ * inteira e o cliente vai escondendo o que não usa.
+ *
+ * Nome e Status não são configuráveis: sem o nome a linha não diz de qual
+ * campanha é, e sem o status não dá para ligar e desligar a entrega.
+ */
+export type ColunasVisiveis = Record<string, boolean>;
+
+/**
+ * Inativa é o que não entrega: pausada, arquivada, excluída. Os status
+ * intermediários da Meta (`IN_PROCESS`, `WITH_ISSUES`) continuam
+ * entregando, então ficam mesmo com o filtro ligado.
+ */
+function estaAtiva(linha: LinhaHierarquia): boolean {
+  return tomStatus(linha.status) !== 'pausado';
+}
 
 type Item =
   | {
@@ -74,8 +92,6 @@ type ColunaMetrica = {
   rotulo: string;
   /** Explicação no `title` do cabeçalho, para as siglas. */
   dica?: string;
-  /** Coluna que o cliente pode esconder pelo seletor de métricas. */
-  opcional?: keyof ColunasOpcionais;
   valor: (l: LinhaHierarquia) => string;
   total: (t: TotaisCampanhas) => string;
 };
@@ -166,7 +182,6 @@ const COLUNAS: ColunaMetrica[] = [
   {
     chave: 'receita',
     rotulo: 'Receita',
-    opcional: 'receita',
     valor: (l) => fmtBRL(l.receita),
     total: (t) => fmtBRL(t.receita),
   },
@@ -174,7 +189,6 @@ const COLUNAS: ColunaMetrica[] = [
     chave: 'roas',
     rotulo: 'ROAS',
     dica: 'Receita ÷ gasto.',
-    opcional: 'roas',
     valor: (l) => fmtRoas(l.spend, l.receita),
     total: (t) => fmtRoas(t.spend, t.receita),
   },
@@ -182,7 +196,6 @@ const COLUNAS: ColunaMetrica[] = [
     chave: 'roi',
     rotulo: 'ROI',
     dica: 'Retorno sobre o gasto: (receita − gasto) ÷ gasto.',
-    opcional: 'roi',
     valor: (l) => fmtRoi(l.spend, l.receita),
     total: (t) => fmtRoi(t.spend, t.receita),
   },
@@ -314,7 +327,7 @@ export function TabelaCampanhas({
   linhas: LinhaHierarquia[];
   /** Query string do período, repassada às chamadas de filhos. */
   busca: string;
-  colunas: ColunasOpcionais;
+  colunas: ColunasVisiveis;
 }) {
   const router = useRouter();
   const [filhos, setFilhos] = useState<Record<string, LinhaHierarquia[]>>({});
@@ -328,6 +341,10 @@ export function TabelaCampanhas({
   // sem este mapa, a linha filha voltaria ao status antigo logo depois de
   // mudar.
   const [statusLocal, setStatusLocal] = useState<Record<string, string>>({});
+  // Filtro de tela, não de consulta: as linhas já vieram todas do servidor,
+  // e esconder pausadas aqui não custa outra ida ao banco. Também vale para
+  // os conjuntos e anúncios que forem abertos depois.
+  const [soAtivas, setSoAtivas] = useState(false);
   const [mudando, setMudando] = useState<string | null>(null);
   // A confirmação da chave liga/desliga fica em estado, e não em
   // `window.confirm`, porque o diálogo do navegador abre no topo da
@@ -445,6 +462,11 @@ export function TabelaCampanhas({
       const filho = FILHO[nivel];
       const carregados = filhos[chave];
       if (!filho) continue;
+      const visiveisDoFilho = carregados
+        ? soAtivas
+          ? carregados.filter(estaAtiva)
+          : carregados
+        : [];
       if (carregando.has(chave) || !carregados) {
         saida.push({
           tipo: 'aviso',
@@ -452,26 +474,34 @@ export function TabelaCampanhas({
           profundidade: profundidade + 1,
           texto: `Carregando ${ROTULO_FILHO[nivel]}...`,
         });
-      } else if (!carregados.length) {
+      } else if (!visiveisDoFilho.length) {
         saida.push({
           tipo: 'aviso',
           chave: `${chave}:vazio`,
           profundidade: profundidade + 1,
-          texto: `Nenhum ${filho === 'adset' ? 'conjunto' : 'anúncio'} encontrado.`,
+          texto: carregados.length
+            ? `Todos os ${ROTULO_FILHO[nivel]} estão inativos.`
+            : `Nenhum ${filho === 'adset' ? 'conjunto' : 'anúncio'} encontrado.`,
         });
       } else {
-        achata(carregados, filho, profundidade + 1, saida);
+        achata(visiveisDoFilho, filho, profundidade + 1, saida);
       }
     }
   }
 
-  const itens: Item[] = [];
-  achata(linhas, 'campaign', 0, itens);
+  const raiz = soAtivas ? linhas.filter(estaAtiva) : linhas;
+  const ocultas = linhas.length - raiz.length;
 
-  const visiveis = COLUNAS.filter((c) => !c.opcional || colunas[c.opcional]);
+  const itens: Item[] = [];
+  achata(raiz, 'campaign', 0, itens);
+
+  const visiveis = COLUNAS.filter((c) => colunas[c.chave] !== false);
+  const mostrarFunil = colunas.funil !== false;
   // Nome + Status + métricas + Funil de eventos.
-  const totalDeColunas = visiveis.length + 3;
-  const totais = somaCampanhas(linhas);
+  const totalDeColunas = visiveis.length + 2 + (mostrarFunil ? 1 : 0);
+  // Os totais seguem o que está na tela: somar campanha escondida faria o
+  // rodapé não bater com a coluna acima dele.
+  const totais = somaCampanhas(raiz);
 
   return (
     <div className="space-y-3">
@@ -496,6 +526,22 @@ export function TabelaCampanhas({
       {erro ? <Alerta tipo="erro">{erro}</Alerta> : null}
       {aviso ? <Alerta tipo="sucesso">{aviso}</Alerta> : null}
 
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
+          <input
+            type="checkbox"
+            checked={soAtivas}
+            onChange={(e) => setSoAtivas(e.target.checked)}
+          />
+          Ocultar campanhas inativas
+        </label>
+        {soAtivas && ocultas > 0 ? (
+          <span className="text-xs text-[var(--text-tertiary)]">
+            {fmtInt(ocultas)} escondida{ocultas > 1 ? 's' : ''} — o gasto delas sai dos totais.
+          </span>
+        ) : null}
+      </div>
+
       <div className="table-wrap">
         <table className="tabela-painel tabela-metricas">
           <thead>
@@ -507,7 +553,7 @@ export function TabelaCampanhas({
                   {c.rotulo}
                 </th>
               ))}
-              <th>Funil de eventos</th>
+              {mostrarFunil ? <th>Funil de eventos</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -527,6 +573,7 @@ export function TabelaCampanhas({
                   key={item.chave}
                   item={item}
                   colunas={visiveis}
+                  mostrarFunil={mostrarFunil}
                   aberto={abertos.has(item.chave)}
                   onAlterna={() => alterna(item.chave, item.nivel, item.linha.id)}
                   status={statusLocal[item.chave] ?? item.linha.status}
@@ -544,7 +591,7 @@ export function TabelaCampanhas({
             )}
           </tbody>
           {/* Uma campanha só já é o próprio total: a linha repetida só ocupa espaço. */}
-          {linhas.length > 1 ? (
+          {raiz.length > 1 ? (
             <tfoot>
               <tr>
                 <td className="col-fixa whitespace-nowrap">
@@ -556,9 +603,11 @@ export function TabelaCampanhas({
                     {c.total(totais)}
                   </td>
                 ))}
-                <td>
-                  <Funil eventos={totais.funil_eventos} />
-                </td>
+                {mostrarFunil ? (
+                  <td>
+                    <Funil eventos={totais.funil_eventos} />
+                  </td>
+                ) : null}
               </tr>
             </tfoot>
           ) : null}
@@ -568,7 +617,8 @@ export function TabelaCampanhas({
       <p className="text-xs text-[var(--text-tertiary)]">
         A seta abre os conjuntos de uma campanha e os anúncios de um conjunto. A chave da coluna
         de status liga ou desliga a campanha, o conjunto ou o anúncio direto na Meta. A tabela
-        rola para o lado; a coluna de nome fica fixa.
+        rola para o lado; a coluna de nome fica fixa. Quais colunas aparecem sai do botão
+        "Personalizar", no topo da página.
       </p>
     </div>
   );
@@ -577,6 +627,7 @@ export function TabelaCampanhas({
 function LinhaTabela({
   item,
   colunas,
+  mostrarFunil,
   aberto,
   onAlterna,
   status,
@@ -585,6 +636,7 @@ function LinhaTabela({
 }: {
   item: Extract<Item, { tipo: 'linha' }>;
   colunas: ColunaMetrica[];
+  mostrarFunil: boolean;
   aberto: boolean;
   onAlterna: () => void;
   /** Status vigente: o do servidor, ou o que a Meta acabou de aceitar. */
@@ -644,9 +696,11 @@ function LinhaTabela({
           {c.valor(l)}
         </td>
       ))}
-      <td>
-        <Funil eventos={l.funil_eventos} />
-      </td>
+      {mostrarFunil ? (
+        <td>
+          <Funil eventos={l.funil_eventos} />
+        </td>
+      ) : null}
     </tr>
   );
 }
