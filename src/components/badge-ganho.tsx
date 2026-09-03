@@ -12,12 +12,8 @@ import { ehEtapaDeGanho } from '@/lib/funil';
 export function BadgeGanho({ etapa }: { etapa: string | null | undefined }) {
   if (!ehEtapaDeGanho(etapa)) return null;
   return (
-    <span
-      className="origem-tag inline-flex items-center gap-1 bg-[var(--green-50)]
-        text-[var(--green-700)]"
-      title="Etapa de fechamento: o lead virou cliente."
-    >
-      <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3 w-3" fill="currentColor">
+    <span className="origem-tag tag-ganho" title="Etapa de fechamento: o lead virou cliente.">
+      <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
         <path d="M6.4 11.6 3.2 8.4l1.1-1.1 2.1 2.1 5-5 1.1 1.1z" />
       </svg>
       Ganho

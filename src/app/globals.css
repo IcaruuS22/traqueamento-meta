@@ -1695,6 +1695,24 @@ select.filtro-campo {
   border-radius: var(--radius-chip);
   white-space: nowrap;
 }
+/* Selo "Ganho": a unica etiqueta desta familia que tem icone. O
+   `display` precisa estar aqui, e nao numa classe do Tailwind, porque
+   `.origem-tag` mora fora de `@layer` e por isso vence as utilities —
+   um `inline-flex` de utility perderia para o `inline-block` acima, e o
+   preflight desenha `svg` como `display: block`, o que jogava a palavra
+   "Ganho" para a linha de baixo do proprio selo. */
+.tag-ganho {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--green-50);
+  color: var(--green-700);
+}
+.tag-ganho svg {
+  width: 11px;
+  height: 11px;
+  flex: none;
+}
 /* Tag da plataforma no card do CRM. O azul é o da marca Meta (#0866ff)
    e não muda com o tema: cor de marca não é cor de interface, e o
    contraste com branco já serve nos dois fundos. */
