@@ -96,17 +96,7 @@ export async function TelaCrm({
       <PageHero
         titulo={texto.titulo}
         descricao={texto.descricao}
-        acoes={
-          <>
-            {/* Só no funil de Formulários: é lá que o lead vem da Meta e do
-                Kommo, que são as duas fontes que a inclusão consulta. Contato
-                de WhatsApp nasce da conversa e não tem `leadgen_id`. */}
-            {origem === 'form' && usuario.papel === 'admin' ? (
-              <BotaoAdicionarLead cliente={conta.client_db_name} />
-            ) : null}
-            <SeletorPeriodo minimo={minimo} />
-          </>
-        }
+        acoes={<SeletorPeriodo minimo={minimo} />}
       />
 
       {quadro.lacunas_de_esquema.length ? (
@@ -126,10 +116,20 @@ export async function TelaCrm({
         titulo="Funil"
         descricao={texto.arrastar}
         acessorio={
-          // `useSearchParams` obriga a fronteira de Suspense no Next 15.
-          <Suspense fallback={null}>
-            <FiltrosCrm />
-          </Suspense>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Fica junto da busca, e não no topo da página, porque é ação
+                do quadro: quem procura o lead e não acha é quem vai
+                adicioná-lo. Só no funil de Formulários — é lá que o lead vem
+                da Meta e do Kommo, as duas fontes que a inclusão consulta;
+                contato de WhatsApp nasce da conversa e não tem `leadgen_id`. */}
+            {origem === 'form' && usuario.papel === 'admin' ? (
+              <BotaoAdicionarLead cliente={conta.client_db_name} />
+            ) : null}
+            {/* `useSearchParams` obriga a fronteira de Suspense no Next 15. */}
+            <Suspense fallback={null}>
+              <FiltrosCrm />
+            </Suspense>
+          </div>
         }
       >
         {quadro.tem_etapas || quadro.total > 0 ? (
