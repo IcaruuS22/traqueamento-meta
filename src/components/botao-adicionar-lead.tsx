@@ -34,8 +34,8 @@ export function BotaoAdicionarLead({ cliente }: { cliente: string }) {
 
   if (!aberto) {
     return (
-      <button type="button" className="btn-secondary" onClick={() => setAberto(true)}>
-        Adicionar lead
+      <button type="button" className="btn btn-primary" onClick={() => setAberto(true)}>
+        + Adicionar lead
       </button>
     );
   }
