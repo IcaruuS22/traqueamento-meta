@@ -4,7 +4,13 @@ import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { requireAdmin } from '@/lib/auth/guard';
 import { ACOES, registraAuditoria } from '@/lib/audit';
-import { buscaAdAccount, conflitoDeAdAccount, criaAdAccount, removeAdAccount } from '@/lib/db/cliente';
+import {
+  buscaAdAccount,
+  conflitoDeAdAccount,
+  criaAdAccount,
+  removeAdAccount,
+  salvaCampoValorCrm,
+} from '@/lib/db/cliente';
 import { apagaBancoDoCliente, criaBancoDoCliente } from '@/lib/db/provisiona';
 import { salvaInvestimentoMensal } from '@/lib/db/orcamento';
 import { lacunaDeEsquema } from '@/lib/db/pool';
@@ -318,5 +324,67 @@ export async function acaoSalvarInvestimentoMensal(
       investimento === null
         ? 'Investimento mensal removido.'
         : `Investimento mensal salvo: ${investimento.toFixed(2)}.`,
+  };
+}
+
+/**
+ * Campo do Kommo que guarda o valor do negócio, por cliente.
+ *
+ * Vale o rótulo exato do campo personalizado ("Valor do contrato") ou o
+ * id numérico dele. O id é o preferível: o rótulo muda no dia em que
+ * alguém renomeia o campo no Kommo, e aí o valor volta a não ser lido.
+ * Campo vazio remove a configuração e o fluxo volta a procurar pelos
+ * rótulos conhecidos.
+ */
+const schemaCampoValorCrm = z.object({
+  client_db: z.string().trim().min(1).max(64),
+  crm_value_field: z.string().trim().max(120),
+});
+
+export async function acaoSalvarCampoValorCrm(
+  _estado: EstadoFormulario,
+  form: FormData,
+): Promise<EstadoFormulario> {
+  const admin = await requireAdmin();
+
+  const parsed = schemaCampoValorCrm.safeParse({
+    client_db: form.get('client_db'),
+    crm_value_field: form.get('crm_value_field') ?? '',
+  });
+  if (!parsed.success) return { erro: 'Dados inválidos' };
+
+  const conta = await buscaAdAccount(parsed.data.client_db);
+  if (!conta) return { erro: 'Cliente não encontrado no catálogo.' };
+
+  const campo = parsed.data.crm_value_field === '' ? null : parsed.data.crm_value_field;
+
+  try {
+    await salvaCampoValorCrm(conta.client_db_name, campo);
+  } catch (erro) {
+    if (lacunaDeEsquema(erro)) {
+      return {
+        erro:
+          'O banco central ainda não tem a coluna do campo de valor do CRM. ' +
+          'Rode "Banco de Dados/migracao_crm_value_field.sql" e tente de novo.',
+      };
+    }
+    console.error('[clientes] falha ao salvar o campo de valor do CRM', conta.client_db_name, erro);
+    return { erro: 'Não foi possível salvar o campo de valor do CRM.' };
+  }
+
+  await registraAuditoria({
+    userId: admin.id,
+    userEmail: admin.email,
+    acao: ACOES.CLIENTE_CAMPO_VALOR_ALTERADO,
+    clientDb: conta.client_db_name,
+    detalhe: { crm_value_field: campo },
+  });
+
+  revalidatePath('/admin/clientes');
+  return {
+    sucesso:
+      campo === null
+        ? 'Configuração removida. O valor volta a ser procurado pelos rótulos conhecidos.'
+        : `Campo do valor salvo: ${campo}. Vale para os próximos eventos.`,
   };
 }

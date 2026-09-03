@@ -882,3 +882,55 @@ Verificação: `tsc --noEmit` limpo, 151/151 testes, `next build` limpo,
 `node build_whatsapp_cloud_workflow.js` regenerou o JSON com 33 nós. Não
 verificado em navegador — as telas exigem sessão autenticada contra dados
 reais de produção.
+
+## Valor do negócio vindo do Kommo
+
+O evento de conversão leva o valor da venda em `custom_data.value`. Ele é
+decidido no node "Resolve Valor do Negócio" do fluxo
+`Formulários Instantâneos/Traq. Form Instantâneo - Meta ADS - MySQL.json`, nesta
+ordem: preço que veio no webhook, preço lido na API do Kommo, último preço
+salvo no lead. Sem valor, o campo `value` não vai no payload — exceto em
+`Purchase`, que vai com 1 para continuar contando como conversão enquanto o
+negócio não tem preço preenchido.
+
+Detalhes que custaram depuração:
+
+- **A resposta do Kommo chega como texto.** O node HTTP entrega o corpo em
+  `json.data` como string JSON quando a resposta não se declara JSON; ler
+  `json.price` direto dava `undefined` e todo Purchase saía com `value: 1`. O
+  código faz `JSON.parse` quando `data` é string, dentro de try/catch.
+- **O node repassa a linha do lead inteira.** Ele ficou entre "Busca Lead na
+  Tabela de Trakeamento" e "Infobase", e a "Infobase" lê os campos do lead por
+  `$json`. Devolver só o valor transformava `first_name`, `phone`, `meta_ad_id`
+  e o resto em `null`, e `created_at_unix` em `NaN`.
+
+### `ad_accounts.crm_value_field`
+
+Nem todo cliente usa o campo nativo "Venda" (`price`) do Kommo; alguns guardam
+o valor num campo personalizado com o rótulo que quiseram. A coluna
+`crm_value_field` (`Banco de Dados/migracao_crm_value_field.sql`, mais o
+template e a instalação limpa) diz, por cliente, qual campo consultar: o id
+numérico do campo ou o rótulo exato. NULL = campo nativo e, na falta dele, os
+rótulos conhecidos (`venda`, `valor`, `valor do contrato`, `valor da venda`,
+`ticket`).
+
+A comparação é exata, e não por semelhança de nome, de propósito: um campo
+como "Valor de conta" ("Acima de R$ 1.000,00") casaria com "valor" e mandaria
+1000 à Meta como valor de venda. O id é preferível ao rótulo porque sobrevive a
+alguém renomear o campo no Kommo.
+
+A edição fica na administração (`/admin/clientes`), junto do investimento
+mensal, e entra no log de auditoria (`cliente_campo_valor_alterado`). O
+backfill (`scripts/backfill-crm-value.ts`) usa a mesma configuração, e tolera o
+banco sem a coluna.
+
+### O que ainda é do usuário
+
+- Rodar `Banco de Dados/migracao_crm_value_field.sql` no banco central.
+- Reimportar `Traq. Form Instantâneo - Meta ADS - MySQL.json` no n8n.
+- Cadastrar o campo do valor em `/admin/clientes`, para quem não usa "Venda".
+
+Verificação: `tsc --noEmit` limpo, 172/172 testes, e o node "Resolve Valor do
+Negócio" simulado sobre o JSON gerado (corpo em texto, campo por id, campo por
+rótulo, campo inexistente, HTTP com erro e lead ausente). Não verificado em
+navegador — as telas exigem sessão autenticada contra dados reais.

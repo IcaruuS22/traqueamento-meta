@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requireAdmin } from '@/lib/auth/guard';
-import { contaVinculosPorCliente, listaAdAccounts } from '@/lib/db/cliente';
+import { contaVinculosPorCliente, leCamposValorCrm, listaAdAccounts } from '@/lib/db/cliente';
 import { leInvestimentosMensais } from '@/lib/db/orcamento';
 import { PageHero } from '@/components/hero';
 import { ExcluirCliente } from './excluir-cliente';
 import { InvestimentoMensal } from './investimento-mensal';
+import { CampoValorCrm } from './campo-valor-crm';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Clientes | Trakeamento' };
@@ -20,10 +21,11 @@ export const metadata: Metadata = { title: 'Clientes | Trakeamento' };
 export default async function PaginaClientesAdmin() {
   await requireAdmin();
 
-  const [clientes, vinculos, investimentos] = await Promise.all([
+  const [clientes, vinculos, investimentos, camposValor] = await Promise.all([
     listaAdAccounts(),
     contaVinculosPorCliente(),
     leInvestimentosMensais(),
+    leCamposValorCrm(),
   ]);
 
   return (
@@ -83,6 +85,11 @@ export default async function PaginaClientesAdmin() {
               <InvestimentoMensal
                 banco={cliente.client_db_name}
                 investimento={investimentos.get(cliente.client_db_name) ?? null}
+              />
+
+              <CampoValorCrm
+                banco={cliente.client_db_name}
+                campo={camposValor.get(cliente.client_db_name) ?? null}
               />
 
               <ExcluirCliente nome={cliente.account_name} banco={cliente.client_db_name} />

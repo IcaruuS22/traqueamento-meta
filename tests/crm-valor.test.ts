@@ -52,6 +52,34 @@ describe('valor do negócio vindo do Kommo', () => {
   });
 });
 
+describe('campo de valor configurado por cliente', () => {
+  const negocio = {
+    id: 9,
+    price: 0,
+    custom_fields_values: [
+      { field_id: 748829, field_name: 'Valor de conta', values: [{ value: 'Acima de R$ 1.000,00' }] },
+      { field_id: 1053417, field_name: 'Fechamento', values: [{ value: '7.900,00' }] },
+    ],
+  };
+
+  test('acha o campo pelo id e pelo rótulo exato', () => {
+    assert.equal(precoDoNegocio(negocio, '1053417'), 7900);
+    assert.equal(precoDoNegocio(negocio, ' Fechamento '), 7900);
+    assert.equal(precoDoNegocio(negocio, 'FECHAMENTO'), 7900);
+  });
+
+  test('sem configuração, rótulo desconhecido não vira valor', () => {
+    // "Valor de conta" é uma faixa de escolha, não o valor da venda:
+    // achar por semelhança de nome mandaria 1000 para a Meta.
+    assert.equal(precoDoNegocio(negocio), 0);
+    assert.equal(precoDoNegocio(negocio, 'Ticket médio'), 0);
+  });
+
+  test('o campo nativo continua vindo antes do configurado', () => {
+    assert.equal(precoDoNegocio({ ...negocio, price: 11210 }, '1053417'), 11210);
+  });
+});
+
 describe('valor digitado no painel', () => {
   test('aceita o jeito brasileiro e o do teclado numérico', () => {
     assert.equal(valorDigitado('11210'), 11210);

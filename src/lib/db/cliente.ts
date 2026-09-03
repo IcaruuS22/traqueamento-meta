@@ -1,5 +1,5 @@
 import 'server-only';
-import { query, queryOne, execute, transacao } from '@/lib/db/pool';
+import { query, queryOne, execute, transacao, LacunasDeEsquema } from '@/lib/db/pool';
 import { sanitizaNomeBanco } from '@/lib/nomes-banco';
 
 /**
@@ -108,6 +108,52 @@ export async function contaVinculosPorCliente(): Promise<Record<string, number>>
       GROUP BY client_db_name`,
   );
   return Object.fromEntries(linhas.map((l) => [l.client_db_name, Number(l.total)]));
+}
+
+
+/**
+ * Qual campo do Kommo guarda o valor do negócio, por cliente.
+ *
+ * O fluxo do n8n lê o campo nativo "Venda" (price) primeiro; esta
+ * configuração diz qual campo PERSONALIZADO consultar quando o nativo
+ * vem zerado. Vale o rótulo exato ("Valor do contrato") ou o id numérico
+ * do campo, que é o mais seguro: sobrevive a alguém renomear o campo no
+ * Kommo.
+ *
+ * Cliente sem configuração fica com `null`, e o fluxo cai na lista de
+ * rótulos conhecidos. Banco sem a migração devolve o mapa vazio em vez
+ * de derrubar a tela de administração.
+ */
+export async function leCamposValorCrm(): Promise<Map<string, string | null>> {
+  const lacunas = new LacunasDeEsquema();
+  const linhas = await lacunas.ou(
+    query<{ client_db_name: string; crm_value_field: string | null }>(
+      `SELECT client_db_name, crm_value_field FROM trakeamento_controle.ad_accounts
+        WHERE client_db_name IS NOT NULL AND client_db_name <> ''`,
+    ),
+    [],
+  );
+
+  const mapa = new Map<string, string | null>();
+  for (const l of linhas) {
+    const campo = (l.crm_value_field ?? '').trim();
+    mapa.set(l.client_db_name, campo === '' ? null : campo);
+  }
+  return mapa;
+}
+
+/** Grava o campo de valor do CRM. `null` volta ao comportamento padrão. */
+export async function salvaCampoValorCrm(
+  clientDb: string,
+  campo: string | null,
+): Promise<void> {
+  const nome = sanitizaNomeBanco(clientDb);
+  if (!nome) throw new Error('Nome de banco de cliente inválido');
+
+  await execute(
+    `UPDATE trakeamento_controle.ad_accounts SET crm_value_field = ? WHERE client_db_name = ?`,
+    [campo, nome],
+  );
 }
 
 export type NovaAdAccount = {

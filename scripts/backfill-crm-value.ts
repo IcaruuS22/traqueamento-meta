@@ -39,6 +39,8 @@ type Conta = {
   client_db_name: string;
   account_name: string;
   kommo_access_token: string | null;
+  /** Campo personalizado do Kommo com o valor. NULL = rótulos conhecidos. */
+  crm_value_field: string | null;
 };
 
 type LeadLocal = { id: number; crm_lead_id: string; crm_value: number | null };
@@ -61,15 +63,9 @@ async function main() {
     ...(process.env.MYSQL_SSL === 'true' ? { ssl: { rejectUnauthorized: true } } : {}),
   });
 
-  const [contas] = await conexao.query<mysql.RowDataPacket[]>(
-    `SELECT client_db_name, account_name, kommo_access_token
-       FROM trakeamento_controle.ad_accounts
-      WHERE client_db_name IS NOT NULL AND client_db_name <> ''
-        AND status = 'ACTIVE'
-      ORDER BY account_name`,
-  );
+  const contas = await leContas(conexao);
 
-  const alvos = (contas as Conta[]).filter(
+  const alvos = contas.filter(
     (c) => !somenteCliente || c.client_db_name === somenteCliente,
   );
   if (alvos.length === 0) {
@@ -124,6 +120,7 @@ async function processaCliente(
     subdominio,
     conta.kommo_access_token as string,
     leads.map((l) => l.crm_lead_id),
+    conta.crm_value_field,
   );
 
   let atualizados = 0;
@@ -205,6 +202,7 @@ async function buscaPrecos(
   subdominio: string,
   token: string,
   ids: string[],
+  campoConfigurado: string | null,
 ): Promise<Map<string, number>> {
   const precos = new Map<string, number>();
 
@@ -231,7 +229,7 @@ async function buscaPrecos(
       _embedded?: { leads?: Record<string, unknown>[] };
     };
     for (const negocio of corpo._embedded?.leads ?? []) {
-      const preco = precoDoNegocio(negocio);
+      const preco = precoDoNegocio(negocio, campoConfigurado);
       if (preco > 0) precos.set(String(negocio.id), preco);
     }
   }
@@ -239,22 +237,68 @@ async function buscaPrecos(
   return precos;
 }
 
-/** Preço do negócio: o campo nativo "Venda" e, na falta dele, o personalizado. */
-export function precoDoNegocio(negocio: Record<string, unknown>): number {
+/**
+ * Preço do negócio: o campo nativo "Venda" e, na falta dele, o personalizado.
+ *
+ * `campoConfigurado` é o `crm_value_field` do cliente — o id numérico do
+ * campo ou o rótulo exato. Sem ele valem os rótulos conhecidos. A
+ * comparação é exata: por semelhança, um campo como "Valor de conta"
+ * ("Acima de R$ 1.000,00") viraria um valor de venda inventado.
+ */
+export function precoDoNegocio(
+  negocio: Record<string, unknown>,
+  campoConfigurado: string | null = null,
+): number {
   const nativo = paraNumero(negocio.price);
   if (nativo > 0) return nativo;
 
   const campos = negocio.custom_fields_values;
   if (!Array.isArray(campos)) return 0;
-  for (const campo of campos as { field_name?: string; values?: { value?: unknown }[] }[]) {
+  const alvo = (campoConfigurado ?? '').trim().toLowerCase();
+  for (const campo of campos as {
+    field_id?: unknown;
+    field_name?: string;
+    values?: { value?: unknown }[];
+  }[]) {
     const nome = String(campo?.field_name ?? '')
       .trim()
       .toLowerCase();
-    if (!NOMES_DE_VALOR.includes(nome)) continue;
+    const id = String(campo?.field_id ?? '')
+      .trim()
+      .toLowerCase();
+    const bate = alvo ? id === alvo || nome === alvo : NOMES_DE_VALOR.includes(nome);
+    if (!bate) continue;
     const achado = paraNumero(campo?.values?.[0]?.value);
     if (achado > 0) return achado;
   }
   return 0;
+}
+
+/**
+ * Contas ativas do catálogo.
+ *
+ * `crm_value_field` só existe depois da migração; onde ela não rodou, a
+ * consulta cai para a versão sem a coluna em vez de o script morrer.
+ */
+async function leContas(conexao: mysql.Connection): Promise<Conta[]> {
+  const base = `FROM trakeamento_controle.ad_accounts
+      WHERE client_db_name IS NOT NULL AND client_db_name <> ''
+        AND status = 'ACTIVE'
+      ORDER BY account_name`;
+  try {
+    const [linhas] = await conexao.query<mysql.RowDataPacket[]>(
+      `SELECT client_db_name, account_name, kommo_access_token, crm_value_field ${base}`,
+    );
+    return linhas as Conta[];
+  } catch {
+    const [linhas] = await conexao.query<mysql.RowDataPacket[]>(
+      `SELECT client_db_name, account_name, kommo_access_token ${base}`,
+    );
+    return (linhas as Omit<Conta, 'crm_value_field'>[]).map((c) => ({
+      ...c,
+      crm_value_field: null,
+    }));
+  }
 }
 
 /** Número do Kommo: aceita "11210", "11.210,00" e "R$ 11.210". */

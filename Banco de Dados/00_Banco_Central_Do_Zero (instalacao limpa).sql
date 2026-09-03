@@ -55,6 +55,10 @@ CREATE TABLE IF NOT EXISTS ad_accounts (
   meta_test_event_code VARCHAR(50) NULL,
   kommo_access_token TEXT,
   content_category VARCHAR(255),
+  -- Campo personalizado do Kommo que guarda o valor do negócio: o
+  -- rótulo exato ou o id numérico do campo. NULL = usa o campo nativo
+  -- "Venda" e, na falta dele, os rótulos conhecidos.
+  crm_value_field VARCHAR(120) NULL DEFAULT NULL,
   -- Valor mensal combinado com o cliente para mídia. NULL = não
   -- combinado. Alimenta o indicador de ritmo de gasto da aba Métricas.
   monthly_fee DECIMAL(12,2) NULL DEFAULT NULL,
