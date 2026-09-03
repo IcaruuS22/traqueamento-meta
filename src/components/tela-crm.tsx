@@ -10,6 +10,7 @@ import { SeletorPeriodo } from '@/components/seletores';
 import { primeiroLeadEm } from '@/lib/db/metricas';
 import { FiltrosCrm } from '@/components/filtros-crm';
 import { QuadroCrm } from '@/components/quadro-crm';
+import { BotaoAdicionarLead } from '@/components/botao-adicionar-lead';
 
 /**
  * O quadro do CRM, montado para uma origem só.
@@ -95,7 +96,17 @@ export async function TelaCrm({
       <PageHero
         titulo={texto.titulo}
         descricao={texto.descricao}
-        acoes={<SeletorPeriodo minimo={minimo} />}
+        acoes={
+          <>
+            {/* Só no funil de Formulários: é lá que o lead vem da Meta e do
+                Kommo, que são as duas fontes que a inclusão consulta. Contato
+                de WhatsApp nasce da conversa e não tem `leadgen_id`. */}
+            {origem === 'form' && usuario.papel === 'admin' ? (
+              <BotaoAdicionarLead cliente={conta.client_db_name} />
+            ) : null}
+            <SeletorPeriodo minimo={minimo} />
+          </>
+        }
       />
 
       {quadro.lacunas_de_esquema.length ? (

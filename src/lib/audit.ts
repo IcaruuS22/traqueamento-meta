@@ -29,6 +29,7 @@ export const ACOES = {
   WHATSAPP_EVOLUTION_REMOVIDA: 'whatsapp_evolution_removida',
   WHATSAPP_EVOLUTION_WEBHOOK: 'whatsapp_evolution_webhook',
   LEAD_EXCLUIDO: 'lead_excluido',
+  LEAD_ADICIONADO: 'lead_adicionado',
   CRM_LEAD_MOVIDO: 'crm_lead_movido',
   CRM_LEAD_SALVO: 'crm_lead_salvo',
   CRM_VALOR_SALVO: 'crm_valor_salvo',

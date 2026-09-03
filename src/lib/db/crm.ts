@@ -116,11 +116,41 @@ async function leCartoes(
   // Banco sem a migração da etapa de perda troca a coluna por um
   // literal: o quadro inteiro não pode cair por causa do motivo.
   const campoPerda = comPerda ? "NULLIF(c.lost_reason, '')" : 'NULL';
+  const campoPerdidoEm = comPerda ? 'c.lost_at' : 'NULL';
+
+  // Quando o lead chegou na etapa em que está hoje.
+  //
+  // Não sai de `customers.updated_at`: aquela coluna é
+  // `DEFAULT CURRENT_TIMESTAMP` sem `ON UPDATE`, e a automação que muda
+  // `current_stage` não a toca — ela guarda a criação da linha, não a
+  // última mexida. O que marca a passagem pela etapa é o evento que ela
+  // dispara, gravado em `meta_capi_events` no mesmo instante.
+  //
+  // Perda vem antes na fila porque etapa de perda não manda evento
+  // nenhum (fica com `ativo = 0`): sem `lost_at`, os 188 perdidos
+  // ficariam todos com a data da última etapa por onde passaram.
+  const campoMovido = `COALESCE(
+      ${campoPerdidoEm},
+      (SELECT MAX(e.created_at)
+         FROM ${db.tabela('meta_capi_events')} e
+         JOIN ${db.tabela('crm_meta_event_map')} em
+           ON em.meta_event = e.event_name AND em.status_id = c.current_stage
+        WHERE e.customer_id = c.id AND UPPER(e.status) = 'SENT')
+    )`;
+
+  // Do lado do WhatsApp a etapa é do painel e mora em
+  // `whatsapp_conversations`, que tem `ON UPDATE CURRENT_TIMESTAMP` — ali
+  // `updated_at` serve. Vai em coluna separada, e não no COALESCE acima,
+  // porque lead de formulário que também tem conversa mexeria essa data a
+  // cada mensagem recebida, sem etapa nenhuma ter mudado.
+  const campoMovidoConversa = comConversas ? 'wc.updated_at' : 'NULL';
 
   return db.query<LinhaCartao>(
     `SELECT c.id, c.first_name, c.last_name, c.email, c.phone, c.created_at,
             c.current_stage, NULLIF(c.meta_lead_id, '') AS meta_lead_id,
             ${campoPerda} AS lost_reason,
+            ${campoMovido} AS movido_em,
+            ${campoMovidoConversa} AS movido_conversa_em,
             ${camposConversa},
             COALESCE(NULLIF(c.meta_campaign_name, ''), NULLIF(c.utm_campaign, '')) AS campanha,
             (COALESCE(c.meta_ad_id, '') <> ''
@@ -530,4 +560,143 @@ export async function salvaValorLead(
     );
     return { existia: true, evento_atualizado: true };
   });
+}
+
+// -------------------------------------------------------------------
+// Inclusão manual de lead de formulário
+// -------------------------------------------------------------------
+
+/** O que a ação já resolveu (Meta + Kommo) e vai virar linha em `customers`. */
+export type NovoLeadDeFormulario = {
+  ad_account_id: string;
+  crm_lead_id: string;
+  meta_lead_id: string;
+  /** `status_id` do Kommo, ou `null` quando o CRM não pôde ser consultado. */
+  current_stage: string | null;
+  crm_value: number | null;
+  /** ISO. Vira `created_at`, para o lead cair no mês em que de fato entrou. */
+  created_at: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  phone: string | null;
+  city: string | null;
+  state: string | null;
+  zipcode: string | null;
+  meta_ad_id: string | null;
+  meta_ad_name: string | null;
+  meta_adset_id: string | null;
+  meta_adset_name: string | null;
+  meta_campaign_id: string | null;
+  meta_campaign_name: string | null;
+  meta_form_id: string | null;
+};
+
+/**
+ * Procura o lead pelos dois identificadores que a tela pede.
+ *
+ * Os dois, e não só um: o mesmo lead pode já estar no painel gravado só
+ * com o id do Kommo (veio pelo webhook de status, sem passar pelo fluxo
+ * de recebimento) ou só com o da Meta (chegou pelo formulário e nunca
+ * virou negócio). Inserir de novo criaria dois cards para uma pessoa só.
+ */
+export async function buscaLeadExistente(
+  db: BancoCliente,
+  crmLeadId: string,
+  metaLeadId: string,
+): Promise<{ id: number } | null> {
+  return db.queryOne<{ id: number }>(
+    `SELECT id FROM ${db.tabela('customers')}
+      WHERE crm_lead_id = ? OR meta_lead_id = ?
+      ORDER BY id ASC LIMIT 1`,
+    [crmLeadId, metaLeadId],
+  );
+}
+
+/**
+ * Insere o lead.
+ *
+ * `crm_value` entra por consulta ao `information_schema` e não por
+ * try/catch: a migração do campo ainda não rodou em todo cliente, e um
+ * INSERT que falha por causa de uma coluna ausente perderia junto o
+ * lead inteiro. É a mesma tolerância que a automação de ganhos faz.
+ *
+ * Nada de evento CAPI aqui. O lead entra no painel; o que foi ou não
+ * enviado à Meta continua sendo o que os workflows enviaram, e inventar
+ * um `Purchase` retroativo mentiria para a única tela que hoje serve
+ * para conferir o que saiu daqui.
+ */
+export async function insereLeadDeFormulario(
+  db: BancoCliente,
+  dados: NovoLeadDeFormulario,
+): Promise<number> {
+  const temValor = await db.queryOne<{ total: number }>(
+    `SELECT COUNT(*) AS total FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'customers' AND COLUMN_NAME = 'crm_value'`,
+    [db.nome],
+  );
+  const comValor = Number(temValor?.total ?? 0) > 0;
+
+  const colunas = [
+    'ad_account_id',
+    'crm_lead_id',
+    'meta_lead_id',
+    'current_stage',
+    'first_name',
+    'last_name',
+    'email',
+    'phone',
+    'city',
+    'state',
+    'zipcode',
+    'country',
+    'meta_ad_id',
+    'meta_ad_name',
+    'meta_adset_id',
+    'meta_adset_name',
+    'meta_campaign_id',
+    'meta_campaign_name',
+    'meta_form_id',
+  ];
+  const valores: unknown[] = [
+    dados.ad_account_id,
+    dados.crm_lead_id,
+    dados.meta_lead_id,
+    dados.current_stage,
+    dados.first_name,
+    dados.last_name,
+    dados.email,
+    dados.phone,
+    dados.city,
+    dados.state,
+    dados.zipcode,
+    'br',
+    dados.meta_ad_id,
+    dados.meta_ad_name,
+    dados.meta_adset_id,
+    dados.meta_adset_name,
+    dados.meta_campaign_id,
+    dados.meta_campaign_name,
+    dados.meta_form_id,
+  ];
+
+  if (comValor) {
+    colunas.push('crm_value');
+    valores.push(dados.crm_value);
+  }
+
+  // `created_at` tem DEFAULT CURRENT_TIMESTAMP: sem data da Meta, o lead
+  // entra com a data de hoje, e é isso mesmo — melhor um lead datado de
+  // hoje do que um lead fora de todo período do painel.
+  if (dados.created_at) {
+    colunas.push('created_at');
+    valores.push(new Date(dados.created_at));
+  }
+
+  const marcadores = colunas.map(() => '?').join(', ');
+  const resultado = await db.execute(
+    `INSERT INTO ${db.tabela('customers')} (${colunas.join(', ')}) VALUES (${marcadores})`,
+    valores,
+  );
+  return resultado.insertId;
 }

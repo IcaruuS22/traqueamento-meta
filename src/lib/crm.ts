@@ -117,6 +117,12 @@ export type CartaoCrm = {
   perdido: boolean;
   /** Por que o negócio caiu, quando o CRM informou. */
   motivo_perda: string | null;
+  /**
+   * Quando o lead chegou na etapa em que está. `null` quando ele nunca
+   * saiu da etapa de entrada, ou quando não há registro da passagem — aí
+   * o card mostra a data de entrada.
+   */
+  movido_em: string | null;
 };
 
 export function nomeDoCartao(c: {
@@ -161,6 +167,10 @@ export type LinhaCartao = {
   de_anuncio: number | string | null;
   /** `customers.lost_reason`; `null` em banco sem a migração. */
   lost_reason: string | null;
+  /** Quando o lead chegou na etapa atual do funil do Kommo. */
+  movido_em?: string | null;
+  /** Última mexida na conversa — a etapa do funil do WhatsApp. */
+  movido_conversa_em?: string | null;
 };
 
 /**
@@ -205,9 +215,17 @@ export function montaQuadro(
   // nome da etapa não serve, porque é texto que o cliente escolheu.
   const perdaForm = new Set<string>();
 
+  // Primeira coluna cadastrada de cada funil — a etapa de entrada. É a
+  // ordem do cadastro (`ORDER BY id`), a mesma que o quadro desenha, não
+  // um nome de etapa: cada cliente batiza a primeira do jeito dele.
+  const primeiraChave = new Map<OrigemLead, string>();
+
   const registra = (coluna: ColunaCrm) => {
     if (rotuloPorChave.has(coluna.chave)) return;
     rotuloPorChave.set(coluna.chave, coluna.rotulo);
+    if (coluna.origem && !primeiraChave.has(coluna.origem)) {
+      primeiraChave.set(coluna.origem, coluna.chave);
+    }
     colunas.push(coluna);
   };
 
@@ -306,6 +324,14 @@ export function montaQuadro(
           : perdaForm.has(etapa)
         : false,
       motivo_perda: (l.lost_reason ?? '').trim() || null,
+      // Lead parado na primeira etapa do funil não "moveu": ele entrou.
+      // Por isso a data de movimentação só existe da segunda coluna em
+      // diante — e some se a passagem não deixou registro, em vez de
+      // inventar uma data.
+      movido_em:
+        chave === primeiraChave.get(origem)
+          ? null
+          : (origem === 'whatsapp' ? l.movido_conversa_em : l.movido_em) ?? null,
     });
   }
 

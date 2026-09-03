@@ -190,6 +190,30 @@ export async function leSubdominiosKommo(): Promise<Map<string, string | null>> 
   return mapa;
 }
 
+/**
+ * Subdomínio de um cliente só.
+ *
+ * A coluna veio de migração, então banco central atrasado ainda não a
+ * tem: a falha vira `null`, como em `leSubdominiosKommo`. Quem chama
+ * trata a ausência como "cliente sem Kommo ligado", que é o mesmo
+ * caminho de um cliente que nunca preencheu o campo.
+ */
+export async function buscaSubdominioKommo(clientDb: string): Promise<string | null> {
+  const nome = sanitizaNomeBanco(clientDb);
+  if (!nome) return null;
+  try {
+    const linha = await queryOne<{ kommo_subdomain: string | null }>(
+      `SELECT kommo_subdomain FROM trakeamento_controle.ad_accounts
+        WHERE client_db_name = ? LIMIT 1`,
+      [nome],
+    );
+    const sub = (linha?.kommo_subdomain ?? '').trim();
+    return sub === '' ? null : sub;
+  } catch {
+    return null;
+  }
+}
+
 /** Grava o subdomínio do Kommo. `null` tira o cliente da automação. */
 export async function salvaSubdominioKommo(
   clientDb: string,

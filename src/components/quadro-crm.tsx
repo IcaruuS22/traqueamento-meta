@@ -383,7 +383,15 @@ function CartaoLeadCrm({
         ) : null}
       </div>
 
-      <div className="lead-meta mt-2">Entrou: {fmtDataHora(cartao.created_at)}</div>
+      {/* "Entrou" é da etapa de entrada; da segunda coluna em diante o que
+          interessa é quando o lead chegou ali, não quando nasceu. Sem
+          registro da passagem, volta a mostrar a entrada — data errada
+          seria pior que data antiga. */}
+      <div className="lead-meta mt-2">
+        {cartao.movido_em
+          ? `Movido: ${fmtDataHora(cartao.movido_em)}`
+          : `Entrou: ${fmtDataHora(cartao.created_at)}`}
+      </div>
     </div>
   );
 }

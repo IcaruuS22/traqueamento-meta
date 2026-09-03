@@ -292,3 +292,55 @@ describe('nomeDoCartao', () => {
     );
   });
 });
+
+describe('data de movimentação', () => {
+  test('lead na etapa de entrada não tem data de movimentação', () => {
+    const { cartoes } = montaQuadro(
+      ETAPAS_FORM,
+      ETAPAS_WPP,
+      [linha({ id: 1, meta_lead_id: 'm1', current_stage: '142', movido_em: '2026-08-09 12:00:00' })],
+      'form',
+    );
+    // `142` é a primeira etapa cadastrada: mesmo com evento gravado, o
+    // card mostra a entrada. Quem está onde nasceu não se moveu.
+    assert.equal(cartoes[0].movido_em, null);
+  });
+
+  test('etapa seguinte usa a data do evento que a etapa disparou', () => {
+    const { cartoes } = montaQuadro(
+      ETAPAS_FORM,
+      ETAPAS_WPP,
+      [linha({ id: 2, meta_lead_id: 'm2', current_stage: '143', movido_em: '2026-08-09 12:00:00' })],
+      'form',
+    );
+    assert.equal(cartoes[0].movido_em, '2026-08-09 12:00:00');
+  });
+
+  test('sem registro da passagem, o card volta a mostrar a entrada', () => {
+    const { cartoes } = montaQuadro(
+      ETAPAS_FORM,
+      ETAPAS_WPP,
+      [linha({ id: 3, meta_lead_id: 'm3', current_stage: '143', movido_em: null })],
+      'form',
+    );
+    assert.equal(cartoes[0].movido_em, null);
+  });
+
+  test('card de WhatsApp usa a data da conversa, não a do funil do Kommo', () => {
+    const { cartoes } = montaQuadro(
+      ETAPAS_FORM,
+      ETAPAS_WPP,
+      [
+        linha({
+          id: 4,
+          tem_conversa: 1,
+          status_conversa: 'ganho',
+          movido_em: '2026-08-01 00:00:00',
+          movido_conversa_em: '2026-08-20 09:30:00',
+        }),
+      ],
+      'whatsapp',
+    );
+    assert.equal(cartoes[0].movido_em, '2026-08-20 09:30:00');
+  });
+});
