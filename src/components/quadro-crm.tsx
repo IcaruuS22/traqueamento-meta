@@ -12,6 +12,7 @@ import {
 } from '@/lib/crm';
 import { acaoMoverLeadCrm } from '@/lib/acoes/crm';
 import { ehEtapaDePerda, MOTIVOS_PERDA_SUGERIDOS, TAMANHO_MOTIVO } from '@/lib/funil';
+import { BadgeGanho } from '@/components/badge-ganho';
 import { ModalLeadCrm } from '@/components/modal-lead-crm';
 import { fmtDataHora, ouTraco } from '@/lib/format';
 import { telefoneParaExibir } from '@/lib/exibicao';
@@ -367,6 +368,7 @@ function CartaoLeadCrm({
         <span className={`origem-tag ${CLASSE_ORIGEM[cartao.origem]}`}>
           {ROTULO_ORIGEM[cartao.origem]}
         </span>
+        <BadgeGanho etapa={cartao.etapa_rotulo} />
         {cartao.origem === 'form' && cartao.tem_conversa ? (
           <span className="origem-tag bg-[var(--bg-field)] text-[var(--text-secondary)]">
             + conversa

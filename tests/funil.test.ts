@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { ehEtapaDePerda, normalizaMotivo } from '../src/lib/funil';
+import { ehEtapaDeGanho, ehEtapaDePerda, normalizaMotivo } from '../src/lib/funil';
 import { faixaDoEstagio } from '../src/lib/whatsapp-conversas';
 
 /**
@@ -30,6 +30,20 @@ describe('motivo e etapa de perda', () => {
   // classificação por IA grava assim também. O MySQL compara sem
   // diferenciar caixa, então a listagem sempre acertou; antes daqui o
   // JavaScript discordava e a conversa fechada ficava em "Em aberto".
+  // A etapa do funil de formulários é espelho do CRM do cliente, então o
+  // selo "Ganho" depende de reconhecer o nome escrito lá: "Contrato
+  // assinado" é o que os clientes usam hoje.
+  test('etapa de ganho reconhece os nomes de fechamento', () => {
+    assert.equal(ehEtapaDeGanho('ganho'), true);
+    assert.equal(ehEtapaDeGanho('Contrato assinado'), true);
+    assert.equal(ehEtapaDeGanho('  CONTRATO  ASSINADO '), true);
+    assert.equal(ehEtapaDeGanho('contrato_assinado'), true);
+    assert.equal(ehEtapaDeGanho('Venda realizada'), true);
+    assert.equal(ehEtapaDeGanho('Em negociação'), false);
+    assert.equal(ehEtapaDeGanho('perdido'), false);
+    assert.equal(ehEtapaDeGanho(null), false);
+  });
+
   test('caixa e espaço do estágio não mudam a decisão', () => {
     assert.equal(ehEtapaDePerda('Perdido'), true);
     assert.equal(ehEtapaDePerda('  PERDIDO '), true);

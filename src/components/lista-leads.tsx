@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Lead } from '@/lib/db/metricas';
 import { fmtDataHora, fmtDecorrido, ouTraco } from '@/lib/format';
 import { nomeParaExibir, telefoneParaExibir } from '@/lib/exibicao';
+import { BadgeGanho } from '@/components/badge-ganho';
 
 /**
  * Tabela "Últimos leads" com filtros e "Carregar mais".
@@ -195,7 +196,12 @@ export function ListaLeads({
                 </td>
                 <td>{ouTraco(l.email)}</td>
                 <td>{ouTraco(telefoneParaExibir(l.phone))}</td>
-                <td>{ouTraco(l.current_stage)}</td>
+                <td>
+                  <span className="inline-flex flex-wrap items-center gap-1.5">
+                    {ouTraco(l.current_stage)}
+                    <BadgeGanho etapa={l.current_stage} />
+                  </span>
+                </td>
                 <td className="whitespace-nowrap">{fmtDataHora(l.created_at)}</td>
                 <td className="whitespace-nowrap">
                   {l.last_moved_at ? (

@@ -1,4 +1,4 @@
-import { ESTAGIO_PERDIDO, normalizaEstagio } from '@/lib/whatsapp-conversas';
+import { ESTAGIO_GANHO, ESTAGIO_PERDIDO, normalizaEstagio } from '@/lib/whatsapp-conversas';
 
 /**
  * Motivo de perda — as regras que os dois lados usam.
@@ -44,4 +44,30 @@ export function normalizaMotivo(valor: unknown): string | null {
 /** A etapa de destino é a que fecha a conversa como perdida? */
 export function ehEtapaDePerda(etapa: string | null | undefined): boolean {
   return normalizaEstagio(etapa) === ESTAGIO_PERDIDO;
+}
+
+/**
+ * Nomes de etapa que significam negócio fechado.
+ *
+ * A etapa do funil de formulários é texto livre espelhado do CRM do
+ * cliente, então não dá para perguntar a uma tabela quem é a etapa de
+ * ganho: sobra reconhecer os nomes que os clientes usam. "ganho" é o
+ * que a classificação por IA grava no funil de WhatsApp; os outros são
+ * o mesmo fim escrito de outro jeito no Kommo.
+ */
+const ETAPAS_DE_GANHO = new Set([
+  ESTAGIO_GANHO,
+  'contrato assinado',
+  'contrato fechado',
+  'venda realizada',
+  'venda fechada',
+  'fechado',
+]);
+
+/** A etapa fecha o negócio como ganho? */
+export function ehEtapaDeGanho(etapa: string | null | undefined): boolean {
+  const nome = normalizaEstagio(etapa)
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ');
+  return ETAPAS_DE_GANHO.has(nome);
 }
