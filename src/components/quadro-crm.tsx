@@ -365,9 +365,14 @@ function CartaoLeadCrm({
             {PLATAFORMA_ANUNCIO}
           </span>
         ) : null}
-        <span className={`origem-tag ${CLASSE_ORIGEM[cartao.origem]}`}>
-          {ROTULO_ORIGEM[cartao.origem]}
-        </span>
+        {/* A origem "Formulário" some do card: ela é o caso comum, e a
+            etiqueta repetida em todo card só empurrava as marcas que
+            valem (anúncio, ganho, conversa) para fora da linha. */}
+        {cartao.origem === 'form' ? null : (
+          <span className={`origem-tag ${CLASSE_ORIGEM[cartao.origem]}`}>
+            {ROTULO_ORIGEM[cartao.origem]}
+          </span>
+        )}
         <BadgeGanho etapa={cartao.etapa_rotulo} />
         {cartao.origem === 'form' && cartao.tem_conversa ? (
           <span className="origem-tag bg-[var(--bg-field)] text-[var(--text-secondary)]">
