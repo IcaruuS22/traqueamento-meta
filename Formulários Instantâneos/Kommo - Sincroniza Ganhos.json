@@ -1,0 +1,451 @@
+{
+  "name": "Kommo - Sincroniza Ganhos",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Kommo - Sincroniza Ganhos\n\n**O que este workflow faz:** de 15 em 15 minutos, pega os leads de formulário que já existem no banco de cada cliente, pergunta ao Kommo em que etapa cada negócio está e, para os que estão numa etapa marcada como **conversão** na aba Eventos, atualiza a etapa no painel e grava o valor do negócio informado pelo Kommo.\n\n**O Kommo nunca é alterado.** Só há `GET /api/v4/leads` aqui: nenhum negócio é criado, movido ou editado no CRM. A escrita acontece só no seu banco, em `customers`.\n\n**Ele também NÃO envia evento nenhum para a Meta.** Quem envia Purchase é o fluxo de eventos, no momento em que o webhook do Kommo chega. Este workflow existe para corrigir o painel quando aquele webhook se perdeu — e um webhook perdido continua sendo um evento não enviado, que este fluxo não recupera.\n\n**Configuração necessária (uma única vez):**\n1. Marque a caixa **Conta como conversão** na etapa de ganho de cada cliente, na aba **Eventos** do painel.\n2. Preencha o **subdomínio do Kommo** de cada cliente em **/admin/clientes** — sem ele o cliente é pulado, porque um workflow por agenda não recebe o webhook de onde o subdomínio costuma vir.\n3. Rode a migração `Banco de Dados/migracao_kommo_subdominio.sql` no banco central.\n4. Depois de importar, **ATIVE este workflow** — sem isso o Schedule Trigger nunca dispara.\n\n**Fila:** entra lead com `crm_lead_id` preenchido que ainda não está numa etapa de conversão. O lead sai da fila no momento em que ganha, porque a própria etapa dele passa a ser de conversão; quem não ganhou volta a ser consultado no ciclo seguinte.\n\n**Um lead que já estava perdido e depois ganhou** tem a etapa corrigida aqui, mas `lost_at` e `lost_reason` ficam como estavam — o quadro mostra a coluna certa, e o modal ainda mostra o motivo da perda antiga. Limpar isso exigiria escrever colunas que nem todo banco de cliente tem.\n\n**Por que não existe loop dentro de loop:** as consultas por cliente rodam de uma vez só para todos, cada linha carregando a coluna `client_db` para não se perder de qual cliente veio. Há UM loop, sobre os lotes de ids. Loop aninhado no n8n não reinicia o contador do loop interno: ele ficaria concluído depois do primeiro cliente e todos os demais seriam pulados em silêncio.",
+        "height": 700,
+        "width": 580,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1180,
+        -200
+      ],
+      "typeVersion": 1,
+      "id": "sticky-kommo-ganhos",
+      "name": "Sticky Note Kommo Ganhos"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "schedule-1",
+      "name": "A Cada 15 Minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1180,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT a.* FROM `trakeamento_controle`.`ad_accounts` a WHERE a.status = 'ACTIVE' AND COALESCE(a.kommo_access_token, '') <> '' AND COALESCE(a.kommo_subdomain, '') <> ''",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -960,
+        560
+      ],
+      "id": "mysql-2",
+      "name": "Busca Contas Kommo",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().filter(function(i){ return i.json && i.json.client_db_name; });\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -740,
+        560
+      ],
+      "id": "code-3",
+      "name": "Filtra Contas Validas"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT '{{ $json.client_db_name.replace(/[^A-Za-z0-9_]/g, '') }}' AS client_db, status_id, (SELECT COUNT(*) FROM information_schema.COLUMNS c WHERE c.TABLE_SCHEMA = '{{ $json.client_db_name.replace(/[^A-Za-z0-9_]/g, '') }}' AND c.TABLE_NAME = 'customers' AND c.COLUMN_NAME = 'crm_value') AS tem_crm_value FROM `{{ $json.client_db_name.replace(/[^A-Za-z0-9_]/g, '') }}`.`crm_meta_event_map` WHERE is_conversion = 1 AND ativo = 1 AND COALESCE(status_id, '') <> ''",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -520,
+        560
+      ],
+      "id": "mysql-4",
+      "name": "Busca Etapas de Ganho",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $('Filtra Contas Validas').all();\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        560
+      ],
+      "id": "code-5",
+      "name": "Reemite Contas"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT '{{ $json.client_db_name.replace(/[^A-Za-z0-9_]/g, '') }}' AS client_db, id AS customer_id, crm_lead_id FROM `{{ $json.client_db_name.replace(/[^A-Za-z0-9_]/g, '') }}`.`customers` WHERE COALESCE(crm_lead_id, '') <> '' AND COALESCE(current_stage, '') NOT IN (SELECT status_id FROM `{{ $json.client_db_name.replace(/[^A-Za-z0-9_]/g, '') }}`.`crm_meta_event_map` WHERE is_conversion = 1 AND ativo = 1 AND COALESCE(status_id, '') <> '') ORDER BY id DESC LIMIT 500",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -80,
+        560
+      ],
+      "id": "mysql-6",
+      "name": "Busca Leads a Verificar",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const IDS_POR_LOTE = 50;\nconst MAX_LOTES = 20;\n\nconst contas = $('Filtra Contas Validas').all().map(function(i){ return i.json; });\nconst etapasRaw = $('Busca Etapas de Ganho').all().map(function(i){ return i.json; });\nconst leads = $input.all().map(function(i){ return i.json; })\n  .filter(function(l){ return l && l.client_db && l.customer_id && l.crm_lead_id; });\n\nconst contaPorDb = {};\ncontas.forEach(function(c){ contaPorDb[c.client_db_name] = c; });\n\nconst etapasPorDb = {};\nconst temValorPorDb = {};\netapasRaw.forEach(function(e){\n  if (!e || !e.client_db || e.status_id === null || e.status_id === undefined) return;\n  if (!etapasPorDb[e.client_db]) etapasPorDb[e.client_db] = [];\n  etapasPorDb[e.client_db].push(String(e.status_id));\n  temValorPorDb[e.client_db] = Number(e.tem_crm_value) > 0;\n});\n\n// Cliente sem etapa de conversão marcada não tem ganho para reconhecer:\n// fica de fora sem que nada seja gravado, e volta sozinho no ciclo\n// seguinte à marcação na aba Eventos.\nconst porCliente = {};\nleads.forEach(function(l){\n  const conta = contaPorDb[l.client_db];\n  const etapas = etapasPorDb[l.client_db] || [];\n  if (!conta || etapas.length === 0) return;\n  if (!porCliente[l.client_db]) porCliente[l.client_db] = [];\n  porCliente[l.client_db].push(l);\n});\n\n// Um lote = uma chamada ao Kommo.\nconst lotesPorCliente = {};\nObject.keys(porCliente).forEach(function(db){\n  const conta = contaPorDb[db];\n  const lista = porCliente[db];\n  const lotes = [];\n  for (let i = 0; i < lista.length; i += IDS_POR_LOTE) {\n    const pedaco = lista.slice(i, i + IDS_POR_LOTE);\n    const filtro = pedaco.map(function(l){\n      return 'filter[id][]=' + encodeURIComponent(String(l.crm_lead_id));\n    }).join('&');\n    lotes.push({\n      client_db: db,\n      subdominio: String(conta.kommo_subdomain || ''),\n      kommo_access_token: String(conta.kommo_access_token || ''),\n      etapas_ganho: etapasPorDb[db] || [],\n      tem_crm_value: temValorPorDb[db] === true,\n      // O id do negócio no Kommo é o que volta na resposta; o mapa é o\n      // que liga cada um de volta ao customer_id certo deste banco.\n      mapa: pedaco.map(function(l){\n        return { crm_lead_id: String(l.crm_lead_id), customer_id: Number(l.customer_id) };\n      }),\n      url: 'https://' + String(conta.kommo_subdomain || '') +\n        '.kommo.com/api/v4/leads?limit=250&' + filtro\n    });\n  }\n  lotesPorCliente[db] = lotes;\n});\n\n// Round-robin entre clientes até bater o teto global.\nconst dbs = Object.keys(lotesPorCliente);\nconst fila = [];\nlet idx = 0;\nwhile (fila.length < MAX_LOTES) {\n  let adicionou = false;\n  for (let d = 0; d < dbs.length && fila.length < MAX_LOTES; d++) {\n    const lotes = lotesPorCliente[dbs[d]];\n    if (idx < lotes.length) { fila.push(lotes[idx]); adicionou = true; }\n  }\n  if (!adicionou) break;\n  idx++;\n}\n\nreturn fila.map(function(f){ return { json: f }; });\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        140,
+        560
+      ],
+      "id": "code-7",
+      "name": "Monta Lotes Kommo"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        360,
+        560
+      ],
+      "id": "splitinbatches-8",
+      "name": "Para Cada Lote"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { message: 'Ciclo de sincronização de ganhos concluído.', lotes_processados: $input.all().length } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        580,
+        340
+      ],
+      "id": "code-9",
+      "name": "Ciclo Concluido"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.kommo_access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        580,
+        560
+      ],
+      "id": "http-10",
+      "name": "Busca Negocios no Kommo",
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "function sqlVal(v) {\n  if (v === null || v === undefined || v === '') return 'NULL';\n  return JSON.stringify(String(v));\n}\n\nconst lote = $('Para Cada Lote').first().json;\nconst db = String(lote.client_db).replace(/[^A-Za-z0-9_]/g, '');\nconst etapas = (lote.etapas_ganho || []).map(String);\n// A resposta pode chegar já como objeto ou como texto cru (o Kommo manda\n// application/hal+json, e nem toda versão do n8n desembrulha isso\n// sozinha). Aceita as duas formas em vez de devolver \"nada\" em silêncio.\nlet resposta = $json || {};\nif (typeof resposta.data === 'string') {\n  try { resposta = JSON.parse(resposta.data); } catch (e) { resposta = { error: 'resposta ilegivel' }; }\n}\nif (typeof resposta === 'string') {\n  try { resposta = JSON.parse(resposta); } catch (e) { resposta = { error: 'resposta ilegivel' }; }\n}\nif (resposta && typeof resposta.data === 'string') {\n  try { resposta = JSON.parse(resposta.data); } catch (e) { resposta = { error: 'resposta ilegivel' }; }\n}\n\nconst nada = [{ json: { acao: 'nada', client_db: db } }];\nif (!resposta || resposta.error) return nada;\n\nconst negocios = (resposta._embedded && resposta._embedded.leads) || [];\nif (!negocios.length) return nada;\n\nconst customerPorLead = {};\n(lote.mapa || []).forEach(function(m){ customerPorLead[String(m.crm_lead_id)] = m.customer_id; });\n\nconst saida = [];\nnegocios.forEach(function(neg){\n  const status = String(neg.status_id === null || neg.status_id === undefined ? '' : neg.status_id);\n  if (etapas.indexOf(status) === -1) return;\n\n  const customerId = customerPorLead[String(neg.id)];\n  if (!customerId) return;\n\n  const preco = Number(neg.price);\n  const valor = Number.isFinite(preco) && preco > 0 ? String(preco) : 'NULL';\n  const campoValor = lote.tem_crm_value\n    ? ', crm_value = COALESCE(' + valor + ', crm_value)'\n    : '';\n\n  // Só UPDATE em customers: o evento Purchase é do fluxo de eventos, que\n  // dispara pelo webhook. Este workflow corrige o painel e nada mais —\n  // não fala com a CAPI nem escreve no Kommo em lugar nenhum.\n  const sql = 'UPDATE \\`' + db + '\\`.\\`customers\\` SET current_stage = ' + sqlVal(status) +\n    campoValor + ' WHERE id = ' + Number(customerId) + ';';\n\n  saida.push({ json: {\n    acao: 'atualiza',\n    sql: sql,\n    client_db: db,\n    customer_id: customerId,\n    crm_lead_id: neg.id,\n    status_id: status,\n    valor: valor\n  } });\n});\n\nreturn saida.length ? saida : nada;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        560
+      ],
+      "id": "code-11",
+      "name": "Interpreta Ganhos"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-c-12",
+              "leftValue": "={{ $json.acao }}",
+              "rightValue": "atualiza",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1020,
+        560
+      ],
+      "id": "if-13",
+      "name": "Tem Ganho?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1240,
+        560
+      ],
+      "id": "mysql-14",
+      "name": "Marca Lead Como Ganho",
+      "retryOnFail": true,
+      "credentials": {
+        "mySql": {
+          "id": "MYSQL_CRED_PLACEHOLDER",
+          "name": "MySQL Trakeamento (configurar no n8n)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "connections": {
+    "A Cada 15 Minutos": {
+      "main": [
+        [
+          {
+            "node": "Busca Contas Kommo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Contas Kommo": {
+      "main": [
+        [
+          {
+            "node": "Filtra Contas Validas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtra Contas Validas": {
+      "main": [
+        [
+          {
+            "node": "Busca Etapas de Ganho",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Etapas de Ganho": {
+      "main": [
+        [
+          {
+            "node": "Reemite Contas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reemite Contas": {
+      "main": [
+        [
+          {
+            "node": "Busca Leads a Verificar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Leads a Verificar": {
+      "main": [
+        [
+          {
+            "node": "Monta Lotes Kommo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monta Lotes Kommo": {
+      "main": [
+        [
+          {
+            "node": "Para Cada Lote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Para Cada Lote": {
+      "main": [
+        [
+          {
+            "node": "Ciclo Concluido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Busca Negocios no Kommo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Negocios no Kommo": {
+      "main": [
+        [
+          {
+            "node": "Interpreta Ganhos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Interpreta Ganhos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Interpreta Ganhos": {
+      "main": [
+        [
+          {
+            "node": "Tem Ganho?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Ganho?": {
+      "main": [
+        [
+          {
+            "node": "Marca Lead Como Ganho",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Para Cada Lote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marca Lead Como Ganho": {
+      "main": [
+        [
+          {
+            "node": "Para Cada Lote",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Para Cada Lote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "meta": {
+    "instanceId": "manual-build"
+  },
+  "id": "KommoSincronizaGanhos",
+  "tags": []
+}
