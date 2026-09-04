@@ -223,6 +223,13 @@ export function ModalLeadCrm({
 
   const origem = lead?.origem ?? cartao.origem ?? null;
 
+  // Negócio perdido não tem valor a fechar. No funil de formulário quem
+  // diz isso é `perdido_em`, gravado pela automação que lê a perda no
+  // Kommo; no de WhatsApp é a própria etapa, que muda aqui dentro — por
+  // isso sai de `lead`, e não do card: mandar o lead para perdido faz o
+  // campo sumir na hora, sem fechar o modal.
+  const perdido = !!lead && (lead.perdido_em !== null || ehEtapaDePerda(lead.etapa_whatsapp));
+
   return (
     <div
       className="modal-overlay"
@@ -380,49 +387,66 @@ export function ModalLeadCrm({
                 )}
               </Secao>
 
-              <Secao titulo="Valor do negócio">
-                <label
-                  className="mb-1 block text-xs font-medium text-[var(--text-tertiary)]"
-                  htmlFor="crm-valor"
-                >
-                  Valor fechado (R$)
-                </label>
-                <div className="flex flex-wrap items-center gap-2">
-                  <input
-                    id="crm-valor"
-                    className="field max-w-[200px]"
-                    inputMode="decimal"
-                    placeholder="0,00"
-                    value={valor}
-                    disabled={salvandoValor}
-                    onChange={(e) => setValor(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        void salvaValor();
-                      }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    disabled={salvandoValor}
-                    onClick={() => void salvaValor()}
+              {perdido ? (
+                /* Lead perdido não recebe valor: o negócio não fechou.
+                   O que já estava salvo continua à vista — pode ter sido
+                   gravado antes da perda, e apagá-lo da tela esconderia
+                   receita que o painel ainda conta. */
+                lead.crm_value ? (
+                  <Secao titulo="Valor do negócio">
+                    <p className="text-body-small text-tertiary">
+                      Salvo antes da perda: <strong>{fmtBRL(lead.crm_value)}</strong>
+                    </p>
+                    <p className="mt-2 text-xs text-[var(--text-tertiary)]">
+                      O negócio está como perdido, então o valor não é editável aqui.
+                    </p>
+                  </Secao>
+                ) : null
+              ) : (
+                <Secao titulo="Valor do negócio">
+                  <label
+                    className="mb-1 block text-xs font-medium text-[var(--text-tertiary)]"
+                    htmlFor="crm-valor"
                   >
-                    {salvandoValor ? 'Salvando…' : 'Salvar valor'}
-                  </button>
-                  {lead.crm_value ? (
-                    <span className="text-body-small text-tertiary">
-                      Salvo: {fmtBRL(lead.crm_value)}
-                    </span>
-                  ) : null}
-                </div>
-                <p className="mt-2 text-xs text-[var(--text-tertiary)]">
-                  A automação preenche isto com o valor do negócio no CRM. Editar aqui
-                  substitui o número e entra na receita e no ROAS do painel. Nada é reenviado
-                  à Meta: o que ela já recebeu foi contado lá.
-                </p>
-              </Secao>
+                    Valor fechado (R$)
+                  </label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      id="crm-valor"
+                      className="field max-w-[200px]"
+                      inputMode="decimal"
+                      placeholder="0,00"
+                      value={valor}
+                      disabled={salvandoValor}
+                      onChange={(e) => setValor(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void salvaValor();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      disabled={salvandoValor}
+                      onClick={() => void salvaValor()}
+                    >
+                      {salvandoValor ? 'Salvando…' : 'Salvar valor'}
+                    </button>
+                    {lead.crm_value ? (
+                      <span className="text-body-small text-tertiary">
+                        Salvo: {fmtBRL(lead.crm_value)}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 text-xs text-[var(--text-tertiary)]">
+                    A automação preenche isto com o valor do negócio no CRM. Editar aqui
+                    substitui o número e entra na receita e no ROAS do painel. Nada é reenviado
+                    à Meta: o que ela já recebeu foi contado lá.
+                  </p>
+                </Secao>
+              )}
 
               <Secao titulo="Dados do lead">
                 <dl className="rastreio-lista">
