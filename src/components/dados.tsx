@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { fmtInt, fmtDec, fmtDuracao, variacao } from '@/lib/format';
 import { Icones, type PropsSvg } from '@/components/icones';
+import type { RankingPerdas } from '@/lib/perdas';
 
 /**
  * Componentes de exibição de dados.
@@ -377,6 +378,73 @@ export function TempoEntreEtapas({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Motivos de perda, do mais frequente para o menos.
+ *
+ * Rótulo em cima e barra de largura inteira embaixo, como em "Tempo
+ * médio entre etapas", e não a barra de rótulo fixo de
+ * `BarrasHorizontais`: motivo é texto livre digitado pelo time, e nos
+ * 140px daquela coluna "Comprou do concorrente" vira "Comprou do conc…".
+ *
+ * A barra é proporcional ao maior motivo, para o segundo colocado não
+ * virar um risco quando o primeiro leva quase tudo; a fatia real de cada
+ * um está no percentual ao lado, que é sobre o total de perdas.
+ *
+ * "Sem motivo registrado" fecha a lista em cinza. Não é um motivo, é o
+ * buraco no preenchimento — e num cliente que registra pouco ele é a
+ * informação mais útil do card.
+ */
+export function MotivosDePerda({ ranking }: { ranking: RankingPerdas }) {
+  if (ranking.total === 0) {
+    return <Vazio>Nenhum lead perdido no período.</Vazio>;
+  }
+
+  const max = Math.max(...ranking.itens.map((i) => i.valor), 1);
+
+  return (
+    <div>
+      <p className="mb-4 text-body-small text-tertiary">
+        {fmtInt(ranking.total)} {ranking.total === 1 ? 'lead perdido' : 'leads perdidos'} ·{' '}
+        {fmtInt(ranking.motivos_distintos)}{' '}
+        {ranking.motivos_distintos === 1 ? 'motivo distinto' : 'motivos distintos'}
+      </p>
+
+      <div className="etapa-list">
+        {ranking.itens.map((item) => (
+          <div
+            className={item.sem_motivo ? 'etapa-row motivo-sem' : 'etapa-row'}
+            key={item.rotulo}
+          >
+            <div className="etapa-row-top">
+              <span className="etapa-label">{item.rotulo}</span>
+              <span className="etapa-meta">
+                <span className="etapa-time">{fmtDec(item.percentual, 1)}%</span>
+                <span className="etapa-count">
+                  {fmtInt(item.valor)} {item.valor === 1 ? 'lead' : 'leads'}
+                </span>
+              </span>
+            </div>
+            <div className="etapa-track">
+              <div
+                className="etapa-fill"
+                style={{ width: `${Math.max(4, Math.round((item.valor / max) * 100))}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {ranking.sem_motivo > 0 ? (
+        <p className="mt-4 text-xs text-[var(--text-tertiary)]">
+          O motivo do lead de formulário vem do CRM do cliente, pela automação; o do WhatsApp é
+          digitado no painel ao mover a conversa para perdido. Perda sem motivo é perda que
+          ninguém registrou.
+        </p>
+      ) : null}
     </div>
   );
 }

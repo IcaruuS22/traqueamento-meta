@@ -2726,3 +2726,13 @@ select.filtro-campo {
     gap: 2px;
   }
 }
+
+/* Linha do "sem motivo registrado" no card de Motivos de perda: mesma
+   forma das outras, cor apagada — não é um motivo, é a falta dele. */
+.motivo-sem .etapa-label,
+.motivo-sem .etapa-time {
+  color: var(--text-tertiary);
+}
+.motivo-sem .etapa-fill {
+  background: var(--border-default);
+}

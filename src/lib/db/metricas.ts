@@ -2,7 +2,9 @@ import 'server-only';
 import type { BancoCliente } from '@/lib/db/cliente';
 import { LacunasDeEsquema, lacunaDeEsquema } from '@/lib/db/pool';
 import { ordenaFunil } from '@/lib/meta-eventos';
+import { ESTAGIO_PERDIDO } from '@/lib/whatsapp-conversas';
 import { transicoesDoFunil, type MarcoDeEtapa, type Transicao } from '@/lib/transicoes';
+import type { LinhaMotivoPerda } from '@/lib/perdas';
 import {
   condicaoTimestamp,
   condicaoData,
@@ -82,6 +84,8 @@ export type Metricas = Totais & {
   ultimos_leads: Lead[];
   /** Etapas distintas dos leads do período, para o filtro da tabela. */
   etapas_de_leads: string[];
+  /** Motivos crus das perdas do período; o ranking é montado na tela. */
+  motivos_de_perda: LinhaMotivoPerda[];
   /**
    * Tabelas e colunas que faltam neste banco de cliente. Vazio no caso
    * normal. A tela avisa em vez de exibir os zeros como se fossem dado
@@ -412,6 +416,51 @@ async function etapasDeLeads(db: BancoCliente, f: Fragmento): Promise<string[]> 
 }
 
 /**
+ * Motivos das perdas do período, um por funil.
+ *
+ * São duas consultas porque são duas definições de perdido, e nenhuma
+ * das duas serve à outra. No funil de formulário quem manda é a etapa:
+ * `crm_meta_event_map.is_lost` marca a coluna de perda na aba Eventos, e
+ * o motivo vem de `customers.lost_reason`, escrito pela automação que lê
+ * a perda no Kommo. No de WhatsApp o funil é do painel, a etapa de perda
+ * é a própria `whatsapp_conversations.status` e o motivo é digitado no
+ * painel, em `whatsapp_conversations.lost_reason`.
+ *
+ * Cada uma cai para lista vazia no seu próprio `lacunas.ou`: as colunas
+ * de perda chegaram em migrações diferentes, e o cliente que rodou uma e
+ * não a outra tem de ver metade do quadro, não nenhuma.
+ *
+ * O canal escolhido na tela dispensa a consulta do outro funil — sem
+ * isso a Visão geral de Formulários faria uma ida ao banco para trazer
+ * zero linha.
+ */
+async function motivosPerdaForm(db: BancoCliente, f: Fragmento): Promise<LinhaMotivoPerda[]> {
+  const linhas = await db.query<{ motivo: string | null; total: number | string }>(
+    `SELECT NULLIF(TRIM(c.lost_reason), '') AS motivo, COUNT(*) AS total
+       FROM ${db.tabela('customers')} c
+       JOIN ${db.tabela('crm_meta_event_map')} em
+         ON em.status_id = c.current_stage AND em.is_lost = 1
+       ${f.sql}
+      GROUP BY motivo`,
+    f.params,
+  );
+  return linhas.map((l) => ({ motivo: l.motivo, total: Number(l.total) || 0 }));
+}
+
+async function motivosPerdaWhatsapp(db: BancoCliente, f: Fragmento): Promise<LinhaMotivoPerda[]> {
+  const condicao = f.sql ? `${f.sql} AND` : 'WHERE';
+  const linhas = await db.query<{ motivo: string | null; total: number | string }>(
+    `SELECT NULLIF(TRIM(wc.lost_reason), '') AS motivo, COUNT(*) AS total
+       FROM ${db.tabela('customers')} c
+       JOIN ${db.tabela('whatsapp_conversations')} wc ON wc.customer_id = c.id
+       ${condicao} LOWER(TRIM(wc.status)) = ?
+      GROUP BY motivo`,
+    [...f.params, ESTAGIO_PERDIDO],
+  );
+  return linhas.map((l) => ({ motivo: l.motivo, total: Number(l.total) || 0 }));
+}
+
+/**
  * Tempo médio de cada passo do funil.
  *
  * Pega, por lead, a primeira vez que ele alcançou cada etapa, e mede só
@@ -515,6 +564,8 @@ export async function buscaMetricas(db: BancoCliente, periodo: Periodo): Promise
     transicoes,
     leadsRecentes,
     etapasDisponiveis,
+    perdasForm,
+    perdasWhatsapp,
     anunciosAnt,
     leadsAnt,
     conversoesAnt,
@@ -529,6 +580,12 @@ export async function buscaMetricas(db: BancoCliente, periodo: Periodo): Promise
     lacunas.ou(tempoEntreEtapas(db, atual.andC), [] as Transicao[]),
     lacunas.ou(ultimosLeads(db, atual.whereC), [] as Lead[]),
     lacunas.ou(etapasDeLeads(db, atual.whereC), [] as string[]),
+    periodo.canal === 'whatsapp'
+      ? ([] as LinhaMotivoPerda[])
+      : lacunas.ou(motivosPerdaForm(db, atual.whereC), [] as LinhaMotivoPerda[]),
+    periodo.canal === 'form'
+      ? ([] as LinhaMotivoPerda[])
+      : lacunas.ou(motivosPerdaWhatsapp(db, atual.whereC), [] as LinhaMotivoPerda[]),
     ant ? lacunas.ou(totaisAnuncios(db, ant.andInsights), ANUNCIOS_ZERADOS) : ANUNCIOS_ZERADOS,
     ant ? lacunas.ou(contaLeads(db, ant.whereCustomers), 0) : 0,
     ant ? lacunas.ou(contaConversoes(db, ant.convJoin, ant.whereConv), 0) : 0,
@@ -554,6 +611,7 @@ export async function buscaMetricas(db: BancoCliente, periodo: Periodo): Promise
     tempo_medio_entre_etapas: transicoes,
     ultimos_leads: leadsRecentes,
     etapas_de_leads: etapasDisponiveis,
+    motivos_de_perda: [...perdasForm, ...perdasWhatsapp],
     lacunas_de_esquema: lacunas.lista(),
   };
 }

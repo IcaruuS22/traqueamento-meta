@@ -12,12 +12,14 @@ import {
   type Canal,
 } from '@/lib/periodo';
 import { kpisDoEscopo } from '@/lib/kpis';
+import { montaRankingPerdas } from '@/lib/perdas';
 import type { Orcamento } from '@/lib/orcamento';
 import {
   Card,
   KpiCard,
   Funil,
   GraficoDiario,
+  MotivosDePerda,
   TempoEntreEtapas,
   Vazio,
   type TomKpi,
@@ -270,6 +272,14 @@ function CorpoMetricas({
           <TempoEntreEtapas itens={metricas.tempo_medio_entre_etapas} />
         </Card>
       </div>
+
+      <Card
+        titulo="Motivos de perda"
+        descricao="Por que os leads do período não fecharam, do motivo mais frequente para o menos."
+        className="mt-4"
+      >
+        <MotivosDePerda ranking={montaRankingPerdas(metricas.motivos_de_perda)} />
+      </Card>
 
       <Card titulo="Últimos leads" className="mt-4">
         {metricas.ultimos_leads.length ? (
