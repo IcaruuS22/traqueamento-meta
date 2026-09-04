@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { DetalheLeadCrm } from '@/lib/db/crm';
-import type { CartaoCrm } from '@/lib/crm';
+import type { CartaoCrm, OrigemLead } from '@/lib/crm';
 import {
   CLASSE_ORIGEM,
   DESCRICAO_ORIGEM,
@@ -37,6 +37,26 @@ import { telefoneParaExibir } from '@/lib/exibicao';
 
 type Aviso = { tipo: 'ok' | 'erro'; texto: string };
 
+/**
+ * O mínimo que o modal precisa saber antes de a resposta do detalhe
+ * chegar: o `id` para buscar e o resto só para o cabeçalho não abrir
+ * vazio. Não é `CartaoCrm` inteiro porque a tabela "Últimos leads"
+ * também abre este modal e não monta card nenhum — ali não existem
+ * `chave_coluna`, `mensagens_nao_lidas` e companhia.
+ *
+ * `origem` é opcional pelo mesmo motivo: a lista não a carrega, e ela
+ * vem no detalhe de qualquer jeito. Sem ela o cabeçalho só não mostra a
+ * etiqueta durante o carregamento.
+ */
+export type ResumoParaModal = {
+  id: number;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  phone: string | null;
+  origem?: OrigemLead;
+};
+
 function Secao({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <section className="mt-5 first:mt-0">
@@ -69,12 +89,12 @@ export function ModalLeadCrm({
   podeExcluir = false,
 }: {
   cliente: string;
-  cartao: CartaoCrm;
+  cartao: ResumoParaModal;
   aoFechar: () => void;
-  /** Reflete no quadro o que foi editado aqui, sem recarregar a tela. */
-  aoAtualizar: (mudanca: Partial<CartaoCrm> & { id: number }) => void;
-  /** Tira o card do quadro depois que o lead foi apagado no banco. */
-  aoExcluir: (id: number) => void;
+  /** Reflete na tela de origem o que foi editado aqui, sem recarregar. */
+  aoAtualizar?: (mudanca: Partial<CartaoCrm> & { id: number }) => void;
+  /** Tira o lead da tela de origem depois que ele foi apagado no banco. */
+  aoExcluir?: (id: number) => void;
   /**
    * Sessão de administrador. Só controla o que o modal mostra — quem
    * recusa a exclusão de fato é `acaoExcluirLead`, no servidor.
@@ -144,7 +164,7 @@ export function ModalLeadCrm({
     }
     // O card não pode continuar no quadro apontando para um lead que não
     // existe mais: sai do quadro e o modal fecha junto.
-    aoExcluir(lead.id);
+    aoExcluir?.(lead.id);
     aoFechar();
   }
 
@@ -190,7 +210,7 @@ export function ModalLeadCrm({
         etapa_whatsapp: etapa,
         motivo_perda: ehEtapaDePerda(etapa) ? motivoPerda : null,
       });
-      aoAtualizar({
+      aoAtualizar?.({
         id: lead.id,
         etapa,
         etapa_rotulo: rotulo,
@@ -201,7 +221,7 @@ export function ModalLeadCrm({
     }
   }
 
-  const origem = lead?.origem ?? cartao.origem;
+  const origem = lead?.origem ?? cartao.origem ?? null;
 
   return (
     <div
@@ -216,7 +236,11 @@ export function ModalLeadCrm({
           <div className="min-w-0">
             <h3 className="truncate text-[15px] font-semibold">{nome}</h3>
             <p className="truncate text-body-small text-tertiary">
-              <span className={`origem-tag ${CLASSE_ORIGEM[origem]}`}>{ROTULO_ORIGEM[origem]}</span>{' '}
+              {origem ? (
+                <span className={`origem-tag ${CLASSE_ORIGEM[origem]}`}>
+                  {ROTULO_ORIGEM[origem]}
+                </span>
+              ) : null}{' '}
               {lead?.phone ? `· ${telefoneParaExibir(lead.phone)}` : ''}
             </p>
           </div>
@@ -262,7 +286,7 @@ export function ModalLeadCrm({
 
               <Secao titulo="Origem">
                 <dl className="rastreio-lista">
-                  <Linha rotulo="Tipo de contato" valor={DESCRICAO_ORIGEM[origem]} />
+                  <Linha rotulo="Tipo de contato" valor={DESCRICAO_ORIGEM[lead.origem]} />
                   <Linha rotulo="Entrou em" valor={fmtDataHora(lead.created_at)} />
                   <Linha rotulo="Campanha" valor={ouTraco(lead.campanha)} />
                   <Linha rotulo="Conjunto" valor={ouTraco(lead.conjunto)} />
@@ -275,7 +299,7 @@ export function ModalLeadCrm({
               </Secao>
 
               <Secao titulo="Etapa">
-                {origem === 'whatsapp' ? (
+                {lead.origem === 'whatsapp' ? (
                   <>
                     <label className="mb-1 block text-xs font-medium text-[var(--text-tertiary)]" htmlFor="crm-etapa">
                       Etapa no funil de WhatsApp

@@ -6,6 +6,7 @@ import { fmtDataHora, fmtDecorrido, ouTraco } from '@/lib/format';
 import { nomeParaExibir, telefoneParaExibir } from '@/lib/exibicao';
 import { BadgeGanho } from '@/components/badge-ganho';
 import { BadgePerdido } from '@/components/badge-perdido';
+import { ModalLeadCrm } from '@/components/modal-lead-crm';
 
 /**
  * Tabela "Últimos leads" com filtros e "Carregar mais".
@@ -43,6 +44,13 @@ export function ListaLeads({
   // A primeira página só é "a última" quando veio incompleta. Vindo
   // cheia não dá para saber sem perguntar — o botão continua à mostra.
   const [acabou, setAcabou] = useState(iniciais.length < POR_PAGINA);
+
+  // Lead aberto no modal de resumo. É o mesmo modal do quadro do CRM:
+  // ali o motivo da perda, a campanha e o rastreio já estão montados, e
+  // uma segunda tela de detalhe divergiria da primeira no primeiro
+  // campo novo. A lista não passa `podeExcluir`, então o modal abre sem
+  // o botão de excluir — apagar lead é assunto do CRM.
+  const [aberto, setAberto] = useState<Lead | null>(null);
 
   const [etapa, setEtapa] = useState('');
   const [nome, setNome] = useState('');
@@ -187,6 +195,9 @@ export function ListaLeads({
               {['Nome', 'E-mail', 'Telefone', 'Etapa', 'Gerado em', 'Movimentação'].map((c) => (
                 <th key={c}>{c}</th>
               ))}
+              <th>
+                <span className="sr-only">Resumo</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -217,11 +228,20 @@ export function ListaLeads({
                     <span className="text-[var(--text-tertiary)]">Ainda não moveu</span>
                   )}
                 </td>
+                <td>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setAberto(l)}
+                  >
+                    Resumo
+                  </button>
+                </td>
               </tr>
             ))}
             {leads.length === 0 && !carregando ? (
               <tr>
-                <td colSpan={6} className="text-[var(--text-tertiary)]">
+                <td colSpan={7} className="text-[var(--text-tertiary)]">
                   {etapa || termo ? 'Nenhum lead com esses filtros.' : 'Nenhum lead no período.'}
                 </td>
               </tr>
@@ -234,6 +254,26 @@ export function ListaLeads({
         <p className="rounded-[var(--radius-control)] bg-red-50 px-3 py-2 text-sm text-red-700">
           {erro}
         </p>
+      ) : null}
+
+      {aberto ? (
+        <ModalLeadCrm
+          cliente={cliente}
+          cartao={aberto}
+          aoFechar={() => setAberto(null)}
+          // A etapa só é editável no modal quando o lead é de WhatsApp;
+          // quando isso acontece, a linha da tabela precisa acompanhar,
+          // senão fica mostrando a etapa antiga até o próximo F5.
+          aoAtualizar={(mudanca) =>
+            setLeads((atual) =>
+              atual.map((l) =>
+                l.id === mudanca.id && mudanca.etapa !== undefined
+                  ? { ...l, current_stage: mudanca.etapa }
+                  : l,
+              ),
+            )
+          }
+        />
       ) : null}
 
       {acabou ? null : (
