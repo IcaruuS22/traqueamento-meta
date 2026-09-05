@@ -4,6 +4,7 @@ import { rota, queryParams, entradaInvalida } from '@/lib/http';
 import { requireClientAccess } from '@/lib/auth/guard';
 import { buscaMetricas } from '@/lib/db/metricas';
 import { visibilidadeMetricas } from '@/lib/db/prefs';
+import { buscaOrcamentoDoMes } from '@/lib/db/orcamento';
 import { resolvePeriodo } from '@/lib/periodo';
 import { montaDadosRelatorio, nomeArquivoRelatorio } from '@/lib/relatorio';
 import { RelatorioMetricas } from '@/lib/relatorio-pdf';
@@ -14,8 +15,9 @@ export const runtime = 'nodejs';
 /**
  * Exportação em PDF de "Métricas Gerais".
  *
- * Repete de propósito a mesma busca da página (`buscaMetricas` +
- * `visibilidadeMetricas` com o mesmo `resolvePeriodo`): o PDF precisa
+ * Repete de propósito a mesma busca da página (`buscaMetricas`,
+ * `visibilidadeMetricas` e `buscaOrcamentoDoMes` com o mesmo
+ * `resolvePeriodo`): o PDF precisa
  * refletir o que está na tela, e o caminho seguro para isso é reexecutar
  * a consulta com os mesmos parâmetros, não confiar em números vindos
  * pela query string — que qualquer um poderia forjar.
@@ -45,13 +47,16 @@ export const GET = rota(async (req) => {
     channel: entrada.channel,
   });
 
-  const [metricas, visiveis] = await Promise.all([
+  const [metricas, visiveis, orcamento] = await Promise.all([
     buscaMetricas(db, periodo),
     visibilidadeMetricas(conta.client_db_name),
+    // Mesmo mês da tela: `buscaOrcamentoDoMes` deriva o mês do fim do
+    // período, então filtrar agosto exporta o fechamento de agosto.
+    buscaOrcamentoDoMes(conta.client_db_name, db, periodo.fimSec),
   ]);
 
   const agora = new Date();
-  const dados = montaDadosRelatorio(metricas, periodo, visiveis, conta, agora);
+  const dados = montaDadosRelatorio(metricas, periodo, visiveis, conta, orcamento, agora);
   const pdf = await renderToBuffer(<RelatorioMetricas dados={dados} />);
   const arquivo = nomeArquivoRelatorio(conta.client_db_name, periodo.canal, agora);
 

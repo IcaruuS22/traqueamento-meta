@@ -1,6 +1,14 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
-import type { DadosRelatorio, LinhaBarra, LinhaKpi } from '@/lib/relatorio';
+import type {
+  BlocoOrcamento,
+  BlocoPerdas,
+  BlocoVerba,
+  DadosRelatorio,
+  LinhaBarra,
+  LinhaKpi,
+} from '@/lib/relatorio';
 import { escalaBarras } from '@/lib/relatorio';
+import type { Recomendacao } from '@/lib/orcamento';
 import { fmtInt } from '@/lib/format';
 
 /**
@@ -31,6 +39,22 @@ const COR = {
   avisoFundo: '#fbf0da',
   avisoTexto: '#a66a08',
 } as const;
+
+/**
+ * Cor de cada recomendação de orçamento.
+ *
+ * Mesma leitura do card da tela — azul pede mais, âmbar pede menos,
+ * verde está no alvo, vermelho estourou — traduzida para literais porque
+ * o PDF não enxerga variável CSS. Cinza para o que não dá para opinar.
+ */
+const COR_RECOMENDACAO: Record<Recomendacao, string> = {
+  aumentar: '#2563eb',
+  reduzir: '#d97706',
+  manter: COR.positivo,
+  estourado: COR.negativo,
+  fechado: COR.textoTer,
+  indefinido: COR.textoTer,
+};
 
 const ALTURA_GRAFICO = 96;
 const ALTURA_BARRA_FUNIL = 13;
@@ -153,6 +177,42 @@ const s = StyleSheet.create({
   td: { fontSize: 8.5, color: COR.texto },
 
   vazio: { fontSize: 8, color: COR.textoTer, fontStyle: 'italic', paddingVertical: 6 },
+
+  // Barra de consumo do orçamento: mesmo traço fino do card da tela.
+  trilho: { height: 5, backgroundColor: COR.fundoSuave, borderRadius: 3, marginTop: 5 },
+  trilhoBarra: { height: 5, borderRadius: 3 },
+
+  orcamentoTopo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  orcamentoValor: { fontSize: 14, fontFamily: 'Helvetica-Bold' },
+  orcamentoDe: { fontSize: 9, fontFamily: 'Helvetica', color: COR.textoTer },
+  orcamentoSituacao: { fontSize: 8.5, fontFamily: 'Helvetica-Bold' },
+  orcamentoFrase: { fontSize: 8, color: COR.textoSec, marginTop: 6 },
+  orcamentoDetalhe: { fontSize: 7.5, color: COR.textoTer, marginTop: 3 },
+
+  verbaLinha: { marginBottom: 9 },
+  verbaTopo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+  verbaNome: { fontSize: 8.5, fontFamily: 'Helvetica-Bold' },
+  verbaGasto: { fontSize: 8.5 },
+  verbaNota: { fontSize: 7.5, color: COR.textoTer, marginTop: 3 },
+  verbaAviso: {
+    fontSize: 7.5,
+    color: COR.avisoTexto,
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: COR.borda,
+    paddingTop: 6,
+    lineHeight: 1.4,
+  },
+
+  perdaResumo: { fontSize: 8, color: COR.textoTer, marginBottom: 7 },
+  perdaLinha: { marginBottom: 7 },
+  perdaTopo: { flexDirection: 'row', justifyContent: 'space-between' },
+  perdaRotulo: { fontSize: 8.5 },
+  perdaValor: { fontSize: 8, color: COR.textoSec },
 
   rodape: {
     position: 'absolute',
@@ -292,6 +352,100 @@ function Tabela({
   );
 }
 
+/** Barra de consumo, travada em 100%: acima disso ela não distingue mais nada. */
+function Consumo({ fracao, cor }: { fracao: number; cor: string }) {
+  const largura = Math.min(Math.max(Math.round(fracao * 100), 0), 100);
+  return (
+    <View style={s.trilho}>
+      <View style={[s.trilhoBarra, { width: `${largura}%`, backgroundColor: cor }]} />
+    </View>
+  );
+}
+
+function Orcamento({ bloco }: { bloco: BlocoOrcamento }) {
+  const cor = COR_RECOMENDACAO[bloco.recomendacao];
+  const pct = Math.round(bloco.consumo * 100);
+  return (
+    <View>
+      <View style={s.orcamentoTopo}>
+        <Text style={s.orcamentoValor}>
+          {bloco.gasto}
+          <Text style={s.orcamentoDe}> de {bloco.investimento}</Text>
+        </Text>
+        <Text style={[s.orcamentoSituacao, { color: cor }]}>
+          {bloco.situacao}
+          {bloco.temInvestimento ? ` · ${pct}% do investimento` : ''}
+        </Text>
+      </View>
+      {bloco.temInvestimento ? <Consumo fracao={bloco.consumo} cor={cor} /> : null}
+      <Text style={s.orcamentoFrase}>{bloco.frase}</Text>
+      <Text style={s.orcamentoDetalhe}>{bloco.detalhe}</Text>
+    </View>
+  );
+}
+
+function Verba({ bloco }: { bloco: BlocoVerba }) {
+  if (!bloco.linhas.length) return <Text style={s.vazio}>{bloco.vazio}</Text>;
+  return (
+    <View>
+      {bloco.linhas.map((linha, i) => {
+        const cor = COR_RECOMENDACAO[linha.recomendacao];
+        return (
+          <View key={`${linha.nome}-${i}`} style={s.verbaLinha} wrap={false}>
+            <View style={s.verbaTopo}>
+              <Text style={[s.verbaNome, linha.semCategoria ? { color: COR.textoTer } : {}]}>
+                {linha.nome}
+              </Text>
+              <Text style={s.verbaGasto}>
+                {linha.gasto}
+                <Text style={s.orcamentoDe}> {linha.referencia}</Text>
+              </Text>
+            </View>
+            {linha.semVerba ? null : <Consumo fracao={linha.consumo} cor={cor} />}
+            <Text style={s.verbaNota}>
+              {linha.situacao ? <Text style={{ color: cor }}>{linha.situacao} · </Text> : null}
+              {linha.frase}
+            </Text>
+          </View>
+        );
+      })}
+      {bloco.aviso ? (
+        <Text style={s.verbaAviso}>
+          {bloco.aviso} A soma das categorias não precisa bater com o investimento mensal, mas
+          quando não bate o card geral e estas barras contam histórias diferentes.
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+function Perdas({ bloco }: { bloco: BlocoPerdas }) {
+  if (!bloco.linhas.length) return <Text style={s.vazio}>Nenhum lead perdido no período.</Text>;
+  const topo = Math.max(...bloco.linhas.map((l) => l.valor), 1);
+  return (
+    <View>
+      {bloco.resumo ? <Text style={s.perdaResumo}>{bloco.resumo}</Text> : null}
+      {bloco.linhas.map((linha) => (
+        <View key={linha.rotulo} style={s.perdaLinha} wrap={false}>
+          <View style={s.perdaTopo}>
+            <Text style={[s.perdaRotulo, linha.semMotivo ? { color: COR.textoTer } : {}]}>
+              {linha.rotulo}
+            </Text>
+            <Text style={s.perdaValor}>
+              {linha.percentual} · {fmtInt(linha.valor)} {linha.valor === 1 ? 'lead' : 'leads'}
+            </Text>
+          </View>
+          <Consumo
+            fracao={linha.valor / topo}
+            cor={linha.semMotivo ? COR.textoTer : COR.marca}
+          />
+        </View>
+      ))}
+      {bloco.nota ? <Text style={s.secaoNota}>{bloco.nota}</Text> : null}
+    </View>
+  );
+}
+
 export function RelatorioMetricas({ dados }: { dados: DadosRelatorio }) {
   return (
     <Document
@@ -357,6 +511,31 @@ export function RelatorioMetricas({ dados }: { dados: DadosRelatorio }) {
           <Text style={s.secaoTitulo}>Leads capturados</Text>
           <View style={s.caixa}>
             <GraficoDiario itens={dados.serie} />
+          </View>
+        </View>
+
+        <View style={s.secao} wrap={false}>
+          <Text style={s.secaoTitulo}>{dados.orcamento.titulo}</Text>
+          <View style={s.caixa}>
+            <Orcamento bloco={dados.orcamento} />
+          </View>
+          <Text style={s.secaoNota}>
+            O orçamento é sempre do mês inteiro, não do período do relatório: o investimento é
+            mensal, e compará-lo com o gasto de sete dias não diria nada.
+          </Text>
+        </View>
+
+        <View style={s.secao}>
+          <Text style={s.secaoTitulo}>{dados.verba.titulo}</Text>
+          <View style={s.caixa}>
+            <Verba bloco={dados.verba} />
+          </View>
+        </View>
+
+        <View style={s.secao}>
+          <Text style={s.secaoTitulo}>Motivos de perda</Text>
+          <View style={s.caixa}>
+            <Perdas bloco={dados.perdas} />
           </View>
         </View>
 

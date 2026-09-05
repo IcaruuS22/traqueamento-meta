@@ -1,6 +1,11 @@
 import { Card, Vazio } from '@/components/dados';
 import { fmtBRL } from '@/lib/format';
-import { fraseOrcamento, type Orcamento, type Recomendacao } from '@/lib/orcamento';
+import {
+  ROTULO_RECOMENDACAO,
+  fraseOrcamento,
+  type Orcamento,
+  type Recomendacao,
+} from '@/lib/orcamento';
 import { avisoDistribuicao, type OrcamentoPorCategoria } from '@/lib/orcamento-categorias';
 
 /**
@@ -20,21 +25,30 @@ import { avisoDistribuicao, type OrcamentoPorCategoria } from '@/lib/orcamento-c
  * subir 4%, enquanto a frase logo abaixo pedia quase o dobro da diária.
  */
 
-/** Cor da faixa por recomendação. Verde = no alvo, âmbar = ajuste, vermelho = estouro. */
+/**
+ * Cor da faixa por recomendação. Verde = no alvo, âmbar = ajuste, vermelho = estouro.
+ *
+ * Só a cor mora aqui; o rótulo vem de `lib/orcamento` porque o PDF usa a
+ * mesma palavra e as duas não podem divergir.
+ */
 const TONS: Record<Recomendacao, { barra: string; texto: string; rotulo: string }> = {
-  aumentar: { barra: 'bg-blue-500', texto: 'text-blue-500', rotulo: 'Aumentar' },
-  reduzir: { barra: 'bg-amber-500', texto: 'text-amber-500', rotulo: 'Reduzir' },
-  manter: { barra: 'bg-emerald-500', texto: 'text-emerald-500', rotulo: 'No alvo' },
-  estourado: { barra: 'bg-red-500', texto: 'text-red-500', rotulo: 'Estourado' },
+  aumentar: { barra: 'bg-blue-500', texto: 'text-blue-500', rotulo: ROTULO_RECOMENDACAO.aumentar },
+  reduzir: { barra: 'bg-amber-500', texto: 'text-amber-500', rotulo: ROTULO_RECOMENDACAO.reduzir },
+  manter: {
+    barra: 'bg-emerald-500',
+    texto: 'text-emerald-500',
+    rotulo: ROTULO_RECOMENDACAO.manter,
+  },
+  estourado: { barra: 'bg-red-500', texto: 'text-red-500', rotulo: ROTULO_RECOMENDACAO.estourado },
   fechado: {
     barra: 'bg-[var(--text-tertiary)]',
     texto: 'text-[var(--text-tertiary)]',
-    rotulo: 'Mês fechado',
+    rotulo: ROTULO_RECOMENDACAO.fechado,
   },
   indefinido: {
     barra: 'bg-[var(--border)]',
     texto: 'text-[var(--text-tertiary)]',
-    rotulo: 'Sem parâmetro',
+    rotulo: ROTULO_RECOMENDACAO.indefinido,
   },
 };
 

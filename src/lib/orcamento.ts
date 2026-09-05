@@ -68,6 +68,22 @@ export type Recomendacao =
   /** Sem investimento cadastrado, ou mês ainda sem gasto: não dá para opinar. */
   | 'indefinido';
 
+/**
+ * Como cada recomendação é chamada na interface.
+ *
+ * Fica aqui, e não no componente, porque o card da tela e o PDF precisam
+ * dizer a mesma palavra sobre o mesmo mês. Um relatório impresso com
+ * "Estourado" onde a tela mostrava "Reduzir" vira discussão na reunião.
+ */
+export const ROTULO_RECOMENDACAO: Record<Recomendacao, string> = {
+  aumentar: 'Aumentar',
+  reduzir: 'Reduzir',
+  manter: 'No alvo',
+  estourado: 'Estourado',
+  fechado: 'Mês fechado',
+  indefinido: 'Sem parâmetro',
+};
+
 export type Orcamento = {
   /** Mês analisado, "YYYY-MM". */
   mes: string;
