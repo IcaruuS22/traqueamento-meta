@@ -66,8 +66,24 @@ export function GestaoVerba({
 
   const [filtroObjetivo, setFiltroObjetivo] = useState(TODOS);
   const [filtroCategoria, setFiltroCategoria] = useState(TODOS);
+  // Ativas por padrão: uma conta antiga acumula dezenas de campanhas
+  // encerradas, e classificar o que não gasta mais é trabalho jogado fora.
+  const [filtroStatus, setFiltroStatus] = useState<'ativas' | 'todas'>('ativas');
   const [marcadas, setMarcadas] = useState<Set<string>>(new Set());
   const [destino, setDestino] = useState<string>(SEM_CATEGORIA);
+
+  /**
+   * A lista de trabalho: tudo o mais nesta tela conta a partir daqui.
+   *
+   * Contagem de objetivo, aviso de "sem categoria" e o total de campanhas
+   * de cada categoria saem desta base, não da lista inteira. Uma categoria
+   * dizendo "8 campanhas" com 3 na tela seria pior do que não dizer nada.
+   */
+  const porStatus = useMemo(
+    () => (filtroStatus === 'todas' ? campanhas : campanhas.filter((c) => !pausada(c.status))),
+    [campanhas, filtroStatus],
+  );
+  const encerradas = campanhas.length - campanhas.filter((c) => !pausada(c.status)).length;
 
   const nomePorId = useMemo(() => {
     const m = new Map<number, string>();
@@ -78,27 +94,27 @@ export function GestaoVerba({
   /** Objetivos presentes na conta, com quantas campanhas cada um tem. */
   const objetivos = useMemo(() => {
     const contagem = new Map<string, number>();
-    for (const c of campanhas) {
+    for (const c of porStatus) {
       const k = chaveObjetivo(c.objetivo);
       contagem.set(k, (contagem.get(k) ?? 0) + 1);
     }
     return [...contagem.entries()]
       .map(([chave, total]) => ({ chave, rotulo: rotuloObjetivo(chave), total }))
       .sort((a, b) => b.total - a.total || a.rotulo.localeCompare(b.rotulo, 'pt-BR'));
-  }, [campanhas]);
+  }, [porStatus]);
 
   const visiveis = useMemo(
     () =>
-      campanhas.filter((c) => {
+      porStatus.filter((c) => {
         if (filtroObjetivo !== TODOS && chaveObjetivo(c.objetivo) !== filtroObjetivo) return false;
         if (filtroCategoria === TODOS) return true;
         if (filtroCategoria === SEM_CATEGORIA) return c.categoria_id === null;
         return c.categoria_id === Number(filtroCategoria);
       }),
-    [campanhas, filtroObjetivo, filtroCategoria],
+    [porStatus, filtroObjetivo, filtroCategoria],
   );
 
-  const semCategoria = campanhas.filter((c) => c.categoria_id === null).length;
+  const semCategoria = porStatus.filter((c) => c.categoria_id === null).length;
   const todasMarcadas = visiveis.length > 0 && visiveis.every((c) => marcadas.has(c.campaign_id));
 
   function alterna(id: string) {
@@ -192,7 +208,7 @@ export function GestaoVerba({
         ) : (
           <ul className="mt-2 flex flex-col divide-y">
             {categorias.map((c) => {
-              const quantas = campanhas.filter((x) => x.categoria_id === c.id).length;
+              const quantas = porStatus.filter((x) => x.categoria_id === c.id).length;
 
               return (
                 <li key={c.id} className="py-2">
@@ -265,6 +281,20 @@ export function GestaoVerba({
             ) : null}
 
             <div className="mb-3 flex flex-wrap items-end gap-2">
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-[var(--text-tertiary)]">
+                  Status
+                </span>
+                <select
+                  className="field !w-44"
+                  value={filtroStatus}
+                  onChange={(e) => setFiltroStatus(e.target.value as 'ativas' | 'todas')}
+                >
+                  <option value="ativas">Só as ativas</option>
+                  <option value="todas">Todas ({campanhas.length})</option>
+                </select>
+              </label>
+
               <label className="block">
                 <span className="mb-1.5 block text-xs font-medium text-[var(--text-tertiary)]">
                   Objetivo da Meta
@@ -340,6 +370,20 @@ export function GestaoVerba({
               </div>
             ) : null}
 
+            {/* Campanha encerrada pode ter gastado neste mês: o gasto dela
+                continua no card da Visão geral, e só some da linha "Sem
+                categoria" se alguém a classificar. Por isso o aviso diz
+                onde ela está, em vez de deixá-la simplesmente sumir. */}
+            {filtroStatus === 'ativas' && encerradas > 0 ? (
+              <p className="mb-3 text-xs text-[var(--text-tertiary)]">
+                {encerradas === 1
+                  ? '1 campanha encerrada fora da lista.'
+                  : `${encerradas} campanhas encerradas fora da lista.`}{' '}
+                Se alguma delas gastou neste mês, mude o status para{' '}
+                <strong>Todas</strong> para classificá-la.
+              </p>
+            ) : null}
+
             <div className="table-wrap">
               <table className="tabela-painel">
                 <thead>
@@ -411,7 +455,13 @@ export function GestaoVerba({
               </table>
             </div>
 
-            {visiveis.length === 0 ? <Vazio>Nenhuma campanha com esses filtros.</Vazio> : null}
+            {visiveis.length === 0 ? (
+              <Vazio>
+                {filtroStatus === 'ativas' && encerradas === campanhas.length
+                  ? 'Nenhuma campanha ativa nesta conta. Mude o status para "Todas" para ver as encerradas.'
+                  : 'Nenhuma campanha com esses filtros.'}
+              </Vazio>
+            ) : null}
           </>
         )}
       </Card>
