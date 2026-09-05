@@ -920,6 +920,11 @@ select.filtro-campo {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* Sem isto os dois botões de largura fixa somam 402px numa linha que
+     não quebra. Como este bloco é um item flex do cabeçalho, ele não
+     encolhe abaixo disso e arrasta a página inteira para além da tela do
+     celular — era daí que vinha a rolagem horizontal do painel. */
+  flex-wrap: wrap;
 }
 .acoes-estado-aviso {
   position: absolute;
@@ -1876,6 +1881,61 @@ select.filtro-campo {
   }
   .header-search {
     max-width: none;
+  }
+
+  /*
+   * Cabeçalho de tela no celular.
+   *
+   * Os botões de ação foram desenhados para uma barra larga: "Atualizar
+   * dados da Meta" tem largura fixa de 196px justamente para o texto não
+   * dançar quando vira "Buscando…". Numa tela de 375px, dois deles lado a
+   * lado não cabem, e como o cabeçalho é um item flex que não encolhe
+   * abaixo do próprio conteúdo, a página inteira ficava mais larga que o
+   * celular — o painel todo rolava de lado, não só a barra.
+   *
+   * No celular a largura fixa perde o motivo: cada botão ocupa a linha
+   * inteira, então o texto não tem para onde dançar.
+   */
+  .page-hero-actions {
+    width: 100%;
+  }
+  .page-hero-actions > * {
+    max-width: 100%;
+  }
+  .acoes-estado {
+    width: 100%;
+  }
+  /* Base de 200px para os dois botões nunca dividirem a mesma linha: numa
+     tela de 375px eles caberiam espremidos, encostados um no outro, com o
+     texto quase se tocando. Um por linha lê melhor e sobra espaço para o
+     rótulo inteiro. */
+  .btn-largura-fixa {
+    min-width: 0;
+    flex: 1 1 200px;
+  }
+  /* O aviso de estado sai do fluxo e é ancorado à direita; num cabeçalho
+     de largura total isso o jogava para fora da tela. */
+  .acoes-estado-aviso {
+    max-width: 100%;
+  }
+
+  /* Rótulo de 140px numa tela de 375px deixava a barra com menos espaço
+     que o próprio texto ao lado dela. */
+  .bar-row .bar-label {
+    width: 96px;
+  }
+
+  /*
+   * Rede de segurança: qualquer coisa que ainda passe da largura fica
+   * presa na coluna em vez de arrastar a página. `clip` e não `hidden`
+   * de propósito — `hidden` transformaria a coluna em contêiner de
+   * rolagem e quebraria o cabeçalho grudado no topo.
+   *
+   * Conteúdo largo de verdade (tabelas) já rola dentro do próprio
+   * `.table-wrap`, então nada fica inalcançável por causa disto.
+   */
+  .main-col {
+    overflow-x: clip;
   }
 }
 
