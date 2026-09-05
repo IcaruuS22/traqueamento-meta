@@ -65,6 +65,11 @@ function secoesDoCliente(cliente: string): SecaoNav[] {
         },
         { href: `${base}/campanhas`, rotulo: 'Campanhas', icone: IconesNav.campanhas },
         {
+          href: `${base}/campanhas/verba`,
+          rotulo: 'Verba por categoria',
+          icone: IconesNav.verba,
+        },
+        {
           href: `${base}/rastreamento`,
           rotulo: 'Rastreamento',
           icone: IconesNav.rastreamento,
@@ -145,7 +150,12 @@ function secoesDoCliente(cliente: string): SecaoNav[] {
  * A chave é o resto da rota depois do cliente, a mesma que `rotuloDaTela`
  * usa.
  */
-const TELAS_LARGAS = new Set(['formularios/crm', 'whatsapp/crm', 'campanhas']);
+const TELAS_LARGAS = new Set([
+  'formularios/crm',
+  'whatsapp/crm',
+  'campanhas',
+  'campanhas/verba',
+]);
 
 function rotuloDaTela(resto: string, canal: string): string {
   switch (resto) {
@@ -156,6 +166,8 @@ function rotuloDaTela(resto: string, canal: string): string {
       return 'Métricas Gerais';
     case 'campanhas':
       return 'Campanhas';
+    case 'campanhas/verba':
+      return 'Verba por categoria';
     case 'rastreamento':
       return 'Rastreamento';
     case 'formularios/crm':

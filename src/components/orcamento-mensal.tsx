@@ -1,6 +1,7 @@
-import { Card } from '@/components/dados';
+import { Card, Vazio } from '@/components/dados';
 import { fmtBRL } from '@/lib/format';
 import { fraseOrcamento, type Orcamento, type Recomendacao } from '@/lib/orcamento';
+import { avisoDistribuicao, type OrcamentoPorCategoria } from '@/lib/orcamento-categorias';
 
 /**
  * Indicador de ritmo de gasto contra o investimento mensal do cliente.
@@ -84,6 +85,119 @@ export function OrcamentoMensal({ orcamento }: { orcamento: Orcamento }) {
         <p className="mt-2 text-xs text-[var(--text-tertiary)]">
           O investimento mensal é cadastrado por cliente na área de administração.
         </p>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Quebra da verba do mês por categoria de campanha.
+ *
+ * O card acima diz se o mês vai estourar; este diz por causa de qual
+ * frente. São as categorias que o cliente inventou — captação,
+ * remarketing, institucional — cada uma com a sua verba e o seu ritmo.
+ *
+ * Cada linha passou pelo mesmo `avaliaOrcamento` do card geral, então o
+ * rótulo colorido significa exatamente a mesma coisa nos dois lugares.
+ *
+ * Categoria sem verba cadastrada não ganha barra de consumo: mostrar uma
+ * barra cheia por dividir por zero diria "estourou" sobre um teto que
+ * ninguém combinou. Ela aparece com o gasto e com a fatia que representa
+ * do mês, que é a informação que existe.
+ */
+export function VerbaPorCategoria({
+  categorias,
+  mesRotulo,
+  cliente,
+  className,
+}: {
+  categorias: OrcamentoPorCategoria;
+  mesRotulo: string;
+  cliente: string;
+  className?: string;
+}) {
+  const aviso = avisoDistribuicao(categorias);
+  const gerir = `/app/${encodeURIComponent(cliente)}/campanhas/verba`;
+
+  return (
+    <Card
+      titulo={`Verba por categoria — ${mesRotulo}`}
+      descricao="Quanto cada frente de campanha combinou e quanto já gastou no mês."
+      className={className}
+      acessorio={
+        <a href={gerir} className="btn btn-secondary btn-sm">
+          Gerenciar categorias
+        </a>
+      }
+    >
+      {categorias.linhas.length === 0 ? (
+        <Vazio>
+          {categorias.temCategorias
+            ? 'Nenhum gasto no mês para dividir entre as categorias.'
+            : 'Nenhuma categoria de verba cadastrada. Crie as suas frentes de campanha e separe a verba entre elas.'}
+        </Vazio>
+      ) : (
+        <>
+          <ul className="flex flex-col gap-3">
+            {categorias.linhas.map((linha) => {
+              const o = linha.orcamento;
+              const tom = TONS[o.recomendacao];
+              const largura = Math.min(Math.round(o.consumo * 100), 100);
+
+              return (
+                <li key={linha.id ?? 'sem-categoria'}>
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                    <span
+                      className={`text-sm font-medium ${
+                        linha.id === null ? 'text-[var(--text-tertiary)]' : ''
+                      }`}
+                    >
+                      {linha.nome}
+                    </span>
+                    <span className="text-sm tabular-nums">
+                      {fmtBRL(o.gasto)}
+                      <span className="text-xs text-[var(--text-tertiary)]">
+                        {linha.semVerba
+                          ? ` · ${Math.round(linha.fatiaDoGasto * 100)}% do gasto do mês`
+                          : ` de ${fmtBRL(o.investimento)}`}
+                      </span>
+                    </span>
+                  </div>
+
+                  {linha.semVerba ? null : (
+                    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[var(--bg-field)]">
+                      <div className={`h-full ${tom.barra}`} style={{ width: `${largura}%` }} />
+                    </div>
+                  )}
+
+                  <p className="mt-1 text-xs text-[var(--text-tertiary)]">
+                    {linha.semVerba ? (
+                      linha.id === null ? (
+                        // Não é uma frente de investimento: é classificação
+                        // pendente. Dizer "sem verba" aqui sugeriria cadastrar
+                        // uma, quando o que falta é marcar as campanhas.
+                        'Campanhas ainda não atribuídas a nenhuma categoria.'
+                      ) : (
+                        'Sem verba própria cadastrada.'
+                      )
+                    ) : (
+                      <>
+                        <span className={tom.texto}>{tom.rotulo}</span> · {fraseOrcamento(o)}
+                      </>
+                    )}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+
+          {aviso ? (
+            <p className="mt-3 border-t pt-3 text-xs text-amber-600">
+              {aviso} A soma das categorias não precisa bater com o investimento mensal, mas quando
+              não bate o card geral e estas barras contam histórias diferentes.
+            </p>
+          ) : null}
+        </>
       )}
     </Card>
   );

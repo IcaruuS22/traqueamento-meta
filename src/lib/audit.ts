@@ -45,6 +45,9 @@ export const ACOES = {
   BACKFILL_DISPARADO: 'backfill_disparado',
   IA_ANALISE_EXECUTADA: 'ia_analise_executada',
   META_STATUS_ALTERADO: 'meta_status_alterado',
+  VERBA_CATEGORIA_SALVA: 'verba_categoria_salva',
+  VERBA_CATEGORIA_EXCLUIDA: 'verba_categoria_excluida',
+  VERBA_CAMPANHAS_CLASSIFICADAS: 'verba_campanhas_classificadas',
 } as const;
 
 export type Acao = (typeof ACOES)[keyof typeof ACOES];

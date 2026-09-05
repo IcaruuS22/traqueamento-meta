@@ -2,6 +2,12 @@ import 'server-only';
 import { execute, LacunasDeEsquema, query, queryOne } from '@/lib/db/pool';
 import { sanitizaNomeBanco, type BancoCliente } from '@/lib/db/cliente';
 import { avaliaOrcamento, ultimoDiaConsiderado, type Orcamento } from '@/lib/orcamento';
+import {
+  montaOrcamentoPorCategoria,
+  type CategoriaVerba,
+  type GastoCategoria,
+  type OrcamentoPorCategoria,
+} from '@/lib/orcamento-categorias';
 import { epochSecParaData } from '@/lib/periodo';
 
 /**
@@ -117,11 +123,114 @@ export async function gastoDoMes(
  * mostre o fechamento de agosto. Sem período — o range "máximo" — o mês
  * é o corrente.
  */
+/**
+ * Categorias de verba do cliente, com a verba de cada uma.
+ *
+ * Vivem no banco central junto de `monthly_fee`, pelo mesmo motivo: é
+ * dado comercial, e assim a migração roda uma vez em vez de uma por
+ * cliente. Banco sem `Banco de Dados/migracao_verba_por_categoria.sql`
+ * devolve lista vazia, e a tela mostra só o total do mês.
+ */
+export async function leCategoriasVerba(
+  clientDb: string,
+  lacunas?: LacunasDeEsquema,
+): Promise<CategoriaVerba[]> {
+  const nome = sanitizaNomeBanco(clientDb);
+  if (!nome) return [];
+
+  const coletor = lacunas ?? new LacunasDeEsquema();
+  const linhas = await coletor.ou(
+    query<{ id: number; nome: string; monthly_budget: string | number | null; ordem: number }>(
+      `SELECT id, nome, monthly_budget, ordem
+         FROM trakeamento_controle.campaign_categories
+        WHERE client_db_name = ?
+        ORDER BY ordem, nome`,
+      [nome],
+    ),
+    [],
+  );
+
+  return linhas.map((l) => {
+    const verba = Number(l.monthly_budget);
+    return {
+      id: Number(l.id),
+      nome: l.nome,
+      verba: Number.isFinite(verba) && verba > 0 ? verba : null,
+      ordem: Number(l.ordem) || 0,
+    };
+  });
+}
+
+/**
+ * Gasto do mês quebrado por categoria, na mesma janela de `gastoDoMes`.
+ *
+ * O `LEFT JOIN` é entre bancos: os insights estão no banco do cliente e o
+ * mapa no central. Isso funciona porque a conexão é uma só e o usuário
+ * enxerga os dois — é o mesmo arranjo que `leInvestimentoMensal` já usa
+ * ao ler `trakeamento_controle.ad_accounts` de dentro do painel.
+ *
+ * O `client_db_name` entra na condição do join, e não no `WHERE`: no
+ * `WHERE` ele viraria um `INNER JOIN` disfarçado e apagaria justamente a
+ * linha que mais importa, a das campanhas sem categoria.
+ *
+ * Chave `null` no mapa = campanha ainda não classificada. Cliente que não
+ * rodou a migração cai no mesmo lugar: tudo sem categoria, nenhum erro.
+ */
+export async function gastoDoMesPorCategoria(
+  db: BancoCliente,
+  clientDb: string,
+  mes: string,
+  ultimoDia: string,
+  hoje: string,
+  lacunas?: LacunasDeEsquema,
+): Promise<Map<number | null, GastoCategoria>> {
+  const mapa = new Map<number | null, GastoCategoria>();
+  const nome = sanitizaNomeBanco(clientDb);
+  if (!nome) return mapa;
+
+  const coletor = lacunas ?? new LacunasDeEsquema();
+  const linhas = await coletor.ou(
+    db.query<{
+      category_id: number | null;
+      total: string | number | null;
+      ate_ontem: string | number | null;
+    }>(
+      `SELECT m.category_id AS category_id,
+              COALESCE(SUM(i.spend), 0) AS total,
+              COALESCE(SUM(CASE WHEN i.\`date\` < ? THEN i.spend ELSE 0 END), 0) AS ate_ontem
+         FROM ${db.tabela('meta_insights_daily')} i
+         LEFT JOIN trakeamento_controle.campaign_category_map m
+           ON m.campaign_id = i.campaign_id AND m.client_db_name = ?
+        WHERE i.entity_level = 'campaign'
+          AND i.\`date\` >= ? AND i.\`date\` <= ?
+        GROUP BY m.category_id`,
+      [hoje, nome, `${mes}-01`, ultimoDia],
+    ),
+    [],
+  );
+
+  const positivo = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  for (const l of linhas) {
+    const id = l.category_id === null ? null : Number(l.category_id);
+    mapa.set(id, { total: positivo(l.total), ateOntem: positivo(l.ate_ontem) });
+  }
+  return mapa;
+}
+
+/** O card geral e a quebra por categoria, do mesmo mês. */
+export type OrcamentoDoMes = {
+  orcamento: Orcamento;
+  categorias: OrcamentoPorCategoria;
+};
+
 export async function buscaOrcamentoDoMes(
   clientDb: string,
   db: BancoCliente,
   fimSec: number | null,
-): Promise<Orcamento> {
+): Promise<OrcamentoDoMes> {
   const hoje = epochSecParaData(Math.floor(Date.now() / 1000));
   // -1s porque `fimSec` é exclusivo: às 00:00 do dia 1 de setembro o
   // período que termina em 31 de agosto não pode virar setembro.
@@ -130,17 +239,29 @@ export async function buscaOrcamentoDoMes(
   const ultimoDia = ultimoDiaConsiderado(mes, hoje);
 
   const lacunas = new LacunasDeEsquema();
-  const [investimento, gasto] = await Promise.all([
+  const [investimento, gasto, categorias, gastoPorCategoria] = await Promise.all([
     leInvestimentoMensal(clientDb, lacunas),
     gastoDoMes(db, mes, ultimoDia, hoje, lacunas),
+    leCategoriasVerba(clientDb, lacunas),
+    gastoDoMesPorCategoria(db, clientDb, mes, ultimoDia, hoje, lacunas),
   ]);
-  return avaliaOrcamento({
-    investimento,
-    gasto: gasto.total,
-    gastoAteOntem: gasto.ateOntem,
-    mes,
-    hoje,
-  });
+
+  return {
+    orcamento: avaliaOrcamento({
+      investimento,
+      gasto: gasto.total,
+      gastoAteOntem: gasto.ateOntem,
+      mes,
+      hoje,
+    }),
+    categorias: montaOrcamentoPorCategoria({
+      categorias,
+      gastos: gastoPorCategoria,
+      investimento,
+      mes,
+      hoje,
+    }),
+  };
 }
 
 /**
@@ -158,4 +279,176 @@ export async function salvaInvestimentoMensal(
     `UPDATE trakeamento_controle.ad_accounts SET monthly_fee = ? WHERE client_db_name = ?`,
     [investimento, nome],
   );
+}
+
+/**
+ * Campanha do cliente com o objetivo da Meta e a categoria atual.
+ *
+ * O objetivo vem junto porque é o que torna a classificação viável: uma
+ * conta madura tem dezenas de campanhas, e marcar uma a uma é trabalho
+ * que ninguém faz. Com o objetivo à vista dá para atribuir todas as de
+ * "Cadastros" a "Captação" de uma vez e depois corrigir as exceções.
+ */
+export type CampanhaClassificavel = {
+  campaign_id: string;
+  nome: string | null;
+  status: string | null;
+  /** Cru, como veio da Meta ("OUTCOME_LEADS"). Rótulo em `lib/objetivos-meta.ts`. */
+  objetivo: string | null;
+  /** Categoria atual, ou `null` quando ainda não foi classificada. */
+  categoria_id: number | null;
+};
+
+/** Todas as campanhas do cliente, com objetivo e categoria. */
+export async function leCampanhasClassificaveis(
+  db: BancoCliente,
+  clientDb: string,
+  lacunas?: LacunasDeEsquema,
+): Promise<CampanhaClassificavel[]> {
+  const nome = sanitizaNomeBanco(clientDb);
+  if (!nome) return [];
+
+  const coletor = lacunas ?? new LacunasDeEsquema();
+  const linhas = await coletor.ou(
+    db.query<{
+      campaign_id: string;
+      campaign_name: string | null;
+      status: string | null;
+      objective: string | null;
+      category_id: number | null;
+    }>(
+      `SELECT c.campaign_id, c.campaign_name, c.status, c.objective, m.category_id
+         FROM ${db.tabela('meta_campaigns')} c
+         LEFT JOIN trakeamento_controle.campaign_category_map m
+           ON m.campaign_id = c.campaign_id AND m.client_db_name = ?
+        ORDER BY c.campaign_name`,
+      [nome],
+    ),
+    [],
+  );
+
+  return linhas.map((l) => ({
+    campaign_id: String(l.campaign_id),
+    nome: l.campaign_name,
+    status: l.status,
+    objetivo: l.objective,
+    categoria_id: l.category_id === null ? null : Number(l.category_id),
+  }));
+}
+
+/** Cria uma categoria e devolve o id. */
+export async function criaCategoriaVerba(
+  clientDb: string,
+  nome: string,
+  verba: number | null,
+  ordem: number,
+): Promise<number> {
+  const banco = sanitizaNomeBanco(clientDb);
+  if (!banco) throw new Error('Nome de banco de cliente inválido');
+
+  const r = await execute(
+    `INSERT INTO trakeamento_controle.campaign_categories
+       (client_db_name, nome, monthly_budget, ordem) VALUES (?, ?, ?, ?)`,
+    [banco, nome, verba, ordem],
+  );
+  return r.insertId;
+}
+
+/**
+ * Renomeia a categoria e/ou muda a verba.
+ *
+ * O `client_db_name` entra no `WHERE` junto do id: sem ele, um id
+ * adivinhado editaria a categoria de outro cliente.
+ */
+export async function atualizaCategoriaVerba(
+  clientDb: string,
+  id: number,
+  nome: string,
+  verba: number | null,
+): Promise<number> {
+  const banco = sanitizaNomeBanco(clientDb);
+  if (!banco) throw new Error('Nome de banco de cliente inválido');
+
+  const r = await execute(
+    `UPDATE trakeamento_controle.campaign_categories
+        SET nome = ?, monthly_budget = ?
+      WHERE id = ? AND client_db_name = ?`,
+    [nome, verba, id, banco],
+  );
+  return r.affectedRows;
+}
+
+/**
+ * Apaga a categoria. As campanhas dela voltam a ficar sem categoria pelo
+ * `ON DELETE CASCADE` do mapa — nenhum gasto some, ele só deixa de estar
+ * classificado.
+ */
+export async function removeCategoriaVerba(clientDb: string, id: number): Promise<number> {
+  const banco = sanitizaNomeBanco(clientDb);
+  if (!banco) throw new Error('Nome de banco de cliente inválido');
+
+  const r = await execute(
+    `DELETE FROM trakeamento_controle.campaign_categories
+      WHERE id = ? AND client_db_name = ?`,
+    [id, banco],
+  );
+  return r.affectedRows;
+}
+
+/** Maior `ordem` já usada pelo cliente, para a próxima categoria entrar no fim. */
+export async function proximaOrdemCategoria(clientDb: string): Promise<number> {
+  const banco = sanitizaNomeBanco(clientDb);
+  if (!banco) return 0;
+
+  const linha = await queryOne<{ maior: number | null }>(
+    `SELECT MAX(ordem) AS maior FROM trakeamento_controle.campaign_categories
+      WHERE client_db_name = ?`,
+    [banco],
+  );
+  const maior = Number(linha?.maior);
+  return Number.isFinite(maior) ? maior + 1 : 0;
+}
+
+/**
+ * Põe (ou tira) um conjunto de campanhas numa categoria.
+ *
+ * `categoriaId` nulo desclassifica. O `INSERT ... ON DUPLICATE KEY` faz o
+ * mover valer tanto para campanha nova quanto para campanha que já estava
+ * em outra categoria — a chave primária é (cliente, campanha), então
+ * mudar de categoria é sobrescrever, e não acumular duas linhas.
+ *
+ * Escreve em lote porque o caso normal é atribuir dezenas de campanhas de
+ * uma vez, vindas do filtro por objetivo da Meta.
+ */
+export async function defineCategoriaDeCampanhas(
+  clientDb: string,
+  campanhas: string[],
+  categoriaId: number | null,
+): Promise<number> {
+  const banco = sanitizaNomeBanco(clientDb);
+  if (!banco) throw new Error('Nome de banco de cliente inválido');
+  if (campanhas.length === 0) return 0;
+
+  const marcadores = campanhas.map(() => '?').join(', ');
+
+  if (categoriaId === null) {
+    const r = await execute(
+      `DELETE FROM trakeamento_controle.campaign_category_map
+        WHERE client_db_name = ? AND campaign_id IN (${marcadores})`,
+      [banco, ...campanhas],
+    );
+    return r.affectedRows;
+  }
+
+  const valores = campanhas.map(() => '(?, ?, ?)').join(', ');
+  const params: unknown[] = [];
+  for (const c of campanhas) params.push(banco, c, categoriaId);
+
+  const r = await execute(
+    `INSERT INTO trakeamento_controle.campaign_category_map
+       (client_db_name, campaign_id, category_id) VALUES ${valores}
+     ON DUPLICATE KEY UPDATE category_id = VALUES(category_id)`,
+    params,
+  );
+  return r.affectedRows;
 }

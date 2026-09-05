@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { requireClientAccessPagina } from '@/lib/auth/guard';
 import { buscaMetricas, primeiroLeadEm, type Metricas } from '@/lib/db/metricas';
 import { visibilidadeMetricas } from '@/lib/db/prefs';
-import { buscaOrcamentoDoMes } from '@/lib/db/orcamento';
+import { buscaOrcamentoDoMes, type OrcamentoDoMes } from '@/lib/db/orcamento';
 import {
   resolvePeriodo,
   preencheDias,
@@ -13,7 +13,6 @@ import {
 } from '@/lib/periodo';
 import { kpisDoEscopo } from '@/lib/kpis';
 import { montaRankingPerdas } from '@/lib/perdas';
-import type { Orcamento } from '@/lib/orcamento';
 import {
   Card,
   KpiCard,
@@ -31,7 +30,7 @@ import { ListaLeads } from '@/components/lista-leads';
 import { SeletorMetricas } from '@/components/seletor-metricas';
 import { BotoesMeta } from '@/components/botoes-meta';
 import { ExportarPdf } from '@/components/exportar-pdf';
-import { OrcamentoMensal } from '@/components/orcamento-mensal';
+import { OrcamentoMensal, VerbaPorCategoria } from '@/components/orcamento-mensal';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Visão geral | Trakeamento' };
@@ -215,7 +214,7 @@ function CorpoMetricas({
   qsLeads,
 }: {
   metricas: Metricas;
-  orcamento: Orcamento;
+  orcamento: OrcamentoDoMes;
   periodo: ReturnType<typeof resolvePeriodo>;
   visiveis: Map<string, boolean>;
   cliente: string;
@@ -266,12 +265,19 @@ function CorpoMetricas({
       </div>
 
       <div className="panel-grid mt-4">
-        <OrcamentoMensal orcamento={orcamento} />
+        <OrcamentoMensal orcamento={orcamento.orcamento} />
 
         <Card titulo="Tempo médio entre etapas">
           <TempoEntreEtapas itens={metricas.tempo_medio_entre_etapas} />
         </Card>
       </div>
+
+      <VerbaPorCategoria
+        categorias={orcamento.categorias}
+        mesRotulo={orcamento.orcamento.mesRotulo}
+        cliente={cliente}
+        className="mt-4"
+      />
 
       <Card
         titulo="Motivos de perda"
