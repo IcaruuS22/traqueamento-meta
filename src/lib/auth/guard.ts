@@ -10,7 +10,7 @@ import {
   HttpError,
 } from '@/lib/http';
 import { buscaAdAccount, BancoCliente, type AdAccount } from '@/lib/db/cliente';
-import { temVinculo, listaVinculos } from '@/lib/auth/usuarios';
+import { temVinculo, listaVinculos, buscaUsuarioPorId } from '@/lib/auth/usuarios';
 
 export type SessaoUsuario = {
   id: number;
@@ -32,17 +32,39 @@ export type SessaoUsuario = {
  * autorização descrito na Fase 4 do PLANO_IMPLEMENTACAO.md.
  */
 
-/** Exige sessão válida. Memoizada por request (chamada no layout do app,
- * no layout do cliente e nas páginas — sem o memo, `auth()` repetia a cada
- * uma). */
+/**
+ * Exige sessão válida.
+ *
+ * O JWT é a prova de que a pessoa se autenticou, e só isso. Papel e
+ * status vêm do banco a cada request, nunca do token: a sessão dura 8h,
+ * então confiar no que foi assinado no login significa que bloquear um
+ * usuário no /admin não tem efeito nenhum pelas 8 horas seguintes, e que
+ * um admin rebaixado para `cliente` continua entrando no /admin no mesmo
+ * intervalo. Não existe lista de revogação — a releitura É a revogação.
+ *
+ * Memoizada por request (chamada no layout do app, no layout do cliente
+ * e nas páginas — sem o memo, `auth()` e esta consulta repetiam a cada
+ * uma), então o custo real é uma consulta por request, no mesmo banco
+ * central que `buscaAdAccount` já visita logo em seguida.
+ */
 export const requireAuth = cache(async function requireAuth(): Promise<SessaoUsuario> {
   const sessao = await auth();
   if (!sessao?.user?.id) throw naoAutenticado();
+
+  const id = Number(sessao.user.id);
+  const atual = await buscaUsuarioPorId(id);
+
+  // Conta apagada, suspensa ou ainda pendente de aprovação: o token
+  // continua criptograficamente válido, a sessão não. 401 (e não 403)
+  // porque a página manda para o login, que é onde a pessoa descobre
+  // que a conta não está mais ativa.
+  if (!atual || atual.status !== 'ativo') throw naoAutenticado();
+
   return {
-    id: Number(sessao.user.id),
-    email: sessao.user.email,
-    nome: sessao.user.name,
-    papel: sessao.user.role,
+    id: atual.id,
+    email: atual.email,
+    nome: atual.name,
+    papel: atual.role,
   };
 });
 
@@ -51,6 +73,40 @@ export async function requireAdmin(): Promise<SessaoUsuario> {
   const usuario = await requireAuth();
   if (usuario.papel !== 'admin') throw semPermissao('Esta área é restrita a administradores');
   return usuario;
+}
+
+/**
+ * Versões de `requireAuth`/`requireAdmin` para PÁGINAS e LAYOUTS.
+ *
+ * Mesmo motivo de `requireClientAccessPagina`: uma página não tem o
+ * invólucro `rota()`, então `HttpError` subiria até o Next e viraria um
+ * 500 genérico. Antes de `requireAuth` reler o banco isso nunca
+ * acontecia na prática — o middleware barrava quem não tinha sessão —,
+ * mas agora sessão assinada e sessão válida são coisas diferentes: quem
+ * foi bloqueado ou rebaixado no meio das 8h do token chega aqui com
+ * cookie bom e acesso revogado, e precisa cair no login (ou no painel),
+ * não numa tela de erro.
+ */
+export async function requireAuthPagina(): Promise<SessaoUsuario> {
+  try {
+    return await requireAuth();
+  } catch (erro) {
+    if (erro instanceof HttpError) redirect('/login');
+    throw erro;
+  }
+}
+
+export async function requireAdminPagina(): Promise<SessaoUsuario> {
+  try {
+    return await requireAdmin();
+  } catch (erro) {
+    if (erro instanceof HttpError) {
+      // 401 = sem sessão válida; 403 = sessão boa, papel rebaixado. O
+      // segundo caso ainda tem para onde ir: o painel do cliente.
+      redirect(erro.status === 401 ? '/login' : '/app');
+    }
+    throw erro;
+  }
 }
 
 export type ContextoCliente = {

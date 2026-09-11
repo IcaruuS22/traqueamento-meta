@@ -618,7 +618,7 @@ export function TabelaCampanhas({
         A seta abre os conjuntos de uma campanha e os anúncios de um conjunto. A chave da coluna
         de status liga ou desliga a campanha, o conjunto ou o anúncio direto na Meta. A tabela
         rola para o lado; a coluna de nome fica fixa. Quais colunas aparecem sai do botão
-        "Personalizar", no topo da página.
+        &ldquo;Personalizar&rdquo;, no topo da página.
       </p>
     </div>
   );

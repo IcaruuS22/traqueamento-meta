@@ -11,8 +11,10 @@ import {
   concluiRedefinicaoSenha,
   consomeConvite,
   criaUsuario,
+  EmailJaCadastrado,
   iniciaRedefinicaoSenha,
 } from '@/lib/auth/usuarios';
+import { limpa, verificaLimite } from '@/lib/auth/limite';
 import { enviaEmailRedefinicao } from '@/lib/email';
 
 export type EstadoFormulario = {
@@ -49,6 +51,15 @@ export async function acaoLogin(
     return { erro: parsed.error.issues[0]?.message ?? 'Dados inválidos' };
   }
 
+  // Teto de tentativas ANTES do bcrypt: verificar a senha custa ~250ms
+  // de CPU por chamada, e deixar isso acessível sem limite é tanto o
+  // caminho da força bruta quanto o da exaustão do servidor.
+  const bloqueio = await verificaLimite([
+    { regra: 'loginPorEmail', identificador: parsed.data.email },
+    { regra: 'loginPorIp' },
+  ]);
+  if (bloqueio) return { erro: bloqueio };
+
   // `next` vem da URL, então poderia apontar para outro domínio. Só é
   // aceito se for um caminho interno.
   const destinoBruto = parsed.data.next ?? '/app';
@@ -69,6 +80,11 @@ export async function acaoLogin(
     }
     throw erro;
   }
+
+  // Acertou a senha: a contagem por e-mail some. É o que impede que
+  // errar a senha alheia de propósito tranque a conta de outra pessoa —
+  // quem sabe a senha sempre reabre a própria janela.
+  limpa('loginPorEmail', parsed.data.email);
 
   const usuario = await buscaUsuarioPorEmail(parsed.data.email);
   if (usuario) {
@@ -190,6 +206,9 @@ export async function acaoSolicitarAcesso(
     return { erro: parsed.error.issues[0]?.message ?? 'Dados inválidos' };
   }
 
+  const bloqueio = await verificaLimite([{ regra: 'solicitarPorIp' }]);
+  if (bloqueio) return { erro: bloqueio };
+
   const mensagemSucesso =
     'Solicitação registrada. Seu acesso precisa ser liberado por um administrador. Você será avisado por e-mail.';
 
@@ -207,10 +226,17 @@ export async function acaoSolicitarAcesso(
       acao: ACOES.CONTA_CRIADA,
       detalhe: { via: 'solicitacao' },
     });
-  } catch {
-    // Mesma mensagem quando o e-mail já existe: senão a tela vira um
-    // verificador de quais e-mails estão cadastrados.
-    return { sucesso: mensagemSucesso };
+  } catch (erro) {
+    // E-mail já cadastrado responde igual ao cadastro novo, senão a tela
+    // vira um verificador de quais e-mails existem no sistema.
+    if (erro instanceof EmailJaCadastrado) return { sucesso: mensagemSucesso };
+
+    // Qualquer outra falha é infraestrutura (banco fora do ar, por
+    // exemplo) e NÃO pode responder sucesso: a pessoa ia embora achando
+    // que pediu acesso, e não existia solicitação nenhuma para o
+    // administrador aprovar.
+    console.error('[solicitar-acesso] falha ao criar conta', erro);
+    return { erro: 'Não foi possível registrar a solicitação agora. Tente novamente em instantes.' };
   }
 
   return { sucesso: mensagemSucesso };
@@ -228,6 +254,14 @@ export async function acaoRecuperarSenha(
   if (!z.string().email().safeParse(email).success) {
     return { erro: 'E-mail inválido' };
   }
+
+  // Teto aqui é sobre disparo de e-mail: sem ele, a tela é um botão de
+  // inundar a caixa de entrada de qualquer endereço cadastrado.
+  const bloqueio = await verificaLimite([
+    { regra: 'recuperarPorEmail', identificador: email },
+    { regra: 'recuperarPorIp' },
+  ]);
+  if (bloqueio) return { erro: bloqueio };
 
   const token = await iniciaRedefinicaoSenha(email);
   if (token) {

@@ -465,8 +465,18 @@ export function MotivosDePerda({ ranking }: { ranking: RankingPerdas }) {
  * O que não cabe é a etiqueta de data: "13/08" precisa de ~28px e a
  * coluna de um mês tem ~16px. Por isso, em série densa, só uma etiqueta
  * a cada N colunas é desenhada — o eixo continua legível e as barras
- * continuam todas lá. O número em cima da barra fica, só menor: dois
- * dígitos cabem, e é ele que dá o valor exato de cada dia.
+ * continuam todas lá.
+ *
+ * O número em cima da barra segue a MESMA regra da etiqueta, e essa é a
+ * correção do gráfico no celular. Antes ele era desenhado em todas as
+ * colunas, só menor. A conta não fecha: num aparelho de 375px, trinta
+ * colunas ficam com ~10px cada, e dois dígitos a 9.5px ocupam ~11px.
+ * Cada número transbordava a própria coluna e pintava por cima do
+ * vizinho — o borrão cinza que aparecia acima das barras — e o primeiro
+ * e o último ainda vazavam do card, onde o `overflow-x: clip` da coluna
+ * principal os cortava no meio. Trinta números ilegíveis não informam
+ * nada; oito legíveis informam. O valor exato de cada dia continua
+ * acessível pelo `title` da coluna.
  */
 export function GraficoDiario({ serie }: { serie: { label: string; count: number }[] }) {
   if (!serie.length) return <Vazio />;
@@ -485,13 +495,26 @@ export function GraficoDiario({ serie }: { serie: { label: string; count: number
     <div className={densa ? 'chart-bars chart-bars-densa' : 'chart-bars'}>
       {serie.map((p, i) => {
         const mostraLabel = i % passo === 0 || i === ultimoRotulado;
+        // Em série densa o número acompanha a etiqueta; em série curta
+        // toda coluna tem espaço para os dois.
+        const mostraValor = !densa || mostraLabel;
+        // Mesmo com o passo, oito datas ainda se encostam num aparelho
+        // estreito. Em vez de recalcular o passo por largura de tela —
+        // que exigiria medir o viewport no cliente e traria diferença
+        // entre o que o servidor renderiza e o que o navegador monta —
+        // as etiquetas alternadas saem marcadas e o CSS esconde metade
+        // delas abaixo de 768px. O eixo cai para ~4 datas no celular
+        // sem nenhum JavaScript e sem alterar as barras.
+        const alternada = mostraLabel && Math.floor(i / passo) % 2 === 1;
         return (
           <div
             className="chart-bar-col"
             key={`${p.label}-${i}`}
             title={`${p.label}: ${p.count}`}
           >
-            <span className="chart-bar-value text-label-score">{p.count}</span>
+            <span className="chart-bar-value text-label-score">
+              {mostraValor ? p.count : ''}
+            </span>
             <div className="chart-bar-track">
               <div
                 className="chart-bar-fill"
@@ -500,7 +523,13 @@ export function GraficoDiario({ serie }: { serie: { label: string; count: number
                 }}
               />
             </div>
-            <span className="chart-bar-label text-body-small">
+            <span
+              className={
+                alternada
+                  ? 'chart-bar-label chart-bar-label-alternada text-body-small'
+                  : 'chart-bar-label text-body-small'
+              }
+            >
               {mostraLabel ? p.label || '-' : ''}
             </span>
           </div>

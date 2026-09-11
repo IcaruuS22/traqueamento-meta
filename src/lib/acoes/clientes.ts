@@ -202,7 +202,7 @@ export async function acaoExcluirCliente(
     };
   }
 
-  let removidos: { vinculos: number; preferencias: number; whatsapp: number };
+  let removidos: { vinculos: number; preferencias: number; whatsapp: number; paginas: number };
   try {
     removidos = await removeAdAccount(conta.client_db_name);
   } catch (erro) {
@@ -239,6 +239,7 @@ export async function acaoExcluirCliente(
       banco_apagado: bancoApagado,
       vinculos_removidos: removidos.vinculos,
       whatsapp_removido: removidos.whatsapp > 0,
+      sites_removidos: removidos.paginas,
     },
   });
 

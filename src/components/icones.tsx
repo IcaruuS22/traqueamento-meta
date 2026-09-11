@@ -183,6 +183,13 @@ export const IconesNav = {
       <path d="M12 1v3M12 20v3M1 12h3M20 12h3" />
     </Svg>
   ),
+  paginas: (p: PropsSvg = {}) => (
+    <Svg {...p}>
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="M2 9h20M6 6.5h.01M9 6.5h.01" />
+      <path d="M12 13l5 2-2 1-1 2-2-5Z" />
+    </Svg>
+  ),
   kanban: (p: PropsSvg = {}) => (
     <Svg {...p}>
       <rect x="3" y="3" width="5" height="18" rx="1.2" />

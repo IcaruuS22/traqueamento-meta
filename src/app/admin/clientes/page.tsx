@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { requireAdmin } from '@/lib/auth/guard';
+import { requireAdminPagina } from '@/lib/auth/guard';
 import {
   contaVinculosPorCliente,
   leCamposValorCrm,
@@ -25,7 +25,7 @@ export const metadata: Metadata = { title: 'Clientes | Trakeamento' };
  * banco aponta, quantos usuários enxergam, e a exclusão.
  */
 export default async function PaginaClientesAdmin() {
-  await requireAdmin();
+  await requireAdminPagina();
 
   const [clientes, vinculos, investimentos, camposValor, subdominios] = await Promise.all([
     listaAdAccounts(),
@@ -86,6 +86,12 @@ export default async function PaginaClientesAdmin() {
                   className="btn-ghost px-2 py-1 text-xs"
                 >
                   Abrir painel
+                </Link>
+                <Link
+                  href={`/admin/clientes/${encodeURIComponent(cliente.client_db_name)}/sites`}
+                  className="btn-ghost px-2 py-1 text-xs"
+                >
+                  Páginas de vendas
                 </Link>
               </div>
 

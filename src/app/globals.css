@@ -1810,6 +1810,38 @@ select.filtro-campo {
   }
 }
 @media (max-width: 767px) {
+  /* ---------- Gráfico de barras no celular ----------
+     Trinta colunas em 375px dão ~10px cada. Nesse espaço a etiqueta de
+     data ("13/08", ~28px) e o número em cima da barra transbordam a
+     coluna e se sobrepõem; o que vazava do card ainda era cortado pelo
+     `overflow-x: clip` de `.main-col`, e a soma das duas coisas era o
+     gráfico embaralhado com uma linha de corte seca na borda.
+
+     Quem resolve o número é o componente (ele só desenha nas colunas
+     rotuladas). Aqui fica o que é de tela estreita: metade das datas
+     sai, as folgas encolhem e o gráfico fica mais baixo — em pé, 190px
+     de altura ocupam quase um terço da tela sem acrescentar leitura. */
+  .chart-bars {
+    height: 150px;
+    gap: 6px;
+  }
+  .chart-bars-densa {
+    gap: 2px;
+    padding-inline: 16px;
+  }
+  .chart-bars-densa .chart-bar-value {
+    font-size: 9px;
+  }
+  .chart-bars-densa .chart-bar-label {
+    font-size: 9.5px;
+  }
+  .chart-bar-label-alternada {
+    /* `visibility` e não `display`: a caixa continua ocupando os 14px de
+       altura fixa, então as barras seguem terminando todas na mesma
+       linha — o serrilhado que a altura fixa existe para evitar. */
+    visibility: hidden;
+  }
+
   .header-actions .profile-chip .profile-chip-text,
   .header-actions .profile-chip .btn {
     display: none;

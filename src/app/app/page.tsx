@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { clientesDoUsuario, requireAuth } from '@/lib/auth/guard';
+import { clientesDoUsuario, requireAuthPagina } from '@/lib/auth/guard';
 
 export const metadata: Metadata = { title: 'Clientes | Trakeamento' };
 
@@ -12,7 +12,7 @@ export default async function PaginaClientes({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const usuario = await requireAuth();
+  const usuario = await requireAuthPagina();
   const todos = await clientesDoUsuario(usuario);
 
   // `q` vem da busca da barra superior — mesma filtragem do painel: nome,

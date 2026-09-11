@@ -12,12 +12,14 @@ import { env } from '@/lib/env';
  *
  * Três decisões daqui atacam isso:
  *
- * 1. `connectionLimit` vem do env (`MYSQL_POOL_LIMIT`, default 10). No
+ * 1. `connectionLimit` vem do env (`MYSQL_POOL_LIMIT`, default 24). No
  *    deploy atual — um único processo `next start` — o pool é um só para o
- *    app inteiro, então 3 conexões estrangulavam todas as telas (a de
- *    métricas dispara ~14 consultas por request). Em Vercel serverless,
- *    onde cada instância tem o próprio pool, baixe o env para que
- *    instâncias × limite não estoure o `max_connections` do MySQL.
+ *    app inteiro, então 3 conexões estrangulavam todas as telas. O default
+ *    é dimensionado pela maior rajada existente: `buscaMetricas` abre 15
+ *    consultas de uma vez, e um teto de 10 deixava 5 na fila em todo
+ *    carregamento da Visão Geral. Em Vercel serverless, onde cada
+ *    instância tem o próprio pool, baixe o env para que instâncias ×
+ *    limite não estoure o `max_connections` do MySQL.
  * 2. `maxIdle` = limite do pool: mantém as conexões abertas dentro do
  *    `idleTimeout`. O host do MySQL é remoto (RTT alto), e reabrir conexão
  *    a cada rajada custava handshake TCP + auth a cada onda de consultas.
@@ -26,6 +28,16 @@ import { env } from '@/lib/env';
  * 3. Guardado em `globalThis` — sobrevive ao hot-reload do Next em
  *    desenvolvimento (senão cada salvamento vaza um pool novo) e ao
  *    reaproveitamento de instância com Fluid Compute em produção.
+ *
+ * Decisão registrada: o código usa `pool.query` e não `pool.execute`.
+ * `execute` prepara a instrução no servidor e guarda o handle em um cache
+ * por conexão. Boa parte das consultas daqui é montada dinamicamente (o
+ * nome do banco do cliente é interpolado depois de `sanitizaNomeBanco`, e
+ * filtros opcionais mudam o texto do SQL), então cada variação viraria uma
+ * entrada nova no cache de prepared statements — com dezenas de clientes,
+ * isso pressiona o `max_prepared_stmt_count` do MySQL para ganhar muito
+ * pouco em consultas que já são dominadas pelo RTT até o VPS. Trocar para
+ * `execute` só compensa se as consultas passarem a ter texto fixo.
  */
 
 const POOL_KEY = Symbol.for('trakeamento.mysql.pool');

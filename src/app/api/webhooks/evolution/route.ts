@@ -27,6 +27,17 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 /**
+ * O laço de mensagens é serial e baixa mídia embutido nele — um lote com
+ * alguns áudios passa fácil dos 10s padrão do host. Estourar no meio do
+ * laço é o pior desfecho possível: as mensagens já gravadas ficam, a
+ * Evolution não recebe 200 e reentrega o lote inteiro. A idempotência de
+ * `wa_message_id` segura a duplicata, mas o trabalho é refeito e a
+ * mídia é rebaixada de novo. 60s cobre o lote realista com folga sem
+ * deixar uma requisição travada pendurada por minutos.
+ */
+export const maxDuration = 60;
+
+/**
  * Webhook da Evolution API.
  *
  * ESTA ROTA NÃO TEM SESSÃO. Quem chama é o servidor da Evolution, que

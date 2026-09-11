@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requireAuth } from '@/lib/auth/guard';
+import { requireAuthPagina } from '@/lib/auth/guard';
 import { GUIAS } from '@/content/tutorial';
 import { Card } from '@/components/dados';
 import { PageHero } from '@/components/hero';
@@ -26,7 +26,7 @@ export const metadata: Metadata = { title: 'Ajuda | Trakeamento' };
 export default async function PaginaTutorial() {
   // O middleware já barra quem não está logado; a checagem se repete aqui
   // pelo mesmo motivo do resto do app.
-  await requireAuth();
+  await requireAuthPagina();
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">

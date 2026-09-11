@@ -1,9 +1,9 @@
 import { Suspense } from 'react';
-import { clientesDoUsuario, requireAdmin } from '@/lib/auth/guard';
+import { clientesDoUsuario, requireAdminPagina } from '@/lib/auth/guard';
 import { CascaPainel } from '@/components/casca-painel';
 
 export default async function LayoutAdmin({ children }: { children: React.ReactNode }) {
-  const usuario = await requireAdmin();
+  const usuario = await requireAdminPagina();
   const clientes = await clientesDoUsuario(usuario);
 
   return (

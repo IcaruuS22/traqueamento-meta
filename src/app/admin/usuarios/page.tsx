@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requireAdmin } from '@/lib/auth/guard';
+import { requireAdminPagina } from '@/lib/auth/guard';
 import { listaAdAccounts } from '@/lib/db/cliente';
 import { listaConvitesPendentes, listaUsuarios } from '@/lib/auth/usuarios';
 import { ConviteForm } from './convite-form';
@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: 'Usuários | Trakeamento' };
 export const dynamic = 'force-dynamic';
 
 export default async function PaginaUsuarios() {
-  const admin = await requireAdmin();
+  const admin = await requireAdminPagina();
 
   const [usuarios, contas, convites] = await Promise.all([
     listaUsuarios(),

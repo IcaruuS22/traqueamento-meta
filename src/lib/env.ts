@@ -44,12 +44,17 @@ export const env = {
     get ssl() {
       return opcional('MYSQL_SSL', 'false') === 'true';
     },
-    // Conexões concorrentes por processo. Default 10 serve o deploy atual
-    // (um único `next start`, um pool para o app inteiro). Em Vercel
-    // serverless, onde cada instância abre o próprio pool, baixe pelo env
-    // para não pressionar o `max_connections` do MySQL.
+    // Conexões concorrentes por processo, dimensionado pela consulta
+    // mais pesada: `buscaMetricas` dispara 15 consultas num único
+    // Promise.all. Com o antigo default 10, cinco delas ficavam na fila
+    // em TODO carregamento da Visão Geral, e bastava um segundo usuário
+    // para a fila dobrar — sem nenhum sintoma além de "o painel demora".
+    // 24 cobre a rajada inteira com folga para uma segunda tela
+    // simultânea, e continua muito abaixo do `max_connections` padrão do
+    // MySQL (151). Em Vercel serverless, onde cada instância abre o
+    // próprio pool, baixe pelo env: são instâncias × limite que contam.
     get poolLimit() {
-      return Number(opcional('MYSQL_POOL_LIMIT', '10'));
+      return Number(opcional('MYSQL_POOL_LIMIT', '24'));
     },
   },
 

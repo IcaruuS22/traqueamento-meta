@@ -1,11 +1,11 @@
 import { Suspense } from 'react';
-import { clientesDoUsuario, requireAuth } from '@/lib/auth/guard';
+import { clientesDoUsuario, requireAuthPagina } from '@/lib/auth/guard';
 import { CascaPainel } from '@/components/casca-painel';
 
 export default async function LayoutApp({ children }: { children: React.ReactNode }) {
   // O middleware já barra quem não está logado, mas a checagem se repete
   // aqui de propósito: middleware protege navegação, guard protege dados.
-  const usuario = await requireAuth();
+  const usuario = await requireAuthPagina();
   const clientes = await clientesDoUsuario(usuario);
 
   return (

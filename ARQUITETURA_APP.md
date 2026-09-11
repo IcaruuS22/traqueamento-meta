@@ -334,3 +334,16 @@ Os `build_*.js` e `.json` dos workflows que morrem (painel, cadastro de cliente)
 | Migração dos webhooks quebrar a entrada de leads | Perda de leads, silenciosa | Fase 5 separada, um webhook por vez, n8n mantido ativo em paralelo, comparação de contagem por 7 dias |
 | Painel antigo continuar acessível pela senha antiga | Contorna toda a autenticação nova | Remover o webhook `GET /painel` do n8n como último passo da fase 4 |
 | `01 - Recebe leads` ser afetado indiretamente | Perda do ponto de entrada | Nenhuma fase toca nesse workflow nem no schema de `customers` de forma incompatível |
+| Compra falsa virando Purchase no pixel do cliente | Otimização da campanha contaminada | Webhook de compra exige o `webhook_token` secreto do site; compra pelo navegador é aceita, mas documentada como forjável (RASTREIO_PAGINAS.md) |
+
+---
+
+## 9. Rastreio de páginas de vendas
+
+Adição posterior ao plano original. O app passa a receber eventos de páginas de vendas (WordPress, Lovable, Vercel, HTML próprio) direto, sem n8n:
+
+- `GET /t.js?k=CHAVE` — script do navegador, montado por `src/lib/paginas-script.ts` com a configuração do site embutida. Chave desconhecida ou site desativado devolvem um script vazio, nunca erro.
+- `POST /api/rastreio/coleta` — PageView, ViewContent, Lead, InitiateCheckout e Purchase vindos da página. Evento só é aceito se a URL da página e o Origin/Referer estiverem nos domínios cadastrados do site (403 fora disso). Lead entra em `customers` e segue para o Kommo como os leads de formulário instantâneo.
+- `POST /api/rastreio/compra/{generico|hotmart|kiwify}` — webhook da plataforma de checkout, autenticado pelo `webhook_token` do site.
+
+As três rotas ficam fora do middleware de sessão (quem chama é o navegador do visitante ou a plataforma). Cadastro dos sites em `trakeamento_controle.paginas_sites` (`migracao_paginas_central.sql`); eventos e visitantes em cada banco de cliente (`migracao_paginas_cliente.sql`). Lógica pura em `src/lib/paginas-web.ts`, coberta por `tests/paginas-web.test.ts`. Instalação e uso: `RASTREIO_PAGINAS.md`.

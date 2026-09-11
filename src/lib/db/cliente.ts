@@ -356,6 +356,7 @@ export async function removeAdAccount(clientDb: string): Promise<{
   vinculos: number;
   preferencias: number;
   whatsapp: number;
+  paginas: number;
 }> {
   const nome = sanitizaNomeBanco(clientDb);
   if (!nome) throw new Error('Nome de banco de cliente inválido');
@@ -376,12 +377,22 @@ export async function removeAdAccount(clientDb: string): Promise<{
     const whatsapp = await afetadas(
       'DELETE FROM trakeamento_controle.whatsapp_accounts WHERE client_db_name = ?',
     );
+    // Tabela de migração opcional: num central que ainda não passou por
+    // migracao_paginas_central.sql, não há site nenhum a apagar. Uma
+    // instrução que falha dentro da transação do MySQL não desfaz as
+    // anteriores, então capturar aqui é seguro.
+    const paginas = await afetadas(
+      'DELETE FROM trakeamento_controle.paginas_sites WHERE client_db_name = ?',
+    ).catch((erro) => {
+      if (lacunaDeEsquema(erro)) return 0;
+      throw erro;
+    });
     const contas = await afetadas(
       'DELETE FROM trakeamento_controle.ad_accounts WHERE client_db_name = ?',
     );
     if (contas === 0) throw new Error(`Cliente \`${nome}\` não está no catálogo`);
 
-    return { vinculos, preferencias, whatsapp };
+    return { vinculos, preferencias, whatsapp, paginas };
   });
 }
 

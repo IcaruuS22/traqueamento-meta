@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { requireAdmin } from '@/lib/auth/guard';
+import { requireAdminPagina } from '@/lib/auth/guard';
 import { PageHero } from '@/components/hero';
 import { Icones, IconesNav } from '@/components/icones';
 
@@ -39,7 +39,7 @@ const ATALHOS = [
 ];
 
 export default async function PaginaAdmin() {
-  await requireAdmin();
+  await requireAdminPagina();
 
   return (
     <>

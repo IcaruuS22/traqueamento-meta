@@ -74,6 +74,11 @@ function secoesDoCliente(cliente: string): SecaoNav[] {
           rotulo: 'Rastreamento',
           icone: IconesNav.rastreamento,
         },
+        {
+          href: `${base}/paginas`,
+          rotulo: 'Páginas de vendas',
+          icone: IconesNav.paginas,
+        },
       ],
     },
     {
@@ -170,6 +175,8 @@ function rotuloDaTela(resto: string, canal: string): string {
       return 'Verba por categoria';
     case 'rastreamento':
       return 'Rastreamento';
+    case 'paginas':
+      return 'Páginas de vendas';
     case 'formularios/crm':
       return 'CRM (Formulários)';
     case 'formularios/config':
@@ -259,17 +266,29 @@ export function CascaPainel({
   }, []);
 
   // Qual cliente está aberto: o segmento depois de `/app` é o nome do banco.
-  const segmentos = pathname.split('/').filter(Boolean);
-  const segCliente =
-    segmentos[0] === 'app' && segmentos[1] && segmentos[1] !== 'tutorial'
-      ? decodeURIComponent(segmentos[1])
-      : null;
-  const clienteAtivo = segCliente
-    ? (clientes.find((c) => c.client_db_name === segCliente) ?? {
-        client_db_name: segCliente,
-        account_name: segCliente,
-      })
-    : null;
+  const segmentos = useMemo(() => pathname.split('/').filter(Boolean), [pathname]);
+  const segCliente = useMemo(
+    () =>
+      segmentos[0] === 'app' && segmentos[1] && segmentos[1] !== 'tutorial'
+        ? decodeURIComponent(segmentos[1])
+        : null,
+    [segmentos],
+  );
+  // Memoizado porque o ramo de fallback CRIA um objeto novo a cada
+  // render. Sem isso `clienteAtivo` nunca é igual a si mesmo, e todo
+  // useMemo que depende dele — `clienteExibido`, e por tabela `secoes` —
+  // recalculava em toda renderização da casca: memo escrito, memo sem
+  // efeito nenhum.
+  const clienteAtivo = useMemo(
+    () =>
+      segCliente
+        ? (clientes.find((c) => c.client_db_name === segCliente) ?? {
+            client_db_name: segCliente,
+            account_name: segCliente,
+          })
+        : null,
+    [segCliente, clientes],
+  );
 
   useEffect(() => {
     if (segCliente) {

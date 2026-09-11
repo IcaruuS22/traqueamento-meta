@@ -48,6 +48,9 @@ export const ACOES = {
   VERBA_CATEGORIA_SALVA: 'verba_categoria_salva',
   VERBA_CATEGORIA_EXCLUIDA: 'verba_categoria_excluida',
   VERBA_CAMPANHAS_CLASSIFICADAS: 'verba_campanhas_classificadas',
+  PAGINA_SITE_SALVO: 'pagina_site_salvo',
+  PAGINA_SITE_EXCLUIDO: 'pagina_site_excluido',
+  PAGINA_TOKEN_TROCADO: 'pagina_token_trocado',
 } as const;
 
 export type Acao = (typeof ACOES)[keyof typeof ACOES];

@@ -35,12 +35,13 @@ const TIMEOUT_MS = 15_000;
 /**
  * Para onde o evento de WhatsApp vai, e se vai.
  *
- * Todo evento que sai daqui é de WhatsApp — os leads de formulário são
- * enviados pelo n8n, não por este app —, então o destino é sempre o
- * dataset de mensagens em `whatsapp_accounts`, nunca
- * `ad_accounts.meta_pixel_dataset_id`. Antes ele caia nesse último por
- * não haver outro, e conversa de WhatsApp virava conversão no pixel do
- * site, misturada com os leads de formulário.
+ * Os eventos de WhatsApp vão sempre para o dataset de mensagens em
+ * `whatsapp_accounts`, nunca para `ad_accounts.meta_pixel_dataset_id`
+ * — esse é o pixel do site, que recebe só os eventos de página de
+ * vendas (`enviaEventoSite`, mais abaixo). Antes o WhatsApp caía no
+ * pixel do site por não haver outro, e conversa virava conversão
+ * misturada com as visitas e os leads da página. Os leads de formulário
+ * instantâneo continuam saindo pelo n8n, não por este app.
  *
  * O token é a única coisa que ainda cai para `ad_accounts`: um mesmo
  * token de System User atende os dois datasets quando eles estão na
@@ -156,29 +157,11 @@ export async function enviaEventoEstagio(
     payload.test_event_code = destino.test_event_code;
   }
 
-  const url = new URL(
-    `https://graph.facebook.com/${VERSAO_GRAPH_CAPI}/${destino.dataset_id}/events`,
+  const { resposta, erro } = await postaEventos(
+    destino.dataset_id,
+    destino.access_token,
+    payload,
   );
-  url.searchParams.set('access_token', destino.access_token);
-
-  let resposta: unknown;
-  let erro: string | null = null;
-  try {
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    resposta = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      const detalhe = (resposta as { error?: { message?: string } })?.error?.message;
-      erro = detalhe || `HTTP ${r.status}`;
-    }
-  } catch (e) {
-    resposta = {};
-    erro = e instanceof Error ? e.message : 'falha de rede';
-  }
 
   await gravaLog(db, {
     customerId: evento.customerId,
@@ -248,29 +231,11 @@ export async function enviaEventoContatoWhatsapp(
     payload.test_event_code = destino.test_event_code;
   }
 
-  const url = new URL(
-    `https://graph.facebook.com/${VERSAO_GRAPH_CAPI}/${destino.dataset_id}/events`,
+  const { resposta, erro } = await postaEventos(
+    destino.dataset_id,
+    destino.access_token,
+    payload,
   );
-  url.searchParams.set('access_token', destino.access_token);
-
-  let resposta: unknown;
-  let erro: string | null = null;
-  try {
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    resposta = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      const detalhe = (resposta as { error?: { message?: string } })?.error?.message;
-      erro = detalhe || `HTTP ${r.status}`;
-    }
-  } catch (e) {
-    resposta = {};
-    erro = e instanceof Error ? e.message : 'falha de rede';
-  }
 
   await gravaLog(db, {
     customerId: evento.customerId,
@@ -287,6 +252,115 @@ export async function enviaEventoContatoWhatsapp(
   });
 
   return erro ? { enviado: false, motivo: erro } : { enviado: true, event_id: eventId };
+}
+
+/**
+ * POST na Conversions API. Nunca lança: devolve a resposta (ou `{}`) e o
+ * erro, se houve, para quem chamou registrar.
+ */
+async function postaEventos(
+  datasetId: string,
+  accessToken: string,
+  payload: Record<string, unknown>,
+): Promise<{ resposta: unknown; erro: string | null }> {
+  const url = new URL(`https://graph.facebook.com/${VERSAO_GRAPH_CAPI}/${datasetId}/events`);
+  url.searchParams.set('access_token', accessToken);
+
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    const resposta = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const detalhe = (resposta as { error?: { message?: string } })?.error?.message;
+      return { resposta, erro: detalhe || `HTTP ${r.status}` };
+    }
+    return { resposta, erro: null };
+  } catch (e) {
+    return { resposta: {}, erro: e instanceof Error ? e.message : 'falha de rede' };
+  }
+}
+
+export type EventoSite = {
+  eventName: string;
+  eventId: string;
+  eventTime: number;
+  /** `website` quando há navegador por trás; `system_generated` quando não. */
+  actionSource: 'website' | 'system_generated';
+  eventSourceUrl: string | null;
+  /** Já no formato da Meta — ver `montaUserData` em `paginas-web.ts`. */
+  userData: Record<string, unknown>;
+  customData: Record<string, unknown>;
+  /**
+   * Quando o evento é de um lead conhecido, ele também vai para
+   * `meta_capi_events`, junto dos eventos do CRM e do WhatsApp. Visita
+   * anônima não vai: aquela tabela é o histórico por lead, e um
+   * PageView sem ninguém por trás só a encheria.
+   */
+  log?: { customerId: number; leadEventSource: string };
+};
+
+/**
+ * Evento de página de vendas: visita, lead de formulário da página,
+ * início de checkout e compra.
+ *
+ * O destino é o pixel do site, `ad_accounts.meta_pixel_dataset_id` —
+ * o mesmo dataset do pixel de navegador que o script `/t.js` carrega.
+ * É isso que deixa a Meta juntar os dois pelo `event_id` em vez de
+ * contar cada visita duas vezes.
+ */
+export async function enviaEventoSite(
+  clientDb: string,
+  db: BancoCliente,
+  evento: EventoSite,
+): Promise<ResultadoCapi> {
+  const credenciais = await buscaCredenciaisCliente(clientDb);
+  if (!credenciais?.meta_pixel_dataset_id) return { enviado: false, motivo: 'cliente sem pixel cadastrado' };
+  if (!credenciais.meta_access_token) return { enviado: false, motivo: 'sem token de acesso para a CAPI' };
+
+  const dado: Record<string, unknown> = {
+    event_name: evento.eventName,
+    event_time: evento.eventTime,
+    action_source: evento.actionSource,
+    event_id: evento.eventId,
+    user_data: evento.userData,
+    custom_data: evento.customData,
+  };
+  if (evento.eventSourceUrl) dado.event_source_url = evento.eventSourceUrl;
+
+  const payload: Record<string, unknown> = { data: [dado] };
+  if (credenciais.meta_test_event_code) payload.test_event_code = credenciais.meta_test_event_code;
+
+  const { resposta, erro } = await postaEventos(
+    credenciais.meta_pixel_dataset_id,
+    credenciais.meta_access_token,
+    payload,
+  );
+
+  if (evento.log) {
+    const valor = Number(evento.customData.value);
+    await gravaLog(db, {
+      customerId: evento.log.customerId,
+      eventName: evento.eventName,
+      eventId: evento.eventId,
+      eventTime: evento.eventTime,
+      userData: JSON.stringify(evento.userData),
+      customData: JSON.stringify(evento.customData),
+      payload: JSON.stringify(payload),
+      resposta: JSON.stringify(resposta ?? {}),
+      erro,
+      actionSource: evento.actionSource,
+      leadEventSource: evento.log.leadEventSource,
+      eventSourceUrl: evento.eventSourceUrl,
+      value: Number.isFinite(valor) ? valor : 0,
+      currency: typeof evento.customData.currency === 'string' ? evento.customData.currency : null,
+    });
+  }
+
+  return erro ? { enviado: false, motivo: erro } : { enviado: true, event_id: evento.eventId };
 }
 
 /**
@@ -311,6 +385,9 @@ async function gravaLog(
     /** Padrão: o disparo por mudança de estágio, que veio primeiro. */
     actionSource?: string;
     leadEventSource?: string;
+    eventSourceUrl?: string | null;
+    value?: number;
+    currency?: string | null;
   },
 ): Promise<void> {
   const status = dados.erro ? 'ERROR' : 'SENT';
@@ -318,14 +395,16 @@ async function gravaLog(
     await db.execute(
       `INSERT INTO ${db.tabela('meta_capi_events')}
          (customer_id, event_name, event_id, event_time_unix, action_source,
-          lead_event_source, user_data_hashed, custom_data, meta_payload_sent,
+          lead_event_source, event_source_url, value, currency,
+          user_data_hashed, custom_data, meta_payload_sent,
           meta_response, status, error_message)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE meta_response = ?, status = ?, error_message = ?`,
       [
         dados.customerId, dados.eventName, dados.eventId, dados.eventTime,
         dados.actionSource ?? 'system_generated',
         dados.leadEventSource ?? 'WhatsApp Conversas',
+        dados.eventSourceUrl ?? null, dados.value ?? 0, dados.currency || 'BRL',
         dados.userData, dados.customData, dados.payload, dados.resposta, status, dados.erro,
         dados.resposta, status, dados.erro,
       ],

@@ -26,7 +26,26 @@ export const maxDuration = 30;
  */
 
 const ESPERA_MAXIMA_MS = 20_000;
-const INTERVALO_CHECAGEM_MS = 1_000;
+
+/**
+ * Intervalo entre checagens, crescente.
+ *
+ * Antes era fixo em 1s, o que dava 20 consultas agregadas por ciclo, por
+ * aba aberta, para sempre — e `cursorConversas` agrega a tabela de
+ * conversas inteira. Duas abas abertas o dia todo eram duas varreduras
+ * por segundo, ininterruptas, quase todas devolvendo o mesmo cursor.
+ *
+ * O crescimento aproveita como a espera realmente se distribui: se algo
+ * mudou, mudou quase sempre nos primeiros segundos (a pessoa acabou de
+ * mandar mensagem e espera a resposta aparecer). Passado esse trecho, a
+ * conversa está parada e checar 20 vezes ou 5 dá no mesmo para quem
+ * olha. A primeira checagem continua em 1s, então a percepção de tempo
+ * real no caso que importa não muda; o ciclo cai de 20 consultas para
+ * ~7.
+ */
+const INTERVALO_INICIAL_MS = 1_000;
+const INTERVALO_MAXIMO_MS = 4_000;
+const FATOR_INTERVALO = 1.4;
 
 const Entrada = z.object({
   client_db: z.string().min(1),
@@ -49,12 +68,17 @@ export const GET = rota(async (req) => {
   // é só a tela pegando o ponto de partida.
   if (entrada.cursor === undefined) return { cursor, mudou: false };
 
+  let intervalo = INTERVALO_INICIAL_MS;
   while (cursor === entrada.cursor && Date.now() < limite) {
     // A aba fechada ou a conversa trocada abortam o fetch; sem esta
     // saída a função seguiria consultando o banco por mais 20s à toa.
     if (req.signal.aborted) return { cursor, mudou: false };
-    await espera(INTERVALO_CHECAGEM_MS);
+    // Nunca dormir além do limite: passar dele faria a resposta sair
+    // depois da janela e a tela veria o corte como erro de rede.
+    await espera(Math.min(intervalo, Math.max(0, limite - Date.now())));
+    if (req.signal.aborted) return { cursor, mudou: false };
     cursor = await cursorConversas(db, entrada.customer_id);
+    intervalo = Math.min(INTERVALO_MAXIMO_MS, Math.round(intervalo * FATOR_INTERVALO));
   }
 
   return { cursor, mudou: cursor !== entrada.cursor };

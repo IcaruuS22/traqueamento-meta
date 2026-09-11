@@ -85,12 +85,6 @@ export function GestaoVerba({
   );
   const encerradas = campanhas.length - campanhas.filter((c) => !pausada(c.status)).length;
 
-  const nomePorId = useMemo(() => {
-    const m = new Map<number, string>();
-    for (const c of categorias) m.set(c.id, c.nome);
-    return m;
-  }, [categorias]);
-
   /** Objetivos presentes na conta, com quantas campanhas cada um tem. */
   const objetivos = useMemo(() => {
     const contagem = new Map<string, number>();

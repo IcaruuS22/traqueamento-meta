@@ -10,6 +10,7 @@
 --                                          ad_accounts.meta_test_event_code
 --   WhatsApp/migracao_whatsapp_evolution . provider e colunas evolution_*
 --   migration_painel_metric_prefs ........ painel_metric_prefs
+--   migracao_paginas_central ............. paginas_sites
 --
 -- Em um banco NOVO, rode só este arquivo — as migrações acima já
 -- estão embutidas, e rodá-las depois só devolveria "Duplicate column".
@@ -170,6 +171,34 @@ CREATE TABLE IF NOT EXISTS painel_metric_prefs (
   visible BOOLEAN NOT NULL DEFAULT TRUE,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (client_db_name, metric_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- -------------------------------------------------------
+-- 5. paginas_sites — páginas de vendas rastreadas
+--
+-- Uma linha por site de um cliente. site_key é pública (vai na tag
+-- <script>); webhook_token é segredo e vai só na URL do webhook de
+-- compra da plataforma de checkout. Ver migracao_paginas_central.sql.
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS paginas_sites (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  client_db_name VARCHAR(64) NOT NULL,
+  nome VARCHAR(120) NOT NULL,
+  site_key VARCHAR(32) NOT NULL,
+  webhook_token CHAR(64) NOT NULL,
+  dominios VARCHAR(1000) NOT NULL DEFAULT '',
+  kommo_pipeline_id VARCHAR(40) NULL DEFAULT NULL,
+  kommo_status_id VARCHAR(40) NULL DEFAULT NULL,
+  envia_kommo BOOLEAN NOT NULL DEFAULT TRUE,
+  ativo BOOLEAN NOT NULL DEFAULT TRUE,
+  CONSTRAINT paginas_sites_site_key_key UNIQUE (site_key),
+  CONSTRAINT paginas_sites_client_db_name_fkey
+    FOREIGN KEY (client_db_name)
+    REFERENCES ad_accounts(client_db_name)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- =======================================================

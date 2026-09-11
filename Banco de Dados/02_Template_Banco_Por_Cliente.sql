@@ -87,6 +87,18 @@ CREATE INDEX idx_customers_phone ON customers(phone);
 CREATE INDEX idx_customers_meta_campaign_id ON customers(meta_campaign_id);
 CREATE INDEX idx_customers_meta_adset_id ON customers(meta_adset_id);
 
+-- Recorte por período. É o filtro de praticamente toda consulta de
+-- métrica do painel (`created_at BETWEEN ?`) e o ORDER BY da lista de
+-- leads e do board do CRM. Sem ele, cada recorte de "últimos 7 dias"
+-- varre a tabela inteira — 15 vezes por carregamento da Visão Geral.
+CREATE INDEX idx_customers_created_at ON customers(created_at);
+-- Cruzamento com crm_meta_event_map e agrupamento por estágio.
+CREATE INDEX idx_customers_current_stage ON customers(current_stage);
+-- "Leads deste período agrupados por estágio", que é a consulta mais
+-- repetida do painel: o período corta pelo índice e o estágio já vem
+-- junto, sem voltar à tabela.
+CREATE INDEX idx_customers_created_stage ON customers(created_at, current_stage);
+
 -- 2. TABELA: crm_meta_event_map
 -- Dinâmica por cliente (antes vivia no banco central). Não
 -- precisa mais de crm_account_id: o próprio banco já identifica
@@ -156,6 +168,16 @@ CREATE TABLE IF NOT EXISTS meta_capi_events (
       'PENDING', 'SENT', 'SUCCESS', 'FAILED', 'ERROR', 'DUPLICATE'
     ))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- A UNIQUE de event_id serve à idempotência e a mais nada. Estes três
+-- cobrem o que as telas consultam: funil (status + event_name), recorte
+-- por data, e a subconsulta correlacionada de `last_moved_at` — que roda
+-- uma vez por linha da lista de leads (até 5.000 no board do CRM) e com
+-- este índice sai inteira da chave, sem tocar a tabela.
+CREATE INDEX idx_meta_capi_events_status_evento ON meta_capi_events(status, event_name);
+CREATE INDEX idx_meta_capi_events_created_at ON meta_capi_events(created_at);
+CREATE INDEX idx_meta_capi_events_lead_status_data
+  ON meta_capi_events(customer_id, status, created_at);
 
 -- 4. TABELA: meta_campaigns
 -- Metadados de campanha (uma linha por campanha, sem histórico).
@@ -277,6 +299,10 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
 
 CREATE INDEX idx_whatsapp_messages_phone ON whatsapp_messages(phone);
 CREATE INDEX idx_whatsapp_messages_customer_id ON whatsapp_messages(customer_id);
+-- Abrir a conversa lê as mensagens do lead em ordem cronológica; com o
+-- tempo no índice a thread já sai ordenada, sem sort.
+CREATE INDEX idx_whatsapp_messages_lead_tempo
+  ON whatsapp_messages(customer_id, message_timestamp_unix);
 
 -- 8.1 TABELA: whatsapp_media
 -- Os bytes dos arquivos recebidos/enviados no WhatsApp, um por
@@ -340,6 +366,13 @@ CREATE TABLE IF NOT EXISTS whatsapp_conversations (
 CREATE INDEX idx_whatsapp_conversations_ia_pendentes
   ON whatsapp_conversations(last_inbound_at, ai_last_analyzed_at);
 
+-- O long polling da aba Conversas lê MAX(updated_at) a cada poucos
+-- segundos por aba aberta; com índice isso é a ponta do índice em vez
+-- de varredura. last_message_at é a ordenação padrão da lista.
+CREATE INDEX idx_whatsapp_conversations_updated_at ON whatsapp_conversations(updated_at);
+CREATE INDEX idx_whatsapp_conversations_last_message_at
+  ON whatsapp_conversations(last_message_at);
+
 -- 10. TABELA: whatsapp_event_map
 -- Equivalente a crm_meta_event_map, mas para o funil de conversas do
 -- WhatsApp: em vez de pipeline_id/status_id dinâmicos do Kommo, o
@@ -364,3 +397,73 @@ CREATE TABLE IF NOT EXISTS whatsapp_event_map (
   is_conversion BOOLEAN DEFAULT FALSE NOT NULL,
   CONSTRAINT whatsapp_event_map_estagio_unique UNIQUE (estagio)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 11. TABELAS: paginas_visitantes e paginas_eventos
+-- Rastreio de páginas de vendas (script /t.js do app). O visitante
+-- guarda a origem da visita e, depois do formulário, o customer_id; o
+-- evento guarda PageView, Lead, InitiateCheckout e Purchase com o mesmo
+-- event_id enviado à Meta. Ver migracao_paginas_cliente.sql.
+CREATE TABLE IF NOT EXISTS paginas_visitantes (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  visitor_id CHAR(32) NOT NULL,
+  site_id BIGINT NOT NULL,
+  customer_id BIGINT NULL,
+  first_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  landing_url VARCHAR(1000),
+  referrer VARCHAR(1000),
+  -- Último toque com origem conhecida. Uma visita direta depois de um
+  -- clique no anúncio não apaga a campanha.
+  utm_source VARCHAR(255),
+  utm_medium VARCHAR(255),
+  utm_campaign VARCHAR(255),
+  utm_content VARCHAR(255),
+  utm_term VARCHAR(255),
+  fbclid VARCHAR(500),
+  fbc VARCHAR(500),
+  fbp VARCHAR(120),
+  meta_ad_id VARCHAR(255),
+  meta_adset_id VARCHAR(255),
+  meta_campaign_id VARCHAR(255),
+  ip_address VARCHAR(45),
+  user_agent VARCHAR(512),
+  CONSTRAINT paginas_visitantes_visitor_id_key UNIQUE (visitor_id),
+  CONSTRAINT paginas_visitantes_customer_id_fkey
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX idx_paginas_visitantes_customer_id ON paginas_visitantes(customer_id);
+
+CREATE TABLE IF NOT EXISTS paginas_eventos (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  site_id BIGINT NOT NULL,
+  -- NULL quando a compra chegou pelo webhook sem id de visitante.
+  visitor_id CHAR(32) NULL,
+  customer_id BIGINT NULL,
+  event_name VARCHAR(40) NOT NULL,
+  event_id VARCHAR(120) NOT NULL,
+  page_url VARCHAR(1000),
+  -- host + caminho, sem query string: é o que agrupa a tabela por página.
+  page_path VARCHAR(500),
+  value DECIMAL(14,2) NULL,
+  currency VARCHAR(3) NULL,
+  order_id VARCHAR(120) NULL,
+  plataforma VARCHAR(20) NULL,
+  -- Cópia da origem do visitante no momento do evento, para o recorte
+  -- por campanha não depender de o visitante ainda existir.
+  utm_source VARCHAR(255),
+  utm_campaign VARCHAR(255),
+  meta_campaign_id VARCHAR(255),
+  capi_status VARCHAR(10) NOT NULL DEFAULT 'PENDING',
+  capi_error VARCHAR(500),
+  CONSTRAINT paginas_eventos_event_id_key UNIQUE (event_id),
+  CONSTRAINT paginas_eventos_customer_id_fkey
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX idx_paginas_eventos_created_evento ON paginas_eventos(created_at, event_name);
+CREATE INDEX idx_paginas_eventos_visitor_id ON paginas_eventos(visitor_id);
+CREATE INDEX idx_paginas_eventos_site_created ON paginas_eventos(site_id, created_at);

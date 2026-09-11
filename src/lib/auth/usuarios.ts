@@ -158,6 +158,21 @@ export async function defineVinculos(userId: number, clientDbNames: string[]): P
 // Criação e gestão de contas
 // -------------------------------------------------------------------
 
+/**
+ * E-mail já cadastrado.
+ *
+ * Classe própria (e não `Error` genérico) porque quem chama precisa
+ * distinguir "esse e-mail já existe" — situação normal, resposta
+ * deliberadamente ambígua para não virar verificador de cadastro — de
+ * "o banco caiu", que precisa de mensagem de erro de verdade.
+ */
+export class EmailJaCadastrado extends Error {
+  constructor() {
+    super('Já existe uma conta com este e-mail');
+    this.name = 'EmailJaCadastrado';
+  }
+}
+
 export async function criaUsuario(dados: {
   email: string;
   senha: string;
@@ -167,15 +182,24 @@ export async function criaUsuario(dados: {
 }): Promise<number> {
   const email = dados.email.trim().toLowerCase();
   const existente = await buscaUsuarioPorEmail(email);
-  if (existente) throw new Error('Já existe uma conta com este e-mail');
+  if (existente) throw new EmailJaCadastrado();
 
   const hash = await geraHashSenha(dados.senha);
-  const { insertId } = await execute(
-    `INSERT INTO trakeamento_controle.app_users (email, password_hash, name, role, status)
-     VALUES (?, ?, ?, ?, ?)`,
-    [email, hash, dados.nome.trim(), dados.papel ?? 'cliente', dados.status ?? 'pendente'],
-  );
-  return insertId;
+  try {
+    const { insertId } = await execute(
+      `INSERT INTO trakeamento_controle.app_users (email, password_hash, name, role, status)
+       VALUES (?, ?, ?, ?, ?)`,
+      [email, hash, dados.nome.trim(), dados.papel ?? 'cliente', dados.status ?? 'pendente'],
+    );
+    return insertId;
+  } catch (erro) {
+    // Duas solicitações do mesmo e-mail ao mesmo tempo passam as duas
+    // pelo SELECT acima e só o índice único segura a segunda. Sem esta
+    // conversão, uma corrida viraria "erro no servidor" em vez do mesmo
+    // caminho do e-mail repetido.
+    if ((erro as { code?: string })?.code === 'ER_DUP_ENTRY') throw new EmailJaCadastrado();
+    throw erro;
+  }
 }
 
 export async function listaUsuarios(): Promise<(Usuario & { clientes: string[] })[]> {
