@@ -26,10 +26,16 @@
 -- como qualquer outro lead, e segue o mesmo fluxo do Kommo. Estas
 -- tabelas guardam só o caminho até ele.
 --
--- Segurança da execução: só CREATE TABLE e CREATE INDEX. Não altera
--- tabela existente. Rodar duas vezes: as tabelas são IF NOT EXISTS e os
--- índices devolvem erro 1061 (Duplicate key name), que pode ser
--- ignorado.
+-- Segurança da execução: só CREATE TABLE. Não altera tabela existente.
+-- Rodar duas vezes é seguro: os índices são declarados dentro do
+-- próprio CREATE TABLE IF NOT EXISTS, então não há CREATE INDEX solto
+-- para devolver erro 1061 numa segunda execução.
+--
+-- ATENÇÃO AO BANCO SELECIONADO. Este arquivo não tem USE, porque o nome
+-- do banco muda por cliente: as tabelas são criadas no banco que estiver
+-- selecionado. No phpMyAdmin, clique no banco do cliente na lista da
+-- esquerda e confira o nome no topo da tela ANTES de colar. Se o
+-- information_schema estiver selecionado, o MySQL devolve #1044.
 --
 -- Como aplicar (uma vez por banco de cliente):
 --   mysql -u USUARIO -p NOME_DO_BANCO_DO_CLIENTE < migracao_paginas_cliente.sql
@@ -60,12 +66,11 @@ CREATE TABLE IF NOT EXISTS paginas_visitantes (
   ip_address VARCHAR(45),
   user_agent VARCHAR(512),
   CONSTRAINT paginas_visitantes_visitor_id_key UNIQUE (visitor_id),
+  INDEX idx_paginas_visitantes_customer_id (customer_id),
   CONSTRAINT paginas_visitantes_customer_id_fkey
     FOREIGN KEY (customer_id) REFERENCES customers(id)
     ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE INDEX idx_paginas_visitantes_customer_id ON paginas_visitantes(customer_id);
 
 CREATE TABLE IF NOT EXISTS paginas_eventos (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -91,17 +96,13 @@ CREATE TABLE IF NOT EXISTS paginas_eventos (
   capi_status VARCHAR(10) NOT NULL DEFAULT 'PENDING',
   capi_error VARCHAR(500),
   CONSTRAINT paginas_eventos_event_id_key UNIQUE (event_id),
+  INDEX idx_paginas_eventos_created_evento (created_at, event_name),
+  INDEX idx_paginas_eventos_visitor_id (visitor_id),
+  INDEX idx_paginas_eventos_site_created (site_id, created_at),
   CONSTRAINT paginas_eventos_customer_id_fkey
     FOREIGN KEY (customer_id) REFERENCES customers(id)
     ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE INDEX idx_paginas_eventos_created_evento ON paginas_eventos(created_at, event_name);
-CREATE INDEX idx_paginas_eventos_visitor_id ON paginas_eventos(visitor_id);
-CREATE INDEX idx_paginas_eventos_site_created ON paginas_eventos(site_id, created_at);
-
--- Conferência
-SELECT TABLE_NAME
-  FROM information_schema.tables
- WHERE table_schema = DATABASE()
-   AND TABLE_NAME IN ('paginas_visitantes', 'paginas_eventos');
+-- Conferência: deve listar paginas_eventos e paginas_visitantes.
+SHOW TABLES LIKE 'paginas%';

@@ -35,14 +35,22 @@
 --
 -- ANTES DE RODAR: faça backup do banco central.
 -- Segurança da execução: só CREATE TABLE. Não altera tabela existente.
+-- Rodar duas vezes é seguro (IF NOT EXISTS).
+--
+-- Nomes com o banco na frente. A tabela e a referência da foreign key
+-- levam `trakeamento_controle.` explícito, e o arquivo não tem USE nem
+-- consulta ao information_schema. No phpMyAdmin, o banco em que o
+-- CREATE TABLE cai depende do banco selecionado na tela, e uma execução
+-- com o information_schema selecionado falhava com #1044 ("Acesso
+-- negado ... ao banco de dados 'information_schema'"). Com o nome
+-- completo, o arquivo funciona com qualquer banco selecionado.
 --
 -- Como aplicar:
 --   mysql -u USUARIO -p < migracao_paginas_central.sql
+-- ou cole o arquivo inteiro na aba SQL do phpMyAdmin.
 -- ===================================================================
 
-USE trakeamento_controle;
-
-CREATE TABLE IF NOT EXISTS paginas_sites (
+CREATE TABLE IF NOT EXISTS trakeamento_controle.paginas_sites (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -58,14 +66,10 @@ CREATE TABLE IF NOT EXISTS paginas_sites (
   CONSTRAINT paginas_sites_site_key_key UNIQUE (site_key),
   CONSTRAINT paginas_sites_client_db_name_fkey
     FOREIGN KEY (client_db_name)
-    REFERENCES ad_accounts(client_db_name)
+    REFERENCES trakeamento_controle.ad_accounts(client_db_name)
     ON UPDATE CASCADE
     ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Conferência
-SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT
-  FROM information_schema.columns
- WHERE table_schema = 'trakeamento_controle'
-   AND table_name = 'paginas_sites'
- ORDER BY ORDINAL_POSITION;
+-- Conferência: deve listar as 13 colunas.
+SHOW COLUMNS FROM trakeamento_controle.paginas_sites;
