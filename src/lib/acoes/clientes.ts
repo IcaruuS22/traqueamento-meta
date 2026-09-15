@@ -6,16 +6,35 @@ import { requireAdmin } from '@/lib/auth/guard';
 import { ACOES, registraAuditoria } from '@/lib/audit';
 import {
   buscaAdAccount,
+  buscaProdutosDoCliente,
   conflitoDeAdAccount,
   criaAdAccount,
+  crmAccountEmUso,
   removeAdAccount,
   salvaCampoValorCrm,
+  salvaCrmCliente,
+  salvaProdutos,
   salvaSubdominioKommo,
 } from '@/lib/db/cliente';
 import { apagaBancoDoCliente, criaBancoDoCliente } from '@/lib/db/provisiona';
 import { salvaInvestimentoMensal } from '@/lib/db/orcamento';
+import { criaSite } from '@/lib/db/paginas-sites';
 import { lacunaDeEsquema } from '@/lib/db/pool';
+import { buscaConfigWhatsapp, salvaConfigWhatsapp } from '@/lib/db/whatsapp';
 import { confirmacaoDeExclusaoBate, geraNomeBanco } from '@/lib/nomes-banco';
+import {
+  ROTULO_PRODUTO,
+  ehProduto,
+  normalizaProdutos,
+  serializaProdutos,
+  type Produto,
+} from '@/lib/produtos';
+import {
+  leDadosDosProdutos,
+  soOSubdominio,
+  subdominioKommoValido,
+  type DadosDosProdutos,
+} from '@/lib/produtos-form';
 import type { EstadoFormulario } from '@/lib/auth/actions';
 
 /**
@@ -29,6 +48,9 @@ import type { EstadoFormulario } from '@/lib/auth/actions';
  *    conta de CRM, e os mapeamentos hoje têm tela própria ("Configuração
  *    de eventos"), com edição e exclusão. Exigir os dois na criação
  *    obrigava a inventar dado para poder cadastrar;
+ *  - o cadastro começa pela escolha dos produtos (Landing page,
+ *    Formulários Instantâneos, WhatsApp) e só pede os dados deles; os
+ *    outros entram depois por `acaoAdicionarProduto`;
  *  - o disparo ficava aberto na internet, com o formulário HTML chamando
  *    o webhook direto. Aqui é Server Action atrás de `requireAdmin()`.
  */
@@ -43,11 +65,33 @@ const schema = z.object({
     .transform((v) => v.replace(/^act_/i, '')),
   meta_pixel_dataset_id: z.string().trim().min(1, 'ID do pixel/dataset é obrigatório').max(255),
   meta_access_token: z.string().trim().min(20, 'Token da Meta parece curto demais').max(512),
-  crm_account_id: z.string().trim().max(255).optional(),
-  kommo_access_token: z.string().trim().max(4000).optional(),
-  kommo_subdomain: z.string().trim().max(120).optional(),
   content_category: z.string().trim().max(255).optional(),
 });
+
+const MSG_SEM_COLUNA_PRODUTOS =
+  'A lista de produtos não foi gravada: o banco central ainda não tem a coluna. Rode ' +
+  '"Banco de Dados/migracao_produtos_cliente.sql"; até lá, a lista de clientes deduz os ' +
+  'produtos pelo que está cadastrado.';
+
+/** Onde terminar a configuração de cada produto escolhido. */
+function proximosPassos(clientDb: string, dados: DadosDosProdutos): string[] {
+  const banco = encodeURIComponent(clientDb);
+  const passos: string[] = [];
+  if (dados.landing_page) {
+    passos.push(`Landing page: copie a tag e os webhooks em /admin/clientes/${banco}/sites.`);
+  }
+  if (dados.formularios) {
+    passos.push(`Formulários: mapeie as etapas do Kommo em /app/${banco}/formularios/config.`);
+  }
+  if (dados.whatsapp) {
+    passos.push(
+      dados.whatsapp.via === 'evolution'
+        ? `WhatsApp: conecte pelo QR Code da Evolution em /app/${banco}/whatsapp.`
+        : `WhatsApp: confira o pixel de mensagens em /app/${banco}/whatsapp.`,
+    );
+  }
+  return passos;
+}
 
 export async function acaoCriarCliente(
   _estado: EstadoFormulario,
@@ -55,14 +99,14 @@ export async function acaoCriarCliente(
 ): Promise<EstadoFormulario> {
   const admin = await requireAdmin();
 
+  const produtos = normalizaProdutos(form.getAll('produtos'));
+  if (!produtos.length) return { erro: 'Escolha ao menos um produto para este cliente.' };
+
   const parsed = schema.safeParse({
     account_name: form.get('account_name'),
     ad_account_id: form.get('ad_account_id'),
     meta_pixel_dataset_id: form.get('meta_pixel_dataset_id'),
     meta_access_token: form.get('meta_access_token'),
-    crm_account_id: form.get('crm_account_id') || undefined,
-    kommo_access_token: form.get('kommo_access_token') || undefined,
-    kommo_subdomain: form.get('kommo_subdomain') || undefined,
     content_category: form.get('content_category') || undefined,
   });
   if (!parsed.success) {
@@ -70,8 +114,14 @@ export async function acaoCriarCliente(
   }
   const dados = parsed.data;
 
-  const clientDb = geraNomeBanco(dados.account_name, dados.crm_account_id ?? null);
-  const crmAccountId = dados.crm_account_id ?? null;
+  // Tudo validado antes de criar o banco: erro no domínio do site
+  // descoberto depois do CREATE DATABASE deixaria um banco vazio para trás.
+  const lidos = leDadosDosProdutos(form, produtos);
+  if ('erro' in lidos) return { erro: lidos.erro };
+  const doProduto = lidos.dados;
+
+  const crmAccountId = doProduto.formularios?.crm_account_id ?? null;
+  const clientDb = geraNomeBanco(dados.account_name, crmAccountId);
 
   const conflito = await conflitoDeAdAccount({
     ad_account_id: dados.ad_account_id,
@@ -102,18 +152,20 @@ export async function acaoCriarCliente(
     };
   }
 
+  let produtosGravados = false;
   try {
-    await criaAdAccount({
+    ({ produtosGravados } = await criaAdAccount({
       account_name: dados.account_name,
       ad_account_id: dados.ad_account_id,
       crm_account_id: crmAccountId,
       meta_pixel_dataset_id: dados.meta_pixel_dataset_id,
       meta_access_token: dados.meta_access_token,
-      kommo_access_token: dados.kommo_access_token ?? null,
-      kommo_subdomain: soOSubdominio(dados.kommo_subdomain ?? '') || null,
+      kommo_access_token: doProduto.formularios?.kommo_access_token ?? null,
+      kommo_subdomain: doProduto.formularios?.kommo_subdomain ?? null,
       content_category: dados.content_category ?? null,
+      produtos: serializaProdutos(produtos),
       client_db_name: clientDb,
-    });
+    }));
   } catch (erro) {
     console.error('[clientes] banco criado mas catálogo não registrou', clientDb, erro);
     await registraAuditoria({
@@ -130,8 +182,43 @@ export async function acaoCriarCliente(
     };
   }
 
-  // O token da Meta fica de fora do detalhe da auditoria de propósito:
-  // o log é lido por gente, e credencial de terceiro não entra nele.
+  // Daqui em diante o cliente existe. Site e WhatsApp são passos
+  // seguintes: se um falhar, o cadastro fica e a mensagem diz onde
+  // terminar, em vez de devolver erro para um cliente que já entrou.
+  const avisos: string[] = [];
+  let siteId: number | null = null;
+
+  if (doProduto.landing_page) {
+    try {
+      siteId = await criaSite(clientDb, { ...doProduto.landing_page, ativo: true });
+    } catch (erro) {
+      if (lacunaDeEsquema(erro)) {
+        avisos.push('O site não foi criado: rode "Banco de Dados/migracao_paginas_central.sql".');
+      } else {
+        console.error('[clientes] cliente criado mas o site falhou', clientDb, erro);
+        avisos.push('O site não foi criado; cadastre-o em Páginas de vendas.');
+      }
+    }
+  }
+
+  if (doProduto.whatsapp?.via === 'cloud') {
+    try {
+      await salvaConfigWhatsapp(clientDb, {
+        cloud_phone_number_id: doProduto.whatsapp.cloud_phone_number_id,
+        cloud_waba_id: doProduto.whatsapp.cloud_waba_id,
+        cloud_access_token: doProduto.whatsapp.cloud_access_token,
+        meta_test_event_code: null,
+      });
+    } catch (erro) {
+      console.error('[clientes] cliente criado mas a conexão do WhatsApp falhou', clientDb, erro);
+      avisos.push('A conexão do WhatsApp não foi salva; configure-a na tela Conexão do WhatsApp.');
+    }
+  }
+
+  if (!produtosGravados) avisos.push(MSG_SEM_COLUNA_PRODUTOS);
+
+  // Nenhum token entra no detalhe da auditoria: o log é lido por gente,
+  // e credencial de terceiro não entra nele.
   await registraAuditoria({
     userId: admin.id,
     userEmail: admin.email,
@@ -143,17 +230,139 @@ export async function acaoCriarCliente(
       account_name: dados.account_name,
       ad_account_id: dados.ad_account_id,
       com_crm: Boolean(crmAccountId),
+      produtos,
+      produtos_gravados: produtosGravados,
+      site_id: siteId,
+      whatsapp_via: doProduto.whatsapp?.via ?? null,
+      avisos: avisos.length,
     },
   });
 
   revalidatePath('/app');
+  revalidatePath('/admin/clientes');
   return {
-    sucesso:
-      `Cliente "${dados.account_name}" criado. Banco: ${clientDb}. ` +
-      'Configure os eventos e a conexão do WhatsApp pela tela do cliente.',
+    sucesso: [
+      `Cliente "${dados.account_name}" criado com ${produtos.map((p) => ROTULO_PRODUTO[p]).join(', ')}.`,
+      `Banco: ${clientDb}.`,
+      ...proximosPassos(clientDb, doProduto),
+      ...avisos.map((a) => `Atenção: ${a}`),
+    ].join(' '),
   };
 }
 
+/**
+ * Produto adicionado a um cliente que já existe.
+ *
+ * Pede os mesmos dados iniciais do cadastro (`leDadosDosProdutos`) e só
+ * marca o produto como ativo depois de gravar o que ele precisa: conta
+ * do Kommo, site ou conexão do WhatsApp. Se a gravação falhar, a lista
+ * de produtos não muda.
+ */
+const schemaAdicionarProduto = z.object({
+  client_db: z.string().trim().min(1, 'Cliente não informado').max(64),
+  produto: z.string().trim().refine(ehProduto, 'Produto desconhecido.'),
+});
+
+export async function acaoAdicionarProduto(
+  _estado: EstadoFormulario,
+  form: FormData,
+): Promise<EstadoFormulario> {
+  const admin = await requireAdmin();
+
+  const parsed = schemaAdicionarProduto.safeParse({
+    client_db: form.get('client_db'),
+    produto: form.get('produto'),
+  });
+  if (!parsed.success) return { erro: parsed.error.issues[0]?.message ?? 'Dados inválidos' };
+  const produto = parsed.data.produto as Produto;
+  const rotulo = ROTULO_PRODUTO[produto];
+
+  const conta = await buscaAdAccount(parsed.data.client_db);
+  if (!conta) return { erro: 'Cliente não encontrado no catálogo.' };
+  const banco = conta.client_db_name;
+
+  const atual = await buscaProdutosDoCliente(banco);
+  if (atual.produtos.includes(produto)) return { erro: `${rotulo} já está ativo para este cliente.` };
+
+  const lidos = leDadosDosProdutos(form, [produto]);
+  if ('erro' in lidos) return { erro: lidos.erro };
+  const { formularios, landing_page, whatsapp } = lidos.dados;
+
+  let siteId: number | null = null;
+  try {
+    if (formularios) {
+      const dono = await crmAccountEmUso(formularios.crm_account_id, banco);
+      if (dono) {
+        return { erro: `A conta ${formularios.crm_account_id} do Kommo já pertence ao cliente "${dono}".` };
+      }
+      await salvaCrmCliente(banco, formularios);
+    }
+    if (landing_page) {
+      siteId = await criaSite(banco, { ...landing_page, ativo: true });
+    }
+    if (whatsapp?.via === 'cloud') {
+      // O código de teste da Meta mora em ad_accounts e a gravação da
+      // conexão o sobrescreve: repassar o atual evita apagar um teste em
+      // andamento só por ter ligado o WhatsApp.
+      const config = await buscaConfigWhatsapp(banco);
+      await salvaConfigWhatsapp(banco, {
+        cloud_phone_number_id: whatsapp.cloud_phone_number_id,
+        cloud_waba_id: whatsapp.cloud_waba_id,
+        cloud_access_token: whatsapp.cloud_access_token,
+        meta_test_event_code: config.meta_test_event_code,
+      });
+    }
+  } catch (erro) {
+    if (lacunaDeEsquema(erro)) {
+      return {
+        erro:
+          `O banco central ainda não tem o que ${rotulo} precisa. ` +
+          'Rode "npm run db:analise" para ver qual migração falta. O produto não foi adicionado.',
+      };
+    }
+    console.error('[clientes] falha ao adicionar produto', banco, produto, erro);
+    return { erro: `Não foi possível adicionar ${rotulo}. O produto não foi marcado como ativo.` };
+  }
+
+  const novos = normalizaProdutos([...atual.produtos, produto]);
+  let listaGravada = true;
+  let aviso = '';
+  try {
+    await salvaProdutos(banco, novos);
+  } catch (erro) {
+    listaGravada = false;
+    if (lacunaDeEsquema(erro)) {
+      aviso = MSG_SEM_COLUNA_PRODUTOS;
+    } else {
+      console.error('[clientes] dados do produto gravados mas a lista falhou', banco, erro);
+      aviso = 'Os dados foram gravados, mas a lista de produtos não. Tente adicionar de novo.';
+    }
+  }
+
+  await registraAuditoria({
+    userId: admin.id,
+    userEmail: admin.email,
+    acao: ACOES.CLIENTE_PRODUTO_ADICIONADO,
+    clientDb: banco,
+    detalhe: {
+      produto,
+      produtos: novos,
+      lista_gravada: listaGravada,
+      site_id: siteId,
+      whatsapp_via: whatsapp?.via ?? null,
+      crm_account_id: formularios?.crm_account_id ?? null,
+    },
+  });
+
+  revalidatePath('/admin/clientes');
+  revalidatePath(`/admin/clientes/${encodeURIComponent(banco)}/sites`);
+  revalidatePath(`/app/${encodeURIComponent(banco)}/whatsapp`);
+  return {
+    sucesso: [`${rotulo} adicionado.`, ...proximosPassos(banco, lidos.dados), aviso ? `Atenção: ${aviso}` : '']
+      .filter(Boolean)
+      .join(' '),
+  };
+}
 
 /**
  * Exclusão de cliente. Definitiva, sem lixeira e sem desfazer.
@@ -407,16 +616,6 @@ const schemaSubdominioKommo = z.object({
   kommo_subdomain: z.string().trim().max(120),
 });
 
-/** Aceita a URL inteira colada e guarda só o subdomínio. */
-function soOSubdominio(valor: string): string {
-  const sem = valor
-    .replace(/^https?:\/\//i, '')
-    .replace(/\/.*$/, '')
-    .replace(/\.kommo\.com$/i, '')
-    .trim();
-  return sem.toLowerCase();
-}
-
 export async function acaoSalvarSubdominioKommo(
   _estado: EstadoFormulario,
   form: FormData,
@@ -433,7 +632,7 @@ export async function acaoSalvarSubdominioKommo(
   if (!conta) return { erro: 'Cliente não encontrado no catálogo.' };
 
   const bruto = soOSubdominio(parsed.data.kommo_subdomain);
-  if (bruto !== '' && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(bruto)) {
+  if (bruto !== '' && !subdominioKommoValido(bruto)) {
     return {
       erro: 'Subdomínio inválido. Use só o nome da conta, como "minhaempresa".',
     };

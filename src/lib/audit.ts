@@ -40,6 +40,7 @@ export const ACOES = {
   CLIENTE_FEE_ALTERADO: 'cliente_fee_alterado',
   CLIENTE_CAMPO_VALOR_ALTERADO: 'cliente_campo_valor_alterado',
   CLIENTE_SUBDOMINIO_KOMMO_ALTERADO: 'cliente_subdominio_kommo_alterado',
+  CLIENTE_PRODUTO_ADICIONADO: 'cliente_produto_adicionado',
   CLIENTE_EXCLUIDO: 'cliente_excluido',
   SYNC_DISPARADA: 'sync_disparada',
   BACKFILL_DISPARADO: 'backfill_disparado',

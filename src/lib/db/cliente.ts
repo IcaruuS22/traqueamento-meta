@@ -8,6 +8,8 @@ import {
   lacunaDeEsquema,
 } from '@/lib/db/pool';
 import { sanitizaNomeBanco } from '@/lib/nomes-banco';
+import { derivaProdutos, leProdutos, serializaProdutos, type Produto } from '@/lib/produtos';
+import type { DadosFormularios } from '@/lib/produtos-form';
 
 /**
  * Acesso aos bancos por cliente (`cliente_<slug>_<id>`).
@@ -238,8 +240,145 @@ export type NovaAdAccount = {
   /** Só o nome da conta: "minhaempresa", não a URL inteira. */
   kommo_subdomain: string | null;
   content_category: string | null;
+  /** Texto de `serializaProdutos`, como "landing_page,whatsapp". */
+  produtos: string | null;
   client_db_name: string;
 };
+
+export type ProdutosDoCliente = {
+  produtos: Produto[];
+  /** `false` quando a coluna está NULL e a lista foi deduzida. */
+  definidos: boolean;
+};
+
+/**
+ * Produtos de cada cliente: o que está gravado em `ad_accounts.produtos`
+ * ou, com a coluna NULL, o que dá para deduzir do que está cadastrado.
+ *
+ * Quatro consultas pequenas em vez de uma com JOIN: cada tabela veio de
+ * uma migração diferente, e banco central atrasado não pode derrubar a
+ * lista de clientes inteira por causa de uma delas. A presença do token
+ * do Kommo sai do banco como booleano; o valor não.
+ */
+async function leProdutosDe(clientDb: string | null): Promise<Map<string, ProdutosDoCliente>> {
+  const filtro = clientDb ? ' AND client_db_name = ?' : '';
+  const params = clientDb ? [clientDb] : [];
+  const lacunas = new LacunasDeEsquema();
+
+  const [gravados, crm, whatsapp, sites] = await Promise.all([
+    lacunas.ou(
+      query<{ client_db_name: string; produtos: string | null }>(
+        `SELECT client_db_name, produtos FROM trakeamento_controle.ad_accounts
+          WHERE client_db_name IS NOT NULL AND client_db_name <> ''${filtro}`,
+        params,
+      ),
+      [],
+    ),
+    query<{ client_db_name: string; tem_crm: number }>(
+      `SELECT client_db_name,
+              (COALESCE(crm_account_id, '') <> '' OR COALESCE(kommo_access_token, '') <> '') AS tem_crm
+         FROM trakeamento_controle.ad_accounts
+        WHERE client_db_name IS NOT NULL AND client_db_name <> ''${filtro}`,
+      params,
+    ),
+    lacunas.ou(
+      query<{ client_db_name: string }>(
+        `SELECT DISTINCT client_db_name FROM trakeamento_controle.whatsapp_accounts
+          WHERE 1 = 1${filtro}`,
+        params,
+      ),
+      [],
+    ),
+    lacunas.ou(
+      query<{ client_db_name: string }>(
+        `SELECT DISTINCT client_db_name FROM trakeamento_controle.paginas_sites
+          WHERE 1 = 1${filtro}`,
+        params,
+      ),
+      [],
+    ),
+  ]);
+
+  const texto = new Map(gravados.map((l) => [l.client_db_name, l.produtos]));
+  const comWhatsapp = new Set(whatsapp.map((l) => l.client_db_name));
+  const comSites = new Set(sites.map((l) => l.client_db_name));
+
+  const mapa = new Map<string, ProdutosDoCliente>();
+  for (const l of crm) {
+    const lista = leProdutos(texto.get(l.client_db_name));
+    mapa.set(
+      l.client_db_name,
+      lista
+        ? { produtos: lista, definidos: true }
+        : {
+            produtos: derivaProdutos({
+              temCrm: Boolean(Number(l.tem_crm)),
+              temWhatsapp: comWhatsapp.has(l.client_db_name),
+              temSites: comSites.has(l.client_db_name),
+            }),
+            definidos: false,
+          },
+    );
+  }
+  return mapa;
+}
+
+/** Produtos de todos os clientes, para a lista do administrador. */
+export function leProdutosDosClientes(): Promise<Map<string, ProdutosDoCliente>> {
+  return leProdutosDe(null);
+}
+
+export async function buscaProdutosDoCliente(clientDb: string): Promise<ProdutosDoCliente> {
+  const nome = sanitizaNomeBanco(clientDb);
+  if (!nome) return { produtos: [], definidos: false };
+  return (await leProdutosDe(nome)).get(nome) ?? { produtos: [], definidos: false };
+}
+
+/** Grava a lista de produtos. Lança se a coluna ainda não existe. */
+export async function salvaProdutos(clientDb: string, produtos: Produto[]): Promise<void> {
+  const nome = sanitizaNomeBanco(clientDb);
+  if (!nome) throw new Error('Nome de banco de cliente inválido');
+  await execute(
+    `UPDATE trakeamento_controle.ad_accounts SET produtos = ? WHERE client_db_name = ?`,
+    [serializaProdutos(produtos) || null, nome],
+  );
+}
+
+/** Nome do cliente que já usa esta conta do Kommo, fora o próprio. */
+export async function crmAccountEmUso(crmAccountId: string, clientDb: string): Promise<string | null> {
+  const linha = await queryOne<{ account_name: string }>(
+    `SELECT account_name FROM trakeamento_controle.ad_accounts
+      WHERE crm_account_id = ? AND client_db_name <> ?
+      LIMIT 1`,
+    [crmAccountId, clientDb],
+  );
+  return linha?.account_name ?? null;
+}
+
+/**
+ * Liga o Kommo a um cliente que já existe (produto Formulários adicionado
+ * depois do cadastro). O subdomínio veio de migração própria: sem a
+ * coluna, conta e token são gravados assim mesmo e a automação de
+ * perdidos só continua pulando o cliente.
+ */
+export async function salvaCrmCliente(clientDb: string, dados: DadosFormularios): Promise<void> {
+  const nome = sanitizaNomeBanco(clientDb);
+  if (!nome) throw new Error('Nome de banco de cliente inválido');
+
+  await execute(
+    `UPDATE trakeamento_controle.ad_accounts
+        SET crm_account_id = ?, kommo_access_token = ?
+      WHERE client_db_name = ?`,
+    [dados.crm_account_id, dados.kommo_access_token, nome],
+  );
+  if (dados.kommo_subdomain) {
+    try {
+      await salvaSubdominioKommo(nome, dados.kommo_subdomain);
+    } catch (erro) {
+      if (!lacunaDeEsquema(erro)) throw erro;
+    }
+  }
+}
 
 /**
  * Diz se algum identificador único do cliente novo já está no catálogo.
@@ -293,17 +432,20 @@ export async function conflitoDeAdAccount(dados: {
  * cliente é operação crítica demais para parar por causa de um campo que
  * só a automação de perdidos usa. O admin preenche depois, na lista.
  */
-export async function criaAdAccount(dados: NovaAdAccount): Promise<number> {
-  const insere = async (comSubdominio: boolean) => {
-    const coluna = comSubdominio ? ', kommo_subdomain' : '';
-    const valor = comSubdominio ? ', ?' : '';
-    const extra = comSubdominio ? [dados.kommo_subdomain] : [];
+export async function criaAdAccount(
+  dados: NovaAdAccount,
+): Promise<{ id: number; produtosGravados: boolean }> {
+  type Opcional = 'kommo_subdomain' | 'produtos';
+  const insere = async (opcionais: Opcional[]) => {
+    const colunas = opcionais.map((c) => `, ${c}`).join('');
+    const marcas = opcionais.map(() => ', ?').join('');
+    const extra = opcionais.map((c) => dados[c]);
     const { insertId } = await execute(
       `INSERT INTO trakeamento_controle.ad_accounts
          (account_name, ad_account_id, crm_account_id, meta_pixel_dataset_id,
           meta_access_token, kommo_access_token, content_category,
-          client_db_name, status${coluna})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE'${valor})`,
+          client_db_name, status${colunas})
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE'${marcas})`,
       [
         dados.account_name,
         dados.ad_account_id,
@@ -319,11 +461,17 @@ export async function criaAdAccount(dados: NovaAdAccount): Promise<number> {
     return insertId;
   };
 
-  try {
-    return await insere(true);
-  } catch (erro) {
-    if (!lacunaDeEsquema(erro)) throw erro;
-    return await insere(false);
+  // Cada coluna opcional veio de uma migração. Banco central atrasado
+  // recusa a coluna que não tem; o cadastro entra sem ela, e quem chama
+  // fica sabendo se a lista de produtos foi junto.
+  const tentativas: Opcional[][] = [['kommo_subdomain', 'produtos'], ['kommo_subdomain'], []];
+  for (let i = 0; ; i++) {
+    try {
+      const id = await insere(tentativas[i]);
+      return { id, produtosGravados: tentativas[i].includes('produtos') };
+    } catch (erro) {
+      if (!lacunaDeEsquema(erro) || i === tentativas.length - 1) throw erro;
+    }
   }
 }
 

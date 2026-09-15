@@ -68,6 +68,11 @@ const MIGRACOES_CENTRAL: Migracao[] = [
     descricao: 'cadastro dos sites do rastreio de páginas de vendas',
     exige: [{ tipo: 'tabela', tabela: 'paginas_sites' }],
   },
+  {
+    arquivo: 'migracao_produtos_cliente.sql',
+    descricao: 'produtos contratados por cliente (landing page, formulários, WhatsApp)',
+    exige: [{ tipo: 'coluna', tabela: 'ad_accounts', coluna: 'produtos' }],
+  },
 ];
 
 const MIGRACOES_CLIENTE: Migracao[] = [

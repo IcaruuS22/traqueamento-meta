@@ -11,6 +11,7 @@
 --   WhatsApp/migracao_whatsapp_evolution . provider e colunas evolution_*
 --   migration_painel_metric_prefs ........ painel_metric_prefs
 --   migracao_paginas_central ............. paginas_sites
+--   migracao_produtos_cliente ............ ad_accounts.produtos
 --
 -- Em um banco NOVO, rode só este arquivo — as migrações acima já
 -- estão embutidas, e rodá-las depois só devolveria "Duplicate column".
@@ -62,6 +63,10 @@ CREATE TABLE IF NOT EXISTS ad_accounts (
   -- cliente.
   kommo_subdomain VARCHAR(120) NULL DEFAULT NULL,
   content_category VARCHAR(255),
+  -- Produtos que o cliente usa, separados por vírgula:
+  -- landing_page, formularios, whatsapp. NULL = não definido (cliente
+  -- anterior à escolha de produtos; a tela deduz pelo que há cadastrado).
+  produtos VARCHAR(100) NULL DEFAULT NULL,
   -- Campo personalizado do Kommo que guarda o valor do negócio: o
   -- rótulo exato ou o id numérico do campo. NULL = usa o campo nativo
   -- "Venda" e, na falta dele, os rótulos conhecidos.

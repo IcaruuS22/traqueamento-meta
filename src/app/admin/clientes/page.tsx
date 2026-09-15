@@ -4,6 +4,7 @@ import { requireAdminPagina } from '@/lib/auth/guard';
 import {
   contaVinculosPorCliente,
   leCamposValorCrm,
+  leProdutosDosClientes,
   leSubdominiosKommo,
   listaAdAccounts,
 } from '@/lib/db/cliente';
@@ -13,6 +14,7 @@ import { ExcluirCliente } from './excluir-cliente';
 import { InvestimentoMensal } from './investimento-mensal';
 import { CampoValorCrm } from './campo-valor-crm';
 import { SubdominioKommo } from './subdominio-kommo';
+import { ProdutosCliente } from './produtos-cliente';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Clientes | Trakeamento' };
@@ -27,12 +29,13 @@ export const metadata: Metadata = { title: 'Clientes | Trakeamento' };
 export default async function PaginaClientesAdmin() {
   await requireAdminPagina();
 
-  const [clientes, vinculos, investimentos, camposValor, subdominios] = await Promise.all([
+  const [clientes, vinculos, investimentos, camposValor, subdominios, produtos] = await Promise.all([
     listaAdAccounts(),
     contaVinculosPorCliente(),
     leInvestimentosMensais(),
     leCamposValorCrm(),
     leSubdominiosKommo(),
+    leProdutosDosClientes(),
   ]);
 
   return (
@@ -79,6 +82,12 @@ export default async function PaginaClientesAdmin() {
                   <span className="text-[var(--text-secondary)]">{usuarios}</span>
                 </div>
               </dl>
+
+              <ProdutosCliente
+                banco={cliente.client_db_name}
+                produtos={produtos.get(cliente.client_db_name)?.produtos ?? []}
+                definidos={produtos.get(cliente.client_db_name)?.definidos ?? false}
+              />
 
               <div className="flex flex-wrap items-center gap-3">
                 <Link
