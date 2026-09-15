@@ -174,7 +174,14 @@ export async function transacao<T>(
     await conn.commit();
     return resultado;
   } catch (erro) {
-    await conn.rollback();
+    // Se a conexão já caiu, o rollback também estoura. Deixar esse erro
+    // subir trocaria a causa real ("Duplicate entry...") por um
+    // "Connection lost" e quem lê o log procuraria o problema errado.
+    try {
+      await conn.rollback();
+    } catch (erroRollback) {
+      console.error('[db] rollback falhou; erro original abaixo', erroRollback);
+    }
     throw erro;
   } finally {
     conn.release();

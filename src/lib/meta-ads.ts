@@ -1,5 +1,6 @@
 import 'server-only';
 import { buscaCredenciaisCliente } from '@/lib/db/cliente';
+import { env } from '@/lib/env';
 
 /**
  * Escrita no Gerenciador de Anúncios: liga e desliga campanha, conjunto
@@ -18,7 +19,8 @@ import { buscaCredenciaisCliente } from '@/lib/db/cliente';
  * e em relatório de erro, e o corpo de um POST não.
  */
 
-export const VERSAO_GRAPH_ADS = 'v25.0';
+/** Acompanha `META_GRAPH_API_VERSION` (padrão v25.0, o dos workflows n8n). */
+export const VERSAO_GRAPH_ADS = env.meta.graphVersion;
 
 const TIMEOUT_MS = 15_000;
 

@@ -26,9 +26,11 @@ export async function GET() {
       latencia_ms: Date.now() - inicio,
     });
   } catch (erro) {
-    const mensagem = erro instanceof Error ? erro.message : String(erro);
+    // A rota é pública: a mensagem do mysql2 traz host, usuário e nome do
+    // banco. Ela fica no log do servidor e a resposta diz só que caiu.
+    console.error('[health] falha ao consultar o MySQL', erro);
     return NextResponse.json(
-      { ok: false, erro: mensagem, latencia_ms: Date.now() - inicio },
+      { ok: false, erro: 'Banco indisponível', latencia_ms: Date.now() - inicio },
       { status: 503 },
     );
   }

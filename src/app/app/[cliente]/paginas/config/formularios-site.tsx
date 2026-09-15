@@ -1,7 +1,12 @@
 'use client';
 
 import { startTransition, useActionState, useEffect, useRef, useState } from 'react';
-import { acaoExcluirSite, acaoSalvarSite, acaoTrocarTokenSite } from '@/lib/acoes/paginas';
+import {
+  acaoExcluirSite,
+  acaoSalvarSite,
+  acaoSalvarTestEventCode,
+  acaoTrocarTokenSite,
+} from '@/lib/acoes/paginas';
 import type { EstadoFormulario } from '@/lib/auth/actions';
 import { Alerta } from '@/components/form';
 
@@ -172,6 +177,48 @@ export function ExcluirSite({ banco, id, nome }: { banco: string; id: number; no
           Cancelar
         </button>
       </div>
+    </form>
+  );
+}
+
+/**
+ * Test Event Code da conta.
+ *
+ * Mesmo campo da tela de WhatsApp (uma coluna só em `ad_accounts`), aqui
+ * porque cliente que só tem Página de vendas não enxerga aquela aba.
+ * Envio manual pelo mesmo motivo do formulário de site: o React limpa o
+ * campo depois da action e o código ficaria fora da vista.
+ */
+export function TestEventCode({ banco, codigo }: { banco: string; codigo: string | null }) {
+  const [estado, acao, pendente] = useActionState<EstadoFormulario, FormData>(
+    acaoSalvarTestEventCode,
+    {},
+  );
+  const envia = useEnvio(acao);
+
+  return (
+    <form onSubmit={envia} className="space-y-2">
+      <input type="hidden" name="client_db" value={banco} />
+      <label className="block">
+        <span className={ROTULO}>Test Event Code (opcional)</span>
+        <input
+          name="codigo"
+          className="field"
+          maxLength={64}
+          defaultValue={codigo ?? ''}
+          placeholder="ex.: TEST12345"
+        />
+      </label>
+      <p className="text-xs text-[var(--text-tertiary)]">
+        Em Gerenciador de Eventos › Testar eventos, a Meta mostra um código. Com ele preenchido, os
+        eventos aparecem naquela tela em vez de contar como conversão — e isso vale para TODOS os
+        eventos deste cliente, inclusive formulários e WhatsApp. Limpe o campo ao terminar o teste.
+      </p>
+      <button type="submit" className="btn-primary px-3 py-1.5 text-xs" disabled={pendente}>
+        {pendente ? 'Salvando…' : 'Salvar código'}
+      </button>
+      {estado.erro ? <Alerta tipo="erro">{estado.erro}</Alerta> : null}
+      {estado.sucesso ? <Alerta tipo="sucesso">{estado.sucesso}</Alerta> : null}
     </form>
   );
 }

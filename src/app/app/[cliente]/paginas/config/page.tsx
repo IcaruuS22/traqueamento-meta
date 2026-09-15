@@ -1,14 +1,14 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { requireAdminPagina } from '@/lib/auth/guard';
-import { buscaAdAccount } from '@/lib/db/cliente';
+import { buscaAdAccount, buscaTestEventCode } from '@/lib/db/cliente';
 import { listaSitesComToken, type SitePaginaComToken } from '@/lib/db/paginas-sites';
 import { lacunaDeEsquema } from '@/lib/db/pool';
 import { env } from '@/lib/env';
 import { PLATAFORMAS, ROTULO_PLATAFORMA } from '@/lib/paginas-web';
 import { PageHero } from '@/components/hero';
 import { Alerta } from '@/components/form';
-import { Copiavel, ExcluirSite, FormularioSite, TrocarToken } from './formularios-site';
+import { Copiavel, ExcluirSite, FormularioSite, TestEventCode, TrocarToken } from './formularios-site';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Configuração (Página de vendas) | Trakeamento' };
@@ -34,6 +34,8 @@ export default async function PaginaConfigPaginas({
 
   const conta = await buscaAdAccount(banco);
   if (!conta) notFound();
+
+  const testEventCode = await buscaTestEventCode(conta.client_db_name);
 
   let sites: SitePaginaComToken[] = [];
   let semTabela = false;
@@ -126,6 +128,11 @@ export default async function PaginaConfigPaginas({
           <FormularioSite banco={conta.client_db_name} />
         </div>
       ) : null}
+
+      <div className="card space-y-3 p-5">
+        <h2 className="text-base font-medium">Testar os eventos na Meta</h2>
+        <TestEventCode banco={conta.client_db_name} codigo={testEventCode} />
+      </div>
 
       <div className="card space-y-2 p-5 text-xs text-[var(--text-secondary)]">
         <h2 className="text-sm font-medium text-[var(--text-primary)]">Como a página conversa com o script</h2>

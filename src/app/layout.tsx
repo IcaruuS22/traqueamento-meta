@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Trakeamento: Meta Ads + Kommo + WhatsApp',
+  title: 'Trakeamento: Meta Ads + Kommo + WhatsApp + Página de vendas',
   description:
-    'Painel de trakeamento de leads da Meta, conversões via CAPI e atendimento por WhatsApp.',
+    'Painel de trakeamento de leads da Meta, conversões via CAPI, atendimento por WhatsApp e rastreio de páginas de vendas.',
 };
 
 export const viewport: Viewport = {

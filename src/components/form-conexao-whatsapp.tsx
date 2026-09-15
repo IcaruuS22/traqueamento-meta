@@ -87,7 +87,7 @@ export function FormConexaoWhatsapp({
         label="Test Event Code"
         name="meta_test_event_code"
         defaultValue={inicial.meta_test_event_code ?? ''}
-        dica="Opcional, e só vale para os eventos de formulário enviados pelo n8n. O código de teste do WhatsApp é o do bloco abaixo."
+        dica="Opcional. Vale para os eventos que saem pelo pixel principal do cliente — formulários (n8n) e Página de vendas. O código de teste do WhatsApp é o do bloco abaixo."
       />
 
       <div className="space-y-4 rounded-[var(--radius-control)] border border-[var(--border)] p-4">

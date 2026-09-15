@@ -103,6 +103,42 @@ export async function buscaCredenciaisCliente(clientDb: string): Promise<{
 
 
 /**
+ * Test Event Code da conta — o código que a Meta mostra em Gerenciador de
+ * Eventos › Testar eventos.
+ *
+ * Não é segredo (some do painel da Meta em minutos) e vale para todo
+ * evento enviado pela CAPI deste cliente: formulários, WhatsApp e Página
+ * de vendas saem do mesmo `ad_accounts.meta_test_event_code`. Por isso
+ * mora aqui e não no módulo de um produto só.
+ */
+export async function buscaTestEventCode(clientDb: string): Promise<string | null> {
+  const nome = sanitizaNomeBanco(clientDb);
+  if (!nome) return null;
+  const linha = await queryOne<{ meta_test_event_code: string | null }>(
+    `SELECT meta_test_event_code
+       FROM trakeamento_controle.ad_accounts
+      WHERE client_db_name = ?
+      LIMIT 1`,
+    [nome],
+  );
+  return linha?.meta_test_event_code ?? null;
+}
+
+/** Grava (ou limpa, com `null`) o Test Event Code da conta. */
+export async function salvaTestEventCode(clientDb: string, codigo: string | null): Promise<boolean> {
+  const nome = sanitizaNomeBanco(clientDb);
+  if (!nome) return false;
+  const r = await execute(
+    `UPDATE trakeamento_controle.ad_accounts
+        SET meta_test_event_code = ?
+      WHERE client_db_name = ?`,
+    [codigo, nome],
+  );
+  return r.affectedRows > 0;
+}
+
+
+/**
  * Quantos usuários estão vinculados a cada cliente.
  *
  * Uma consulta só para a lista inteira: a tela de administração mostra o

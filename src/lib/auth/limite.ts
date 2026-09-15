@@ -63,8 +63,9 @@ export const REGRAS = {
   // Rastreio de páginas de vendas (rotas públicas, sem sessão). O teto
   // da coleta é alto porque uma navegação normal manda PageView a cada
   // troca de página, e um escritório inteiro pode estar atrás do mesmo
-  // IP. O de lead é baixo porque cada lead cria um negócio no Kommo do
-  // cliente: é ali que um robô enchendo formulário custaria caro.
+  // IP. O de lead é baixo porque cada lead grava uma linha no banco do
+  // cliente e dispara um evento na CAPI: é ali que um robô enchendo
+  // formulário sujaria o relatório e a otimização da Meta.
   coletaPorIp: { max: 120, janelaSeg: 60 },
   leadPorIp: { max: 10, janelaSeg: 600 },
   compraPorIp: { max: 120, janelaSeg: 60 },

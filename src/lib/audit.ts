@@ -52,6 +52,7 @@ export const ACOES = {
   PAGINA_SITE_SALVO: 'pagina_site_salvo',
   PAGINA_SITE_EXCLUIDO: 'pagina_site_excluido',
   PAGINA_TOKEN_TROCADO: 'pagina_token_trocado',
+  PAGINA_TEST_EVENT_CODE: 'pagina_test_event_code',
 } as const;
 
 export type Acao = (typeof ACOES)[keyof typeof ACOES];

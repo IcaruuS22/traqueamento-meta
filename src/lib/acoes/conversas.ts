@@ -288,7 +288,7 @@ export async function acaoSalvarLead(
   });
 
   revalidatePath(`/app/${encodeURIComponent(conta.client_db_name)}/whatsapp/conversas`);
-  revalidatePath(`/app/${encodeURIComponent(conta.client_db_name)}/funil`);
+  revalidatePath(`/app/${encodeURIComponent(conta.client_db_name)}/whatsapp/crm`);
   // O que aconteceu com o evento vai junto, como no quadro do CRM: sem
   // isso, "lead não veio de anúncio" só apareceria no log de auditoria e
   // quem mudou a etapa acharia que o evento saiu.
@@ -346,6 +346,6 @@ export async function acaoExcluirConversa(
   });
 
   revalidatePath(`/app/${encodeURIComponent(conta.client_db_name)}/whatsapp/conversas`);
-  revalidatePath(`/app/${encodeURIComponent(conta.client_db_name)}/funil`);
+  revalidatePath(`/app/${encodeURIComponent(conta.client_db_name)}/whatsapp/crm`);
   return { ok: true, sucesso: `Conversa excluída (${mensagens} mensagens apagadas).` };
 }

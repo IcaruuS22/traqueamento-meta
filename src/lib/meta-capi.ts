@@ -23,11 +23,12 @@ import { env } from '@/lib/env';
 
 /**
  * A Cloud API (envio de mensagem) continua em v20.0, como no workflow
- * antigo; a CAPI, em v25.0. As duas versões vieram do fluxo original e
- * estão registradas separadas de propósito: alinhá-las é uma mudança de
- * comportamento com a Meta, não uma limpeza de código.
+ * antigo; a CAPI acompanha `META_GRAPH_API_VERSION` (padrão v25.0). As
+ * duas versões vieram do fluxo original e estão registradas separadas de
+ * propósito: alinhá-las é uma mudança de comportamento com a Meta, não
+ * uma limpeza de código.
  */
-export const VERSAO_GRAPH_CAPI = 'v25.0';
+export const VERSAO_GRAPH_CAPI = env.meta.graphVersion;
 export const VERSAO_GRAPH_CLOUD = 'v20.0';
 
 const TIMEOUT_MS = 15_000;

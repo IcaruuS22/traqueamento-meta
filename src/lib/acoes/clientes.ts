@@ -532,7 +532,7 @@ export async function acaoSalvarInvestimentoMensal(
   });
 
   revalidatePath('/admin/clientes');
-  revalidatePath(`/app/${conta.client_db_name}/visao-geral`);
+  revalidatePath(`/app/${encodeURIComponent(conta.client_db_name)}/visao-geral`);
   return {
     sucesso:
       investimento === null

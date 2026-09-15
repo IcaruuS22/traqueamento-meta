@@ -7,7 +7,7 @@ export default function LayoutAutenticacao({ children }: { children: React.React
         <Link href="/" className="mb-6 block text-center">
           <span className="text-lg font-semibold tracking-tight">Trakeamento</span>
           <span className="mt-1 block text-xs text-[var(--text-tertiary)]">
-            Meta Ads · Kommo · WhatsApp
+            Meta Ads · Kommo · WhatsApp · Página de vendas
           </span>
         </Link>
         <div className="card p-6">{children}</div>

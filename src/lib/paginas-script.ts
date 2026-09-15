@@ -13,7 +13,8 @@ import { DOMINIOS_CHECKOUT, REGRAS_CAMPO } from '@/lib/paginas-web';
  *  - carrega o pixel da Meta do cliente e dispara cada evento no pixel e
  *    no servidor com o MESMO `eventID`, para a Meta contar uma vez só;
  *  - captura qualquer `<form>` enviado que tenha e-mail ou telefone e
- *    manda como Lead — o servidor cria o lead no banco e no Kommo;
+ *    manda como Lead — o servidor grava o lead no banco do cliente e
+ *    dispara o evento na Conversions API (o rastreio não fala com CRM);
  *  - reconhece link de checkout (Hotmart, Kiwify, Eduzz...), acrescenta
  *    o id do visitante na URL (`sck`) e dispara InitiateCheckout no
  *    clique. É o `sck` que liga a venda do webhook à visita.

@@ -1,6 +1,7 @@
 import 'server-only';
 import { buscaCredenciaisCliente } from '@/lib/db/cliente';
 import { montaLeadDaMeta, type LeadDaMeta, type RespostaLeadgen } from '@/lib/lead-formulario';
+import { env } from '@/lib/env';
 
 /**
  * Leitura de um lead de Formulário Instantâneo na Graph API.
@@ -19,7 +20,8 @@ import { montaLeadDaMeta, type LeadDaMeta, type RespostaLeadgen } from '@/lib/le
  * liga e desliga campanha pode não ter isso.
  */
 
-export const VERSAO_GRAPH_LEADS = 'v25.0';
+/** Acompanha `META_GRAPH_API_VERSION` (padrão v25.0, o dos workflows n8n). */
+export const VERSAO_GRAPH_LEADS = env.meta.graphVersion;
 
 const TIMEOUT_MS = 15_000;
 

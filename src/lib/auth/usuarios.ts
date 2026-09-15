@@ -18,6 +18,20 @@ export type Usuario = {
   created_at: string;
 };
 
+/**
+ * Erro de cadastro cuja mensagem pode ir para a tela.
+ *
+ * O que a action devolve para o navegador é o que o usuário lê, então
+ * ela só repassa erros desta classe: qualquer outro (mysql2, rede) tem
+ * mensagem com host, usuário e nome de banco dentro.
+ */
+export class ErroDeConta extends Error {
+  constructor(mensagem: string) {
+    super(mensagem);
+    this.name = 'ErroDeConta';
+  }
+}
+
 /** `password_hash` fica fora de todo SELECT que não seja o do login. */
 const COLUNAS_USUARIO = `id, email, name, role, status, email_verified_at, last_login_at, created_at`;
 
@@ -305,10 +319,10 @@ export async function consomeConvite(
   dados: { nome: string; senha: string },
 ): Promise<Usuario> {
   const convite = await buscaConviteValido(tokenBruto);
-  if (!convite) throw new Error('Convite inválido, já utilizado ou expirado');
+  if (!convite) throw new ErroDeConta('Convite inválido, já utilizado ou expirado');
 
   const jaExiste = await buscaUsuarioPorEmail(convite.email);
-  if (jaExiste) throw new Error('Já existe uma conta com este e-mail');
+  if (jaExiste) throw new ErroDeConta('Já existe uma conta com este e-mail');
 
   const hashSenha = await geraHashSenha(dados.senha);
   const clientes = convite.client_db_names ?? [];
@@ -339,13 +353,13 @@ export async function consomeConvite(
       [convite.id],
     );
     if ((upd as { affectedRows: number }).affectedRows === 0) {
-      throw new Error('Convite já utilizado');
+      throw new ErroDeConta('Convite já utilizado');
     }
     return novoId;
   });
 
   const usuario = await buscaUsuarioPorId(userId);
-  if (!usuario) throw new Error('Falha ao criar a conta');
+  if (!usuario) throw new ErroDeConta('Falha ao criar a conta');
   return usuario;
 }
 

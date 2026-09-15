@@ -12,6 +12,7 @@ import {
   consomeConvite,
   criaUsuario,
   EmailJaCadastrado,
+  ErroDeConta,
   iniciaRedefinicaoSenha,
 } from '@/lib/auth/usuarios';
 import { limpa, verificaLimite } from '@/lib/auth/limite';
@@ -153,7 +154,11 @@ export async function acaoCadastroPorConvite(
       detalhe: { via: 'convite' },
     });
   } catch (erro) {
-    return { erro: erro instanceof Error ? erro.message : 'Falha ao criar a conta' };
+    // Só as mensagens escritas para o usuário voltam para a tela; um erro
+    // de banco levaria host e usuário do MySQL junto.
+    if (erro instanceof ErroDeConta) return { erro: erro.message };
+    console.error('[cadastro por convite] falha inesperada', erro);
+    return { erro: 'Falha ao criar a conta. Tente de novo em instantes.' };
   }
 
   await signIn('credentials', { email, senha: parsed.data.senha, redirect: false });

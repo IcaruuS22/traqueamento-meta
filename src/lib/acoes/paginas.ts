@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireAdmin } from '@/lib/auth/guard';
 import { ACOES, registraAuditoria } from '@/lib/audit';
-import { buscaAdAccount } from '@/lib/db/cliente';
+import { buscaAdAccount, salvaTestEventCode } from '@/lib/db/cliente';
 import { atualizaSite, criaSite, removeSite, trocaTokenSite } from '@/lib/db/paginas-sites';
 import { lacunaDeEsquema } from '@/lib/db/pool';
 import { normalizaDominios } from '@/lib/paginas-web';
@@ -160,4 +160,61 @@ export async function acaoTrocarTokenSite(_estado: EstadoFormulario, form: FormD
 
   revalidaTelas(conta.client_db_name);
   return { sucesso: 'Token trocado. Atualize a URL do webhook na plataforma de checkout.' };
+}
+
+/**
+ * Test Event Code da conta.
+ *
+ * O campo já existia na tela de WhatsApp, mas ele vale para toda a CAPI
+ * do cliente — inclusive os eventos da Página de vendas. Cliente que não
+ * usa WhatsApp não tem aquela aba no menu e ficava sem lugar nenhum para
+ * informar o código; daí a cópia aqui, gravando na mesma coluna.
+ */
+const schemaTestEvent = z.object({
+  client_db: z.string().trim().min(1).max(64),
+  // A Meta gera algo como `TEST12345`; o limite é o da coluna.
+  codigo: z.string().trim().max(64),
+});
+
+export async function acaoSalvarTestEventCode(
+  _estado: EstadoFormulario,
+  form: FormData,
+): Promise<EstadoFormulario> {
+  const admin = await requireAdmin();
+  const parsed = schemaTestEvent.safeParse({
+    client_db: form.get('client_db'),
+    codigo: form.get('codigo') ?? '',
+  });
+  if (!parsed.success) return { erro: 'Dados inválidos' };
+
+  const conta = await buscaAdAccount(parsed.data.client_db);
+  if (!conta) return { erro: 'Cliente não encontrado no catálogo.' };
+
+  const codigo = parsed.data.codigo || null;
+  try {
+    if (!(await salvaTestEventCode(conta.client_db_name, codigo))) {
+      return { erro: 'Cliente não encontrado no catálogo.' };
+    }
+  } catch (erro) {
+    console.error('[paginas] falha ao salvar o test event code', conta.client_db_name, erro);
+    return { erro: 'Não foi possível salvar o código.' };
+  }
+
+  await registraAuditoria({
+    userId: admin.id,
+    userEmail: admin.email,
+    acao: ACOES.PAGINA_TEST_EVENT_CODE,
+    clientDb: conta.client_db_name,
+    // O código em si entra: não é segredo e saber qual estava valendo é o
+    // que explica um evento que apareceu só em "Testar eventos".
+    detalhe: { codigo },
+  });
+
+  revalidaTelas(conta.client_db_name);
+  revalidatePath(`/app/${encodeURIComponent(conta.client_db_name)}/whatsapp`);
+  return {
+    sucesso: codigo
+      ? 'Código salvo. Os eventos passam a chegar em “Testar eventos” até você limpar o campo.'
+      : 'Código removido. Os eventos voltam a contar normalmente.',
+  };
 }
