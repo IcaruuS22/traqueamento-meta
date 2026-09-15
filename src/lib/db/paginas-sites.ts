@@ -24,9 +24,6 @@ export type SitePagina = {
   nome: string;
   site_key: string;
   dominios: string[];
-  kommo_pipeline_id: string | null;
-  kommo_status_id: string | null;
-  envia_kommo: boolean;
   ativo: boolean;
   created_at: string;
 };
@@ -40,22 +37,20 @@ export type SiteDaColeta = SitePaginaComToken & {
   meta_pixel_dataset_id: string | null;
 };
 
-type Linha = Omit<SitePaginaComToken, 'dominios' | 'envia_kommo' | 'ativo'> & {
+type Linha = Omit<SitePaginaComToken, 'dominios' | 'ativo'> & {
   dominios: string;
-  envia_kommo: number | boolean;
   ativo: number | boolean;
 };
 
 const COLUNAS = `
   s.id, s.client_db_name, s.nome, s.site_key, s.webhook_token, s.dominios,
-  s.kommo_pipeline_id, s.kommo_status_id, s.envia_kommo, s.ativo, s.created_at
+  s.ativo, s.created_at
 `;
 
 function deLinha<T extends Linha>(l: T) {
   return {
     ...l,
     dominios: l.dominios ? l.dominios.split(',').filter(Boolean) : [],
-    envia_kommo: Boolean(l.envia_kommo),
     ativo: Boolean(l.ativo),
   };
 }
@@ -148,11 +143,15 @@ export async function buscaSitePorChave(siteKey: string): Promise<SiteDaColeta |
 export type DadosSite = {
   nome: string;
   dominios: string[];
-  kommo_pipeline_id: string | null;
-  kommo_status_id: string | null;
-  envia_kommo: boolean;
   ativo: boolean;
 };
+
+/*
+ * As colunas `kommo_pipeline_id`, `kommo_status_id` e `envia_kommo` ainda
+ * existem na tabela, mas o rastreio de páginas não fala mais com o Kommo:
+ * o site é um produto separado do CRM. As escritas zeram as três para que
+ * nenhum cadastro antigo pareça ligado a um funil.
+ */
 
 export async function criaSite(clientDb: string, dados: DadosSite): Promise<number> {
   const nome = sanitizaNomeBanco(clientDb);
@@ -161,11 +160,8 @@ export async function criaSite(clientDb: string, dados: DadosSite): Promise<numb
     `INSERT INTO trakeamento_controle.paginas_sites
        (client_db_name, nome, site_key, webhook_token, dominios,
         kommo_pipeline_id, kommo_status_id, envia_kommo, ativo)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      nome, dados.nome, novaChaveSite(), novoTokenWebhook(), dados.dominios.join(','),
-      dados.kommo_pipeline_id, dados.kommo_status_id, dados.envia_kommo, dados.ativo,
-    ],
+     VALUES (?, ?, ?, ?, ?, NULL, NULL, FALSE, ?)`,
+    [nome, dados.nome, novaChaveSite(), novoTokenWebhook(), dados.dominios.join(','), dados.ativo],
   );
   limpaCache();
   return insertId;
@@ -179,13 +175,10 @@ export async function criaSite(clientDb: string, dados: DadosSite): Promise<numb
 export async function atualizaSite(clientDb: string, id: number, dados: DadosSite): Promise<boolean> {
   const { affectedRows } = await execute(
     `UPDATE trakeamento_controle.paginas_sites
-        SET nome = ?, dominios = ?, kommo_pipeline_id = ?, kommo_status_id = ?,
-            envia_kommo = ?, ativo = ?
+        SET nome = ?, dominios = ?, kommo_pipeline_id = NULL, kommo_status_id = NULL,
+            envia_kommo = FALSE, ativo = ?
       WHERE id = ? AND client_db_name = ?`,
-    [
-      dados.nome, dados.dominios.join(','), dados.kommo_pipeline_id, dados.kommo_status_id,
-      dados.envia_kommo, dados.ativo, id, sanitizaNomeBanco(clientDb),
-    ],
+    [dados.nome, dados.dominios.join(','), dados.ativo, id, sanitizaNomeBanco(clientDb)],
   );
   limpaCache();
   return affectedRows > 0;

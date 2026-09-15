@@ -12,8 +12,12 @@ import { Icones } from '@/components/icones';
 import { SeletorPeriodo } from '@/components/seletores';
 
 /**
- * Tela "Páginas de vendas" — o funil do site: quem visitou, quem deixou
+ * Telas da Página de vendas — o funil do site: quem visitou, quem deixou
  * contato, quem foi para o checkout e quem comprou.
+ *
+ * Duas abas usam este componente: Métricas (KPIs, funil e agrupamentos) e
+ * Últimos Eventos (a lista com o status da Conversions API). Carregam o
+ * mesmo painel, então dividem a consulta e o filtro de site.
  *
  * Visitante, lead e checkout contam pessoas (um visitante que recarrega a
  * página dez vezes é um visitante); compra conta pedidos. A receita é a
@@ -64,13 +68,15 @@ function TabelaAgrupada({ linhas, rotulo }: { linhas: LinhaAgrupada[]; rotulo: s
 export async function TelaPaginas({
   cliente,
   busca,
+  secao,
 }: {
   cliente: string;
   busca: Record<string, string | string[] | undefined>;
+  secao: 'metricas' | 'eventos';
 }) {
   // A checagem se repete aqui mesmo já existindo no layout: no Next,
   // layout e página são renderizados de forma independente.
-  const { conta, db } = await requireClientAccess(decodeURIComponent(cliente));
+  const { usuario, conta, db } = await requireClientAccess(decodeURIComponent(cliente));
 
   const um = (chave: string) => {
     const v = busca[chave];
@@ -100,7 +106,9 @@ export async function TelaPaginas({
   const minimo = await primeiroLeadEm(db);
   const siteAtual = Number(um('site')) || null;
 
-  const hrefSite = (id: number | null) => {
+  const basePaginas = `/app/${encodeURIComponent(conta.client_db_name)}/paginas`;
+  // Período e site acompanham a troca de aba e de site.
+  const hrefSite = (id: number | null, aba: 'metricas' | 'eventos' = secao) => {
     const qs = new URLSearchParams();
     for (const chave of ['range', 'date_from', 'date_to'] as const) {
       const v = um(chave);
@@ -108,13 +116,17 @@ export async function TelaPaginas({
     }
     if (id) qs.set('site', String(id));
     const s = qs.toString();
-    return `/app/${encodeURIComponent(conta.client_db_name)}/paginas${s ? `?${s}` : ''}`;
+    return `${basePaginas}${aba === 'eventos' ? '/eventos' : ''}${s ? `?${s}` : ''}`;
   };
 
   const cabecalho = (
     <PageHero
-      titulo="Páginas de vendas"
-      descricao="Visita, lead de formulário, checkout e compra das páginas do site, com a campanha de onde cada um veio."
+      titulo={secao === 'eventos' ? 'Últimos Eventos' : 'Métricas'}
+      descricao={
+        secao === 'eventos'
+          ? 'Leads, checkouts e compras mais recentes das páginas de vendas, e se cada um chegou à Meta.'
+          : 'Visita, lead de formulário, checkout e compra das páginas do site, com a campanha de onde cada um veio.'
+      }
       acoes={<SeletorPeriodo minimo={minimo} />}
     />
   );
@@ -136,8 +148,17 @@ export async function TelaPaginas({
       <>
         {cabecalho}
         <Vazio>
-          Nenhum site cadastrado ainda. O administrador cadastra o site e passa a tag para colar
-          na página.
+          {usuario.papel === 'admin' ? (
+            <>
+              Nenhum site cadastrado ainda.{' '}
+              <Link href={`${basePaginas}/config`} className="underline">
+                Cadastre o site em Configuração
+              </Link>{' '}
+              e cole a tag na página.
+            </>
+          ) : (
+            'Nenhum site cadastrado ainda. O administrador cadastra o site e passa a tag para colar na página.'
+          )}
         </Vazio>
       </>
     );
@@ -175,10 +196,22 @@ export async function TelaPaginas({
       {painel.errosCapi > 0 ? (
         <p className="mb-4 rounded-[var(--radius-control)] bg-red-50 px-3 py-2 text-sm text-red-700">
           {fmtInt(painel.errosCapi)} evento(s) do período não chegaram à Meta pela Conversions API.
-          O motivo aparece passando o mouse sobre “Erro” na lista abaixo.
+          {secao === 'eventos' ? (
+            'O motivo aparece passando o mouse sobre “Erro” na lista abaixo.'
+          ) : (
+            <>
+              O motivo aparece em{' '}
+              <Link href={hrefSite(siteAtual, 'eventos')} className="underline">
+                Últimos Eventos
+              </Link>
+              .
+            </>
+          )}
         </p>
       ) : null}
 
+      {secao === 'metricas' ? (
+      <>
       <div className="kpi-grid">
         <KpiCard
           rotulo="Visitantes"
@@ -242,11 +275,11 @@ export async function TelaPaginas({
       <Card titulo="Por página" className="mt-4">
         <TabelaAgrupada linhas={painel.porPagina} rotulo="Página" />
       </Card>
-
+      </>
+      ) : (
       <Card
         titulo="Últimos eventos"
         descricao="Os 50 mais recentes, sem as visitas. Coluna Meta: se o evento chegou pela Conversions API."
-        className="mt-4"
       >
         {painel.recentes.length ? (
           <Tabela colunas={['Quando', 'Evento', 'Pessoa', 'Página', 'Valor', 'Origem', 'Meta']}>
@@ -275,6 +308,7 @@ export async function TelaPaginas({
           <Vazio>Nenhum lead, checkout ou compra no período.</Vazio>
         )}
       </Card>
+      )}
     </>
   );
 }

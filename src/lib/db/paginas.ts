@@ -274,8 +274,8 @@ async function ufDoTelefone(telefone: string | null): Promise<string | null> {
  * Lead existente só tem os campos VAZIOS preenchidos: o que o CRM ou o
  * formulário instantâneo já gravaram é mais confiável que um campo de
  * site, e a origem de um lead antigo não é trocada pela de uma visita
- * nova. `current_stage` fica nulo na criação — quem define a etapa é o
- * Kommo, que devolve o `status_id` depois de criar o negócio.
+ * nova. `current_stage` fica nulo: lead de página de vendas não nasce
+ * em funil de CRM nenhum.
  */
 export async function encontraOuCriaLeadPagina(
   db: BancoCliente,
@@ -341,26 +341,6 @@ export async function encontraOuCriaLeadPagina(
     state: estado,
     zipcode: contato.cep,
   };
-}
-
-/**
- * Guarda o negócio que o Kommo criou. `COALESCE` no id: se o lead já
- * tinha negócio (veio de outro canal antes), o primeiro é o que vale —
- * é por ele que o n8n acha o lead quando a etapa muda.
- */
-export async function salvaNegocioDoLead(
-  db: BancoCliente,
-  customerId: number,
-  negocio: { crm_lead_id: string; crm_contact_id: string | null; current_stage: string | null },
-): Promise<void> {
-  await db.execute(
-    `UPDATE ${db.tabela('customers')}
-        SET crm_lead_id = COALESCE(crm_lead_id, ?),
-            crm_contact_id = COALESCE(crm_contact_id, ?),
-            current_stage = COALESCE(current_stage, ?)
-      WHERE id = ?`,
-    [negocio.crm_lead_id, negocio.crm_contact_id, negocio.current_stage, customerId],
-  );
 }
 
 export type ContatoDoCliente = {

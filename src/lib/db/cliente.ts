@@ -328,6 +328,20 @@ export function leProdutosDosClientes(): Promise<Map<string, ProdutosDoCliente>>
   return leProdutosDe(null);
 }
 
+/**
+ * Produtos de todos os clientes para o menu lateral. `null` se a leitura
+ * falhar: o menu cai para "mostra tudo", e uma consulta com problema não
+ * derruba o painel inteiro.
+ */
+export async function produtosParaMenu(): Promise<Map<string, ProdutosDoCliente> | null> {
+  try {
+    return await leProdutosDe(null);
+  } catch (erro) {
+    console.error('[cliente] falha ao ler os produtos para o menu', erro);
+    return null;
+  }
+}
+
 export async function buscaProdutosDoCliente(clientDb: string): Promise<ProdutosDoCliente> {
   const nome = sanitizaNomeBanco(clientDb);
   if (!nome) return { produtos: [], definidos: false };

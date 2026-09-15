@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { acaoLogout } from '@/lib/auth/actions';
 import type { SessaoUsuario } from '@/lib/auth/guard';
 import { Icones, IconesNav } from '@/components/icones';
+import { PRODUTOS, type Produto } from '@/lib/produtos';
 
 /**
  * Casca do app: menu lateral, barra superior e trilha de navegação.
@@ -19,6 +20,13 @@ import { Icones, IconesNav } from '@/components/icones';
 export type ClienteMenu = {
   client_db_name: string;
   account_name: string;
+  /**
+   * Produtos contratados. Decide quais seções aparecem no menu: cliente
+   * só de WhatsApp não vê Formulários nem Página de vendas. `null` quando
+   * a lista não pôde ser lida — aí o menu mostra tudo, em vez de esconder
+   * telas que o cliente usa.
+   */
+  produtos: Produto[] | null;
 };
 
 type ItemNav = {
@@ -50,10 +58,14 @@ function iniciais(nome: string): string {
  * painel. As três abas de métricas do painel (Geral / Formulários /
  * WhatsApp) apontam para a mesma rota com `channel` diferente, que é como
  * o app já separa os canais.
+ *
+ * Cada produto tem a sua seção, e só entram as dos produtos do cliente.
+ * A Configuração da Página de vendas é só do administrador: é nela que
+ * aparece o token do webhook de compra.
  */
-function secoesDoCliente(cliente: string): SecaoNav[] {
+function secoesDoCliente(cliente: string, produtos: readonly Produto[], admin: boolean): SecaoNav[] {
   const base = `/app/${encodeURIComponent(cliente)}`;
-  return [
+  const secoes: (SecaoNav & { produto?: Produto })[] = [
     {
       titulo: 'Geral',
       itens: [
@@ -74,16 +86,28 @@ function secoesDoCliente(cliente: string): SecaoNav[] {
           rotulo: 'Rastreamento',
           icone: IconesNav.rastreamento,
         },
+      ],
+    },
+    {
+      titulo: 'Página de vendas',
+      sanfona: true,
+      produto: 'landing_page',
+      itens: [
+        { href: `${base}/paginas`, rotulo: 'Métricas', icone: IconesNav.metricas },
         {
-          href: `${base}/paginas`,
-          rotulo: 'Páginas de vendas',
-          icone: IconesNav.paginas,
+          href: `${base}/paginas/eventos`,
+          rotulo: 'Últimos Eventos',
+          icone: IconesNav.ultimosEventos,
         },
+        ...(admin
+          ? [{ href: `${base}/paginas/config`, rotulo: 'Configuração', icone: IconesNav.paginas }]
+          : []),
       ],
     },
     {
       titulo: 'Formulários',
       sanfona: true,
+      produto: 'formularios',
       itens: [
         {
           href: `${base}/visao-geral?channel=form`,
@@ -112,6 +136,7 @@ function secoesDoCliente(cliente: string): SecaoNav[] {
     {
       titulo: 'WhatsApp',
       sanfona: true,
+      produto: 'whatsapp',
       itens: [
         // Ordem pedida: o dia a dia é a conversa, então ela vem primeiro.
         // Conexão e cadastro de eventos são configuração, feita uma vez.
@@ -138,6 +163,12 @@ function secoesDoCliente(cliente: string): SecaoNav[] {
       ],
     },
   ];
+  return secoes
+    .filter((s) => !s.produto || produtos.includes(s.produto))
+    .map(({ produto: _produto, ...secao }) => {
+      void _produto;
+      return secao;
+    });
 }
 
 /** Rótulo da última migalha, equivalente ao `TAB_LABELS` do painel. */
@@ -176,7 +207,11 @@ function rotuloDaTela(resto: string, canal: string): string {
     case 'rastreamento':
       return 'Rastreamento';
     case 'paginas':
-      return 'Páginas de vendas';
+      return 'Métricas (Página de vendas)';
+    case 'paginas/eventos':
+      return 'Últimos Eventos (Página de vendas)';
+    case 'paginas/config':
+      return 'Configuração (Página de vendas)';
     case 'formularios/crm':
       return 'CRM (Formulários)';
     case 'formularios/config':
@@ -285,6 +320,7 @@ export function CascaPainel({
         ? (clientes.find((c) => c.client_db_name === segCliente) ?? {
             client_db_name: segCliente,
             account_name: segCliente,
+            produtos: null,
           })
         : null,
     [segCliente, clientes],
@@ -320,9 +356,13 @@ export function CascaPainel({
     return clientes.find((c) => c.client_db_name === alvo) ?? null;
   }, [clienteAtivo, ultimoCliente, clientes]);
 
+  const admin = usuario.papel === 'admin';
   const secoes = useMemo(
-    () => (clienteExibido ? secoesDoCliente(clienteExibido.client_db_name) : []),
-    [clienteExibido],
+    () =>
+      clienteExibido
+        ? secoesDoCliente(clienteExibido.client_db_name, clienteExibido.produtos ?? PRODUTOS, admin)
+        : [],
+    [clienteExibido, admin],
   );
 
   const restoDaRota = clienteAtivo ? segmentos.slice(2).join('/') : '';

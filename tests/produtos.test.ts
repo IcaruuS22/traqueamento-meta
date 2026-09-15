@@ -82,7 +82,7 @@ test('Formulários exige conta e token do Kommo', () => {
   });
 });
 
-test('Landing page exige domínio válido e etapa só com funil', () => {
+test('Landing page exige domínio válido e não pede nada do Kommo', () => {
   const semDominio = leDadosDosProdutos(form({ site_nome: 'LP' }), ['landing_page']);
   assert.ok('erro' in semDominio && /ao menos um domínio/.test(semDominio.erro));
 
@@ -90,12 +90,6 @@ test('Landing page exige domínio válido e etapa só com funil', () => {
     'landing_page',
   ]);
   assert.ok('erro' in invalido && /domínio inválido/.test(invalido.erro));
-
-  const etapaSozinha = leDadosDosProdutos(
-    form({ site_nome: 'LP', site_dominios: 'acme.com', site_kommo_status_id: '55' }),
-    ['landing_page'],
-  );
-  assert.ok('erro' in etapaSozinha && /junto com o funil/.test(etapaSozinha.erro));
 
   const ok = leDadosDosProdutos(
     form({ site_nome: 'LP', site_dominios: 'https://www.acme.com/, lp.acme.com', site_envia_kommo: 'on' }),
@@ -105,9 +99,6 @@ test('Landing page exige domínio válido e etapa só com funil', () => {
   assert.deepEqual(ok.dados.landing_page, {
     nome: 'LP',
     dominios: ['acme.com', 'lp.acme.com'],
-    kommo_pipeline_id: null,
-    kommo_status_id: null,
-    envia_kommo: true,
   });
 });
 

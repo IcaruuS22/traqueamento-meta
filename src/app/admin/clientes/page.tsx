@@ -55,6 +55,11 @@ export default async function PaginaClientesAdmin() {
       ) : (
         clientes.map((cliente) => {
           const usuarios = vinculos[cliente.client_db_name] ?? 0;
+          // Cada cliente mostra só o que os produtos dele usam: subdomínio e
+          // campo de valor são do Kommo, que só existe em Formulários.
+          const doCliente = produtos.get(cliente.client_db_name)?.produtos ?? [];
+          const temPagina = doCliente.includes('landing_page');
+          const temFormularios = doCliente.includes('formularios');
           return (
             <div key={cliente.client_db_name} className="card space-y-3 p-5">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -70,10 +75,12 @@ export default async function PaginaClientesAdmin() {
                 <div>
                   Ad Account: <span className="text-[var(--text-secondary)]">{cliente.ad_account_id}</span>
                 </div>
-                <div>
-                  CRM Account:{' '}
-                  <span className="text-[var(--text-secondary)]">{cliente.crm_account_id ?? '-'}</span>
-                </div>
+                {temFormularios ? (
+                  <div>
+                    CRM Account:{' '}
+                    <span className="text-[var(--text-secondary)]">{cliente.crm_account_id ?? '-'}</span>
+                  </div>
+                ) : null}
                 <div>
                   Banco: <code>{cliente.client_db_name}</code>
                 </div>
@@ -85,7 +92,7 @@ export default async function PaginaClientesAdmin() {
 
               <ProdutosCliente
                 banco={cliente.client_db_name}
-                produtos={produtos.get(cliente.client_db_name)?.produtos ?? []}
+                produtos={doCliente}
                 definidos={produtos.get(cliente.client_db_name)?.definidos ?? false}
               />
 
@@ -96,12 +103,14 @@ export default async function PaginaClientesAdmin() {
                 >
                   Abrir painel
                 </Link>
-                <Link
-                  href={`/admin/clientes/${encodeURIComponent(cliente.client_db_name)}/sites`}
-                  className="btn-ghost px-2 py-1 text-xs"
-                >
-                  Páginas de vendas
-                </Link>
+                {temPagina ? (
+                  <Link
+                    href={`/app/${encodeURIComponent(cliente.client_db_name)}/paginas/config`}
+                    className="btn-ghost px-2 py-1 text-xs"
+                  >
+                    Configurar Página de vendas
+                  </Link>
+                ) : null}
               </div>
 
               <InvestimentoMensal
@@ -109,15 +118,18 @@ export default async function PaginaClientesAdmin() {
                 investimento={investimentos.get(cliente.client_db_name) ?? null}
               />
 
-              <CampoValorCrm
-                banco={cliente.client_db_name}
-                campo={camposValor.get(cliente.client_db_name) ?? null}
-              />
-
-              <SubdominioKommo
-                banco={cliente.client_db_name}
-                subdominio={subdominios.get(cliente.client_db_name) ?? null}
-              />
+              {temFormularios ? (
+                <>
+                  <CampoValorCrm
+                    banco={cliente.client_db_name}
+                    campo={camposValor.get(cliente.client_db_name) ?? null}
+                  />
+                  <SubdominioKommo
+                    banco={cliente.client_db_name}
+                    subdominio={subdominios.get(cliente.client_db_name) ?? null}
+                  />
+                </>
+              ) : null}
 
               <ExcluirCliente nome={cliente.account_name} banco={cliente.client_db_name} />
             </div>

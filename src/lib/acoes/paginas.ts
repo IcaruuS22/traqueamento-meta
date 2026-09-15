@@ -2,6 +2,7 @@
 
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { requireAdmin } from '@/lib/auth/guard';
 import { ACOES, registraAuditoria } from '@/lib/audit';
 import { buscaAdAccount } from '@/lib/db/cliente';
@@ -13,34 +14,31 @@ import type { EstadoFormulario } from '@/lib/auth/actions';
 /**
  * Cadastro dos sites rastreados — só o administrador mexe.
  *
- * O cliente vê o resultado (a tela de Páginas de vendas), mas não o
- * cadastro: é aqui que mora o token do webhook de compra, e quem tem o
- * token consegue lançar Purchase no pixel do cliente.
+ * A tela fica dentro do painel do cliente (Página de vendas ›
+ * Configuração), mas só aparece para o administrador: é aqui que mora o
+ * token do webhook de compra, e quem tem o token consegue lançar
+ * Purchase no pixel do cliente.
+ *
+ * O site não tem nada do Kommo. Página de vendas é um produto separado
+ * dos Formulários Instantâneos e funciona em cliente sem CRM.
  */
 
 const MSG_SEM_TABELA =
   'O banco central ainda não tem a tabela de sites. Rode "Banco de Dados/migracao_paginas_central.sql" e tente de novo.';
-
-const idKommo = z
-  .string()
-  .trim()
-  .max(20)
-  .refine((v) => v === '' || /^\d+$/.test(v), 'Use só o número do ID.')
-  .transform((v) => (v === '' ? null : v));
 
 const schemaSite = z.object({
   client_db: z.string().trim().min(1).max(64),
   id: z.coerce.number().int().positive().optional(),
   nome: z.string().trim().min(2, 'Dê um nome ao site.').max(120),
   dominios: z.string().max(2000),
-  kommo_pipeline_id: idKommo,
-  kommo_status_id: idKommo,
-  envia_kommo: z.boolean(),
   ativo: z.boolean(),
 });
 
-function caminhoDaTela(clientDb: string): string {
-  return `/admin/clientes/${encodeURIComponent(clientDb)}/sites`;
+/** Configuração e métricas mostram o cadastro: as duas revalidam. */
+function revalidaTelas(clientDb: string): void {
+  const base = `/app/${encodeURIComponent(clientDb)}/paginas`;
+  revalidatePath(base);
+  revalidatePath(`${base}/config`);
 }
 
 export async function acaoSalvarSite(_estado: EstadoFormulario, form: FormData): Promise<EstadoFormulario> {
@@ -52,9 +50,6 @@ export async function acaoSalvarSite(_estado: EstadoFormulario, form: FormData):
     id: idBruto === '' ? undefined : idBruto,
     nome: form.get('nome') ?? '',
     dominios: form.get('dominios') ?? '',
-    kommo_pipeline_id: form.get('kommo_pipeline_id') ?? '',
-    kommo_status_id: form.get('kommo_status_id') ?? '',
-    envia_kommo: form.get('envia_kommo') === 'on',
     ativo: form.get('ativo') === 'on',
   });
   if (!parsed.success) return { erro: parsed.error.issues[0]?.message ?? 'Dados inválidos' };
@@ -68,18 +63,8 @@ export async function acaoSalvarSite(_estado: EstadoFormulario, form: FormData):
   if (!dominios.length) {
     return { erro: 'Cadastre ao menos um domínio. Sem domínio, o site não aceita evento de página nenhuma.' };
   }
-  if (d.kommo_status_id && !d.kommo_pipeline_id) {
-    return { erro: 'A etapa do Kommo só vale junto com o funil. Preencha o ID do funil também.' };
-  }
 
-  const dados = {
-    nome: d.nome,
-    dominios,
-    kommo_pipeline_id: d.kommo_pipeline_id,
-    kommo_status_id: d.kommo_status_id,
-    envia_kommo: d.envia_kommo,
-    ativo: d.ativo,
-  };
+  const dados = { nome: d.nome, dominios, ativo: d.ativo };
 
   let id = d.id ?? null;
   try {
@@ -100,10 +85,10 @@ export async function acaoSalvarSite(_estado: EstadoFormulario, form: FormData):
     userEmail: admin.email,
     acao: ACOES.PAGINA_SITE_SALVO,
     clientDb: conta.client_db_name,
-    detalhe: { site_id: id, novo: !d.id, nome: d.nome, dominios, envia_kommo: d.envia_kommo, ativo: d.ativo },
+    detalhe: { site_id: id, novo: !d.id, nome: d.nome, dominios, ativo: d.ativo },
   });
 
-  revalidatePath(caminhoDaTela(conta.client_db_name));
+  revalidaTelas(conta.client_db_name);
   return { sucesso: d.id ? 'Site atualizado.' : 'Site criado. Copie a tag abaixo para a página.' };
 }
 
@@ -138,8 +123,11 @@ export async function acaoExcluirSite(_estado: EstadoFormulario, form: FormData)
     detalhe: { site_id: parsed.data.id },
   });
 
-  revalidatePath(caminhoDaTela(conta.client_db_name));
-  return { sucesso: 'Site excluído. Os eventos já gravados continuam no painel.' };
+  revalidaTelas(conta.client_db_name);
+  // O cartão do site some com a revalidação, levando junto qualquer aviso
+  // que o formulário mostrasse; a página lê `excluido=1` e avisa por ela.
+  // Fora de try: `redirect` funciona lançando um erro próprio do Next.
+  redirect(`/app/${encodeURIComponent(conta.client_db_name)}/paginas/config?excluido=1`);
 }
 
 export async function acaoTrocarTokenSite(_estado: EstadoFormulario, form: FormData): Promise<EstadoFormulario> {
@@ -170,6 +158,6 @@ export async function acaoTrocarTokenSite(_estado: EstadoFormulario, form: FormD
     detalhe: { site_id: parsed.data.id },
   });
 
-  revalidatePath(caminhoDaTela(conta.client_db_name));
+  revalidaTelas(conta.client_db_name);
   return { sucesso: 'Token trocado. Atualize a URL do webhook na plataforma de checkout.' };
 }

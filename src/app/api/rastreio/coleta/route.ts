@@ -8,11 +8,9 @@ import {
   gravaEvento,
   marcaCapiEvento,
   registraVisitante,
-  salvaNegocioDoLead,
   vinculaVisitante,
 } from '@/lib/db/paginas';
 import { buscaSitePorChave, type SiteDaColeta } from '@/lib/db/paginas-sites';
-import { buscaNegocioNoKommo, criaLeadNoKommo } from '@/lib/kommo';
 import { enviaEventoSite } from '@/lib/meta-capi';
 import {
   EVENTOS_PAGINA,
@@ -44,8 +42,8 @@ import {
  *  - a chave precisa ser de um site ativo;
  *  - a página (e a origem da requisição) precisa ser de um dos domínios
  *    cadastrados para aquele site;
- *  - há teto por IP, e um teto bem menor para Lead, que cria negócio no
- *    Kommo do cliente.
+ *  - há teto por IP, e um teto bem menor para Lead, que grava um contato
+ *    no banco do cliente.
  *
  * O corpo chega como `text/plain` (é o que o `sendBeacon` manda sem
  * preflight de CORS) e é lido à mão, com limite de tamanho.
@@ -237,12 +235,12 @@ async function processa(req: Request, h: Record<string, string>): Promise<Respon
 }
 
 /**
- * Cria (ou acha) o lead no banco e, se o site manda para o CRM, o
- * negócio no Kommo. Devolve o id do lead.
+ * Cria (ou acha) o lead no banco do cliente e liga o visitante a ele.
+ * Devolve o id do lead.
  *
- * Falha do Kommo não derruba o evento: o lead já está no banco e o
- * evento vai para a Meta do mesmo jeito. O erro fica no log do servidor
- * — sem o contato, que é dado pessoal.
+ * O rastreio de páginas não fala com o CRM: o lead fica no banco e segue
+ * para a Meta pela Conversions API. Quem também usa o Kommo recebe o lead
+ * do site pelo caminho que já tiver lá (formulário integrado, n8n).
  */
 async function registraLead(
   db: BancoCliente,
@@ -254,48 +252,5 @@ async function registraLead(
 ): Promise<number> {
   const lead = await encontraOuCriaLeadPagina(db, site.ad_account_id, contato, visitante, navegador);
   await vinculaVisitante(db, visitorId, lead.id);
-
-  if (!site.envia_kommo || lead.crm_lead_id) return lead.id;
-
-  const criado = await criaLeadNoKommo(site.client_db_name, {
-    nome:
-      contato.nome ??
-      contato.email ??
-      (contato.telefone ? `+${contato.telefone}` : `Lead do site ${site.nome}`),
-    telefone: contato.telefone,
-    email: contato.email,
-    primeiroNome: contato.primeiro_nome,
-    sobrenome: contato.sobrenome,
-    pipelineId: site.kommo_pipeline_id,
-    statusId: site.kommo_status_id,
-    tags: ['Site', site.nome.slice(0, 50)],
-    utm: {
-      source: visitante?.utm_source ?? null,
-      medium: visitante?.utm_medium ?? null,
-      campaign: visitante?.utm_campaign ?? null,
-      content: visitante?.utm_content ?? null,
-      term: visitante?.utm_term ?? null,
-    },
-    fbclid: visitante?.fbclid ?? null,
-  });
-
-  if (!criado.ok) {
-    if (!criado.semConfiguracao) {
-      console.error('[rastreio/coleta] Kommo recusou o lead', site.client_db_name, lead.id, criado.erro);
-    }
-    return lead.id;
-  }
-
-  // A etapa: a configurada no site ou, sem ela, a que o Kommo escolheu.
-  let etapa = site.kommo_status_id;
-  if (!etapa) {
-    const negocio = await buscaNegocioNoKommo(site.client_db_name, criado.lead_id);
-    etapa = negocio.ok ? negocio.negocio.status_id : null;
-  }
-  await salvaNegocioDoLead(db, lead.id, {
-    crm_lead_id: criado.lead_id,
-    crm_contact_id: criado.contact_id,
-    current_stage: etapa,
-  });
   return lead.id;
 }

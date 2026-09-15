@@ -48,7 +48,7 @@ import type { EstadoFormulario } from '@/lib/auth/actions';
  *    conta de CRM, e os mapeamentos hoje têm tela própria ("Configuração
  *    de eventos"), com edição e exclusão. Exigir os dois na criação
  *    obrigava a inventar dado para poder cadastrar;
- *  - o cadastro começa pela escolha dos produtos (Landing page,
+ *  - o cadastro começa pela escolha dos produtos (Página de vendas,
  *    Formulários Instantâneos, WhatsApp) e só pede os dados deles; os
  *    outros entram depois por `acaoAdicionarProduto`;
  *  - o disparo ficava aberto na internet, com o formulário HTML chamando
@@ -78,7 +78,7 @@ function proximosPassos(clientDb: string, dados: DadosDosProdutos): string[] {
   const banco = encodeURIComponent(clientDb);
   const passos: string[] = [];
   if (dados.landing_page) {
-    passos.push(`Landing page: copie a tag e os webhooks em /admin/clientes/${banco}/sites.`);
+    passos.push(`Página de vendas: copie a tag e os webhooks em /app/${banco}/paginas/config.`);
   }
   if (dados.formularios) {
     passos.push(`Formulários: mapeie as etapas do Kommo em /app/${banco}/formularios/config.`);
@@ -196,7 +196,7 @@ export async function acaoCriarCliente(
         avisos.push('O site não foi criado: rode "Banco de Dados/migracao_paginas_central.sql".');
       } else {
         console.error('[clientes] cliente criado mas o site falhou', clientDb, erro);
-        avisos.push('O site não foi criado; cadastre-o em Páginas de vendas.');
+        avisos.push('O site não foi criado; cadastre-o em Página de vendas › Configuração.');
       }
     }
   }
@@ -355,7 +355,7 @@ export async function acaoAdicionarProduto(
   });
 
   revalidatePath('/admin/clientes');
-  revalidatePath(`/admin/clientes/${encodeURIComponent(banco)}/sites`);
+  revalidatePath(`/app/${encodeURIComponent(banco)}/paginas/config`);
   revalidatePath(`/app/${encodeURIComponent(banco)}/whatsapp`);
   return {
     sucesso: [`${rotulo} adicionado.`, ...proximosPassos(banco, lidos.dados), aviso ? `Atenção: ${aviso}` : '']

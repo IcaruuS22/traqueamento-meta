@@ -23,9 +23,6 @@ export type DadosFormularios = {
 export type DadosLandingPage = {
   nome: string;
   dominios: string[];
-  kommo_pipeline_id: string | null;
-  kommo_status_id: string | null;
-  envia_kommo: boolean;
 };
 
 export type DadosWhatsapp =
@@ -62,12 +59,6 @@ export function subdominioKommoValido(subdominio: string): boolean {
 
 const texto = (campos: Campos, nome: string) => String(campos.get(nome) ?? '').trim();
 
-const idKommo = z
-  .string()
-  .max(20)
-  .refine((v) => v === '' || /^\d+$/.test(v), 'Use só o número do ID do Kommo.')
-  .transform((v) => (v === '' ? null : v));
-
 const schemaFormularios = z.object({
   crm_account_id: z
     .string()
@@ -83,8 +74,6 @@ const schemaFormularios = z.object({
 const schemaLanding = z.object({
   nome: z.string().min(2, 'Landing page: dê um nome ao site.').max(120),
   dominios: z.string().max(2000),
-  kommo_pipeline_id: idKommo,
-  kommo_status_id: idKommo,
 });
 
 const schemaCloud = z.object({
@@ -137,8 +126,6 @@ export function leDadosDosProdutos(
     const p = schemaLanding.safeParse({
       nome: texto(campos, 'site_nome'),
       dominios: texto(campos, 'site_dominios'),
-      kommo_pipeline_id: texto(campos, 'site_kommo_pipeline_id'),
-      kommo_status_id: texto(campos, 'site_kommo_status_id'),
     });
     if (!p.success) return { erro: primeiroErro(p.error) };
 
@@ -151,16 +138,7 @@ export function leDadosDosProdutos(
         erro: 'Landing page: cadastre ao menos um domínio. Sem domínio, o site não aceita evento nenhum.',
       };
     }
-    if (p.data.kommo_status_id && !p.data.kommo_pipeline_id) {
-      return { erro: 'Landing page: a etapa do Kommo só vale junto com o funil.' };
-    }
-    dados.landing_page = {
-      nome: p.data.nome,
-      dominios,
-      kommo_pipeline_id: p.data.kommo_pipeline_id,
-      kommo_status_id: p.data.kommo_status_id,
-      envia_kommo: campos.get('site_envia_kommo') === 'on',
-    };
+    dados.landing_page = { nome: p.data.nome, dominios };
   }
 
   if (produtos.includes('whatsapp')) {

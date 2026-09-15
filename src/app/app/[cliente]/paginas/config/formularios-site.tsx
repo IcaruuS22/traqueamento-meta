@@ -1,9 +1,9 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { startTransition, useActionState, useEffect, useRef, useState } from 'react';
 import { acaoExcluirSite, acaoSalvarSite, acaoTrocarTokenSite } from '@/lib/acoes/paginas';
 import type { EstadoFormulario } from '@/lib/auth/actions';
-import { Alerta, BotaoEnviar } from '@/components/form';
+import { Alerta } from '@/components/form';
 
 const ROTULO = 'mb-1.5 block text-xs font-medium text-[var(--text-tertiary)]';
 
@@ -11,18 +11,36 @@ export type SiteEditavel = {
   id: number;
   nome: string;
   dominios: string[];
-  kommo_pipeline_id: string | null;
-  kommo_status_id: string | null;
-  envia_kommo: boolean;
   ativo: boolean;
 };
 
+/**
+ * Envio manual em vez de `<form action>`: o React limpa o formulário
+ * depois de toda action, e um domínio digitado errado obrigaria a digitar
+ * a lista inteira de novo.
+ */
+function useEnvio(acao: (dados: FormData) => void) {
+  return (evento: React.FormEvent<HTMLFormElement>) => {
+    evento.preventDefault();
+    const dados = new FormData(evento.currentTarget);
+    startTransition(() => acao(dados));
+  };
+}
+
 /** Criação (sem `site`) ou edição de um site rastreado. */
 export function FormularioSite({ banco, site }: { banco: string; site?: SiteEditavel }) {
-  const [estado, acao] = useActionState<EstadoFormulario, FormData>(acaoSalvarSite, {});
+  const [estado, acao, pendente] = useActionState<EstadoFormulario, FormData>(acaoSalvarSite, {});
+  const envia = useEnvio(acao);
+  const form = useRef<HTMLFormElement>(null);
+
+  // Só a criação limpa ao salvar: na edição os campos já mostram o que foi
+  // gravado, e limpar faria parecer que o site perdeu os dados.
+  useEffect(() => {
+    if (!site && estado.sucesso) form.current?.reset();
+  }, [estado, site]);
 
   return (
-    <form action={acao} className="space-y-3">
+    <form ref={form} onSubmit={envia} className="space-y-3">
       <input type="hidden" name="client_db" value={banco} />
       {site ? <input type="hidden" name="id" value={site.id} /> : null}
 
@@ -57,45 +75,14 @@ export function FormularioSite({ banco, site }: { banco: string; site?: SiteEdit
         numa prévia (Lovable, Vercel), inclua o domínio da prévia também.
       </p>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block">
-          <span className={ROTULO}>ID do funil no Kommo (opcional)</span>
-          <input
-            name="kommo_pipeline_id"
-            className="field"
-            inputMode="numeric"
-            maxLength={20}
-            defaultValue={site?.kommo_pipeline_id ?? ''}
-            placeholder="em branco: funil principal"
-          />
-        </label>
-        <label className="block">
-          <span className={ROTULO}>ID da etapa de entrada (opcional)</span>
-          <input
-            name="kommo_status_id"
-            className="field"
-            inputMode="numeric"
-            maxLength={20}
-            defaultValue={site?.kommo_status_id ?? ''}
-            placeholder="em branco: primeira etapa"
-          />
-        </label>
-      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="ativo" defaultChecked={site?.ativo ?? true} />
+        Ativo
+      </label>
 
-      <div className="flex flex-wrap gap-5 text-sm">
-        <label className="flex items-center gap-2">
-          <input type="checkbox" name="envia_kommo" defaultChecked={site?.envia_kommo ?? true} />
-          Criar lead no Kommo quando um formulário da página for enviado
-        </label>
-        <label className="flex items-center gap-2">
-          <input type="checkbox" name="ativo" defaultChecked={site?.ativo ?? true} />
-          Ativo
-        </label>
-      </div>
-
-      <BotaoEnviar carregando="Salvando…" className="!w-auto px-3 py-1.5 text-xs">
-        {site ? 'Salvar alterações' : 'Criar site'}
-      </BotaoEnviar>
+      <button type="submit" className="btn-primary px-3 py-1.5 text-xs" disabled={pendente}>
+        {pendente ? 'Salvando…' : site ? 'Salvar alterações' : 'Criar site'}
+      </button>
 
       {estado.erro ? <Alerta tipo="erro">{estado.erro}</Alerta> : null}
       {estado.sucesso ? <Alerta tipo="sucesso">{estado.sucesso}</Alerta> : null}
@@ -105,34 +92,43 @@ export function FormularioSite({ banco, site }: { banco: string; site?: SiteEdit
 
 /** Troca do token do webhook, com confirmação: a URL antiga para na hora. */
 export function TrocarToken({ banco, id }: { banco: string; id: number }) {
-  const [estado, acao] = useActionState<EstadoFormulario, FormData>(acaoTrocarTokenSite, {});
+  const [estado, acao, pendente] = useActionState<EstadoFormulario, FormData>(acaoTrocarTokenSite, {});
+  const envia = useEnvio(acao);
   const [aberto, setAberto] = useState(false);
+
+  // Fecha a confirmação quando a troca dá certo; o aviso de sucesso fica
+  // visível ao lado do botão.
+  const [visto, setVisto] = useState(estado);
+  if (estado !== visto) {
+    setVisto(estado);
+    if (estado.sucesso) setAberto(false);
+  }
 
   if (!aberto) {
     return (
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="space-y-2">
         <button type="button" onClick={() => setAberto(true)} className="btn-ghost px-2 py-1 text-xs">
           Trocar token do webhook
         </button>
-        {estado.erro ? <Alerta tipo="erro">{estado.erro}</Alerta> : null}
         {estado.sucesso ? <Alerta tipo="sucesso">{estado.sucesso}</Alerta> : null}
       </div>
     );
   }
 
   return (
-    <form action={acao} className="space-y-2 rounded-[var(--radius-control)] bg-amber-50 p-3">
+    <form onSubmit={envia} className="space-y-2 rounded-[var(--radius-control)] border border-amber-300 p-3">
       <input type="hidden" name="client_db" value={banco} />
       <input type="hidden" name="id" value={id} />
-      <p className="text-xs text-amber-800">
+      <p className="text-xs text-[var(--text-secondary)]">
         As URLs de webhook atuais param de funcionar em até um minuto. Vendas que chegarem pela URL
         antiga depois disso são recusadas até a URL nova ser cadastrada na plataforma de checkout.
         Use quando o token vazou.
       </p>
+      {estado.erro ? <Alerta tipo="erro">{estado.erro}</Alerta> : null}
       <div className="flex items-center gap-2">
-        <BotaoEnviar carregando="Trocando…" className="!w-auto px-3 py-1.5 text-xs">
-          Trocar agora
-        </BotaoEnviar>
+        <button type="submit" className="btn-primary px-3 py-1.5 text-xs" disabled={pendente}>
+          {pendente ? 'Trocando…' : 'Trocar agora'}
+        </button>
         <button type="button" onClick={() => setAberto(false)} className="btn-ghost px-2 py-1 text-xs">
           Cancelar
         </button>
@@ -141,35 +137,37 @@ export function TrocarToken({ banco, id }: { banco: string; id: number }) {
   );
 }
 
+/**
+ * Exclusão com confirmação. O aviso de sucesso não mora aqui: a página
+ * revalida e o cartão do site some junto com este componente — a ação
+ * redireciona com `?excluido=1` e a página mostra o aviso.
+ */
 export function ExcluirSite({ banco, id, nome }: { banco: string; id: number; nome: string }) {
-  const [estado, acao] = useActionState<EstadoFormulario, FormData>(acaoExcluirSite, {});
+  const [estado, acao, pendente] = useActionState<EstadoFormulario, FormData>(acaoExcluirSite, {});
+  const envia = useEnvio(acao);
   const [aberto, setAberto] = useState(false);
-
-  if (estado.sucesso) return <Alerta tipo="sucesso">{estado.sucesso}</Alerta>;
 
   if (!aberto) {
     return (
-      <div className="flex items-center gap-3">
-        <button type="button" onClick={() => setAberto(true)} className="btn-ghost px-2 py-1 text-xs text-red-700">
-          Excluir site
-        </button>
-        {estado.erro ? <Alerta tipo="erro">{estado.erro}</Alerta> : null}
-      </div>
+      <button type="button" onClick={() => setAberto(true)} className="btn-ghost px-2 py-1 text-xs text-red-700">
+        Excluir site
+      </button>
     );
   }
 
   return (
-    <form action={acao} className="space-y-2 rounded-[var(--radius-control)] bg-red-50 p-3">
+    <form onSubmit={envia} className="space-y-2 rounded-[var(--radius-control)] border border-red-300 p-3">
       <input type="hidden" name="client_db" value={banco} />
       <input type="hidden" name="id" value={id} />
-      <p className="text-xs text-red-700">
+      <p className="text-xs text-[var(--text-secondary)]">
         Excluir “{nome}” desliga o script e os webhooks deste site na hora. Os eventos já gravados
         continuam no painel. Para só pausar, desmarque “Ativo” em vez de excluir.
       </p>
+      {estado.erro ? <Alerta tipo="erro">{estado.erro}</Alerta> : null}
       <div className="flex items-center gap-2">
-        <BotaoEnviar carregando="Excluindo…" className="!w-auto !bg-red-700 px-3 py-1.5 text-xs">
-          Excluir
-        </BotaoEnviar>
+        <button type="submit" className="btn-primary !bg-red-700 px-3 py-1.5 text-xs" disabled={pendente}>
+          {pendente ? 'Excluindo…' : 'Excluir'}
+        </button>
         <button type="button" onClick={() => setAberto(false)} className="btn-ghost px-2 py-1 text-xs">
           Cancelar
         </button>
@@ -178,10 +176,23 @@ export function ExcluirSite({ banco, id, nome }: { banco: string; id: number; no
   );
 }
 
-/** Bloco de texto com botão de copiar. */
+/** Bloco de texto com botão de copiar. Segredos começam mascarados. */
 export function Copiavel({ rotulo, texto, segredo = false }: { rotulo: string; texto: string; segredo?: boolean }) {
-  const [copiado, setCopiado] = useState(false);
+  const [situacao, setSituacao] = useState<'parado' | 'copiado' | 'falhou'>('parado');
   const [visivel, setVisivel] = useState(!segredo);
+
+  async function copia() {
+    try {
+      await navigator.clipboard.writeText(texto);
+      setSituacao('copiado');
+    } catch {
+      // Sem permissão de área de transferência (http, iframe): mostra o
+      // texto para a pessoa copiar na mão.
+      setVisivel(true);
+      setSituacao('falhou');
+    }
+    setTimeout(() => setSituacao('parado'), 2500);
+  }
 
   return (
     <div>
@@ -193,24 +204,12 @@ export function Copiavel({ rotulo, texto, segredo = false }: { rotulo: string; t
               {visivel ? 'Ocultar' : 'Mostrar'}
             </button>
           ) : null}
-          <button
-            type="button"
-            className="btn-ghost px-2 py-0.5 text-xs"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(texto);
-                setCopiado(true);
-                setTimeout(() => setCopiado(false), 1500);
-              } catch {
-                setCopiado(false);
-              }
-            }}
-          >
-            {copiado ? 'Copiado' : 'Copiar'}
+          <button type="button" className="btn-ghost px-2 py-0.5 text-xs" onClick={copia}>
+            {situacao === 'copiado' ? 'Copiado' : situacao === 'falhou' ? 'Copie manualmente' : 'Copiar'}
           </button>
         </div>
       </div>
-      <pre className="overflow-x-auto rounded-[var(--radius-control)] bg-[var(--surface-muted,#f4f4f5)] p-2 text-xs">
+      <pre className="overflow-x-auto rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--bg-field)] p-2 text-xs text-[var(--text-primary)]">
         <code>{visivel ? texto : texto.replace(/token=[a-f0-9]+/, 'token=••••••••')}</code>
       </pre>
     </div>

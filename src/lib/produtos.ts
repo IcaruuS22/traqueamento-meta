@@ -16,7 +16,7 @@ export const PRODUTOS = ['landing_page', 'formularios', 'whatsapp'] as const;
 export type Produto = (typeof PRODUTOS)[number];
 
 export const ROTULO_PRODUTO: Record<Produto, string> = {
-  landing_page: 'Landing page',
+  landing_page: 'Página de vendas',
   formularios: 'Formulários Instantâneos',
   whatsapp: 'WhatsApp',
 };
@@ -32,7 +32,7 @@ export const DESCRICAO_PRODUTO: Record<Produto, string> = {
 
 /** O que o cadastro pede de cada produto, para mostrar antes da escolha. */
 export const PEDE_PRODUTO: Record<Produto, string[]> = {
-  landing_page: ['Nome do site', 'Domínios da página', 'Funil e etapa do Kommo (opcional)'],
+  landing_page: ['Nome do site', 'Domínios da página'],
   formularios: ['ID da conta no Kommo', 'Token de acesso do Kommo', 'Subdomínio do Kommo'],
   whatsapp: ['Cloud API: Phone Number ID e token', 'ou Evolution API: QR Code depois do cadastro'],
 };
@@ -64,7 +64,7 @@ export function serializaProdutos(lista: Iterable<unknown>): string {
 /**
  * Deduz os produtos de um cliente antigo pelo que já foi cadastrado:
  * conta ou token do Kommo indicam Formulários, uma conexão de WhatsApp
- * indica WhatsApp e um site rastreado indica Landing page.
+ * indica WhatsApp e um site rastreado indica Página de vendas.
  */
 export function derivaProdutos(sinais: {
   temCrm: boolean;

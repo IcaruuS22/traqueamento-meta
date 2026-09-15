@@ -71,26 +71,11 @@ function CamposLandingPage() {
           placeholder="meusite.com.br, lp.meusite.com.br"
           dica="O domínio libera os subdomínios. Para testar numa prévia (Lovable, Vercel), inclua o domínio da prévia."
         />
-        <Campo
-          label="ID do funil no Kommo (opcional)"
-          name="site_kommo_pipeline_id"
-          inputMode="numeric"
-          maxLength={20}
-          placeholder="em branco: funil principal"
-        />
-        <Campo
-          label="ID da etapa de entrada (opcional)"
-          name="site_kommo_status_id"
-          inputMode="numeric"
-          maxLength={20}
-          placeholder="em branco: primeira etapa"
-        />
       </div>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" name="site_envia_kommo" defaultChecked />
-        Criar lead no Kommo quando um formulário da página for enviado
-      </label>
-      <p className={NOTA}>A tag do site e as URLs de webhook de compra aparecem em Páginas de vendas depois de salvar.</p>
+      <p className={NOTA}>
+        A tag do site e as URLs de webhook de compra aparecem em Página de vendas › Configuração,
+        no painel do cliente, depois de salvar.
+      </p>
     </fieldset>
   );
 }

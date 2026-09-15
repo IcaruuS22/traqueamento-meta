@@ -14,7 +14,7 @@ Página do cliente
        ├─ PageView / ViewContent ─────────┐
        ├─ Lead (formulário da página) ────┤──► POST APP/api/rastreio/coleta
        ├─ InitiateCheckout (clique) ──────┤      ├─ grava paginas_eventos
-       └─ Purchase (página de obrigado) ──┘      ├─ Lead: entra em customers + Kommo
+       └─ Purchase (página de obrigado) ──┘      ├─ Lead: entra em customers (sem CRM)
                                                  └─ Conversions API (mesmo event_id do pixel)
        └─ link do checkout ganha ?sck=VISITANTE&utm_*
 
@@ -26,7 +26,7 @@ Hotmart / Kiwify / outro checkout
 ```
 
 - **`site_key` (k)** é pública: aparece no código-fonte da página. O que impede o uso em outro site é a lista de domínios do cadastro.
-- **`webhook_token`** é secreto: vai só na URL do webhook, cadastrada na plataforma de checkout. Aparece apenas na tela do admin, nunca na do cliente. Se vazar, troque em *Admin → Clientes → Páginas de vendas → Trocar token* e atualize a URL na plataforma.
+- **`webhook_token`** é secreto: vai só na URL do webhook, cadastrada na plataforma de checkout. Aparece apenas em *Página de vendas → Configuração*, aba que só o administrador vê. Se vazar, troque lá em *Trocar token do webhook* e atualize a URL na plataforma.
 - O visitante é um id aleatório de 32 caracteres hexadecimais guardado no cookie `_trk_vid` (domínio raiz, 395 dias) e no `localStorage`.
 
 ---
@@ -36,20 +36,20 @@ Hotmart / Kiwify / outro checkout
 1. Rodar `Banco de Dados/migracao_paginas_central.sql` no banco central (`trakeamento_controle`).
 2. Rodar `Banco de Dados/migracao_paginas_cliente.sql` em **cada** banco de cliente que vai usar o rastreio.
 
-As duas migrações só criam tabelas e índices (`IF NOT EXISTS`). Não alteram tabela existente. Enquanto não rodarem, o admin mostra um aviso e a tela do cliente diz "fale com o administrador"; nada quebra.
+As duas migrações só criam tabelas e índices (`IF NOT EXISTS`). Não alteram tabela existente. Enquanto não rodarem, a Configuração mostra um aviso e a tela do cliente diz "fale com o administrador"; nada quebra.
 
 ---
 
 ## 3. Cadastro do site (admin)
 
-*Admin → Clientes → Páginas de vendas*:
+No painel do cliente, *Página de vendas → Configuração* (só administrador). A aba só aparece no menu de clientes que têm o produto Página de vendas; na lista de clientes do admin, o atalho é *Configurar Página de vendas*.
+
+Página de vendas é um produto separado dos Formulários Instantâneos: não usa Kommo nem nenhum CRM, e funciona em cliente sem conta de CRM.
 
 | Campo | O que é |
 |---|---|
 | Nome | Só para o painel. |
 | Domínios | Hosts autorizados, um por linha ou separados por vírgula. `exemplo.com` libera `www.exemplo.com` e `lp.exemplo.com`. Pode colar a URL inteira; o app limpa. |
-| Enviar leads ao Kommo | Liga o mesmo fluxo dos leads de formulário instantâneo. |
-| Funil / etapa do Kommo | Onde o lead entra. Vazio = etapa inicial do funil principal. Etapa sem funil é recusada. |
 | Ativo | Desligado, a tag passa a devolver um script vazio e a coleta recusa os eventos. |
 
 A tela mostra, por site, a tag pronta para colar e as URLs de webhook de cada plataforma.
@@ -147,7 +147,7 @@ Compra vinda do navegador pode ser forjada por quem abrir o console. Onde houver
 
 ## 8. Webhook de compra
 
-URL, mostrada no admin por plataforma:
+URL, mostrada em *Página de vendas → Configuração* por plataforma:
 
 ```
 POST https://APP/api/rastreio/compra/{generico|hotmart|kiwify}?k=CHAVE&token=SEGREDO
@@ -195,15 +195,20 @@ A mesma compra reenviada pela plataforma (ou chegando pelo webhook e pela págin
 
 ## 9. Painel do cliente
 
-*Painel → Páginas de vendas*: visitantes, leads, quem foi ao checkout, compras, receita e conversão; funil; tabelas por campanha (UTM da primeira visita) e por página; os 50 eventos mais recentes, com o status de envio à Meta. Com mais de um site, dá para filtrar por site. Nenhum token ou URL de webhook aparece nessa tela.
+A seção *Página de vendas* do menu tem três abas:
+
+- **Métricas:** visitantes, leads, quem foi ao checkout, compras, receita e conversão; funil; tabelas por campanha (UTM da primeira visita) e por página.
+- **Últimos Eventos:** os 50 leads, checkouts e compras mais recentes, com o status de envio à Meta (passe o mouse sobre "Erro" para ver o motivo).
+- **Configuração:** só administrador (seção 3).
+
+Com mais de um site, Métricas e Últimos Eventos filtram por site. Nenhum token ou URL de webhook aparece nessas duas abas.
 
 ---
 
 ## 10. Limitações conhecidas
 
-- **Lead duplicado na Meta:** o Lead da página já vai pela Conversions API. Se a etapa de entrada no Kommo estiver mapeada para `Lead` em `crm_meta_event_map`, a Meta recebe dois Leads da mesma pessoa. Deixe a etapa de entrada sem evento, ou use outro evento para ela.
 - **Pixel em dobro:** site com pixel próprio precisa de `data-pixel="0"` (seção 4).
 - **Safari (ITP):** cookie criado por JavaScript dura no máximo 7 dias no Safari. Quem volta depois disso é contado como visitante novo; a compra pelo webhook ainda casa se o link do checkout tiver sido decorado na visita da compra.
 - **LGPD:** banner de consentimento e política de privacidade são responsabilidade do dono do site. Para respeitar o consentimento, carregue a tag só depois do aceite.
 - **Adaptadores Hotmart e Kiwify** seguem a documentação pública das plataformas; valide com uma compra de teste (ou o botão de teste de webhook) antes de confiar nos números.
-- **Kommo:** o lead é criado na hora da coleta. Se o Kommo estiver fora, o lead fica no banco e o erro vai para o log; não há nova tentativa automática.
+- **Sem CRM:** o lead da página fica só no banco do cliente e na Meta. Nada é criado no Kommo; se o cliente precisar do lead no CRM, isso é uma integração à parte.
