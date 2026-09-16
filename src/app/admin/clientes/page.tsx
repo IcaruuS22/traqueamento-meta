@@ -14,6 +14,7 @@ import { ExcluirCliente } from './excluir-cliente';
 import { InvestimentoMensal } from './investimento-mensal';
 import { CampoValorCrm } from './campo-valor-crm';
 import { SubdominioKommo } from './subdominio-kommo';
+import { PixelCliente } from './pixel-cliente';
 import { ProdutosCliente } from './produtos-cliente';
 
 export const dynamic = 'force-dynamic';
@@ -112,6 +113,8 @@ export default async function PaginaClientesAdmin() {
                   </Link>
                 ) : null}
               </div>
+
+              <PixelCliente banco={cliente.client_db_name} pixel={cliente.meta_pixel_dataset_id} />
 
               <InvestimentoMensal
                 banco={cliente.client_db_name}

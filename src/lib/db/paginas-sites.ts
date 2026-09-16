@@ -116,6 +116,14 @@ function limpaCache(): void {
 }
 
 /**
+ * Para quem altera dado da conta que a tag também lê (o pixel): sem
+ * isto, este processo seguiria servindo o valor antigo até o cache vencer.
+ */
+export function limpaCacheDeSites(): void {
+  limpaCache();
+}
+
+/**
  * O site dono de uma chave, com os dados do cliente. `null` se não
  * existe. Site inativo volta também — quem chama decide o que fazer.
  */

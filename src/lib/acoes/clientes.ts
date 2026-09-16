@@ -13,12 +13,13 @@ import {
   removeAdAccount,
   salvaCampoValorCrm,
   salvaCrmCliente,
+  salvaPixelDataset,
   salvaProdutos,
   salvaSubdominioKommo,
 } from '@/lib/db/cliente';
 import { apagaBancoDoCliente, criaBancoDoCliente } from '@/lib/db/provisiona';
 import { salvaInvestimentoMensal } from '@/lib/db/orcamento';
-import { criaSite } from '@/lib/db/paginas-sites';
+import { criaSite, limpaCacheDeSites } from '@/lib/db/paginas-sites';
 import { lacunaDeEsquema } from '@/lib/db/pool';
 import { buscaConfigWhatsapp, salvaConfigWhatsapp } from '@/lib/db/whatsapp';
 import { confirmacaoDeExclusaoBate, geraNomeBanco } from '@/lib/nomes-banco';
@@ -667,5 +668,68 @@ export async function acaoSalvarSubdominioKommo(
       subdominio === null
         ? 'Subdomínio removido. A automação de perdidos vai pular este cliente.'
         : `Subdomínio salvo: ${subdominio}.kommo.com`,
+  };
+}
+
+/**
+ * Troca do pixel/dataset da Meta de um cliente já cadastrado.
+ *
+ * Antes só dava para definir o pixel na criação; um ID errado exigia SQL
+ * direto no banco central. A troca vale para todos os produtos do cliente
+ * de uma vez, porque todos leem a mesma coluna.
+ */
+const schemaPixel = z.object({
+  client_db: z.string().trim().min(1).max(64),
+  meta_pixel_dataset_id: z
+    .string()
+    .transform((v) => v.replace(/\s+/g, ''))
+    .pipe(z.string().regex(/^\d{6,20}$/, 'O ID do pixel tem só números, como 851293484396043.')),
+});
+
+export async function acaoSalvarPixelCliente(
+  _estado: EstadoFormulario,
+  form: FormData,
+): Promise<EstadoFormulario> {
+  const admin = await requireAdmin();
+
+  const parsed = schemaPixel.safeParse({
+    client_db: form.get('client_db'),
+    meta_pixel_dataset_id: form.get('meta_pixel_dataset_id') ?? '',
+  });
+  if (!parsed.success) return { erro: parsed.error.issues[0]?.message ?? 'Dados inválidos' };
+
+  const conta = await buscaAdAccount(parsed.data.client_db);
+  if (!conta) return { erro: 'Cliente não encontrado no catálogo.' };
+
+  const anterior = conta.meta_pixel_dataset_id;
+  const novo = parsed.data.meta_pixel_dataset_id;
+  if (anterior === novo) return { sucesso: 'O pixel já é este.' };
+
+  try {
+    const gravou = await salvaPixelDataset(conta.client_db_name, novo);
+    if (!gravou) return { erro: 'Cliente não encontrado no catálogo.' };
+  } catch (erro) {
+    console.error('[clientes] falha ao salvar o pixel', conta.client_db_name, erro);
+    return { erro: 'Não foi possível salvar o pixel.' };
+  }
+
+  limpaCacheDeSites();
+
+  await registraAuditoria({
+    userId: admin.id,
+    userEmail: admin.email,
+    acao: ACOES.CLIENTE_PIXEL_ALTERADO,
+    clientDb: conta.client_db_name,
+    detalhe: { anterior, novo },
+  });
+
+  const base = `/app/${encodeURIComponent(conta.client_db_name)}`;
+  revalidatePath('/admin/clientes');
+  revalidatePath(`${base}/paginas/config`);
+  revalidatePath(`${base}/whatsapp`);
+  return {
+    sucesso:
+      `Pixel salvo: ${novo}. A tag dos sites passa a usar o novo em até 5 minutos ` +
+      '(cache do navegador e do servidor).',
   };
 }

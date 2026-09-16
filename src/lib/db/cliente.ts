@@ -137,6 +137,24 @@ export async function salvaTestEventCode(clientDb: string, codigo: string | null
   return r.affectedRows > 0;
 }
 
+/**
+ * Troca o pixel/dataset da Meta do cliente.
+ *
+ * Uma coluna só para todos os produtos: a tag da Página de vendas, a
+ * Conversions API dos sites, os eventos de formulário (n8n) e os do
+ * WhatsApp leem daqui.
+ */
+export async function salvaPixelDataset(clientDb: string, pixel: string): Promise<boolean> {
+  const nome = sanitizaNomeBanco(clientDb);
+  if (!nome) return false;
+  const r = await execute(
+    `UPDATE trakeamento_controle.ad_accounts
+        SET meta_pixel_dataset_id = ?
+      WHERE client_db_name = ?`,
+    [pixel, nome],
+  );
+  return r.affectedRows > 0;
+}
 
 /**
  * Quantos usuários estão vinculados a cada cliente.
