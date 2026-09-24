@@ -235,11 +235,26 @@ const FONTE = String.raw`(function (w, d) {
     try { porFetch(s, depois || function () {}); } catch (e) { if (depois) depois(); }
   }
 
+  // Sem pixel (bloqueador de anúncios, ou data-pixel="0") ninguém cria o
+  // _fbp e a Conversions API perde a identificação do navegador. A tag
+  // cria no formato do pixel — fb.<índice do domínio>.<ms>.<aleatório> —
+  // e o pixel que carregar depois adota o cookie que já existe.
+  function garanteFbp() {
+    if (leCookie('_fbp')) return;
+    var dominio = RAIZ || location.hostname;
+    var indice = dominio ? dominio.split('.').length - 1 : 1;
+    gravaCookie('_fbp', 'fb.' + indice + '.' + new Date().getTime() + '.' + (parseInt(hex(4), 16) >>> 1), 90);
+  }
+
   // Na primeira página o _fbp ainda não existe: o pixel o cria quando
-  // termina de carregar. O PageView espera até 2 s por ele.
+  // termina de carregar. O PageView espera até 2 s por ele; depois disso
+  // a tag cria o seu.
   function quandoFbp(fn, tentativa) {
     tentativa = tentativa || 0;
-    if (!pixel || leCookie('_fbp') || tentativa >= 8) return fn();
+    if (!pixel || leCookie('_fbp') || tentativa >= 8) {
+      garanteFbp();
+      return fn();
+    }
     setTimeout(function () { quandoFbp(fn, tentativa + 1); }, 250);
   }
 

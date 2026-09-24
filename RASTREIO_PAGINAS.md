@@ -76,7 +76,7 @@ Troca de rota em SPA (Next, React Router, Lovable) é detectada sozinha: cada ro
 
 ### O site já tem o pixel da Meta instalado?
 
-Por padrão a tag carrega o pixel do cliente no navegador e manda o mesmo `eventID` para a Conversions API, para a Meta deduplicar. A cópia do servidor sai primeiro e o pixel só dispara quando a coleta confirma a entrega à Meta (ou após 4 s, se a coleta demorar ou falhar). Como a Meta fica com a cópia que chega primeiro, é a do servidor que conta — a mais completa, com e-mail/telefone do lead já identificado, `fbc`, `fbp`, IP e navegador. Se o site **já tem** o pixel (plugin, GTM, código do construtor), desligue o da tag para não contar em dobro:
+Por padrão a tag carrega o pixel do cliente no navegador e manda o mesmo `eventID` para a Conversions API, para a Meta deduplicar. A cópia do servidor sai primeiro e o pixel só dispara quando a coleta confirma a entrega à Meta (ou após 4 s, se a coleta demorar ou falhar). Como a Meta fica com a cópia que chega primeiro, é a do servidor que conta — a mais completa, com e-mail/telefone do lead já identificado, `fbc`, `fbp`, IP e navegador. Se o pixel não carregar (bloqueador de anúncios, ou `data-pixel="0"`), a tag cria o cookie `_fbp` no formato da Meta, para a Conversions API não perder a identificação do navegador; um pixel que carregue depois adota esse cookie. Se o site **já tem** o pixel (plugin, GTM, código do construtor), desligue o da tag para não contar em dobro:
 
 ```html
 <script async src="https://APP/t.js?k=CHAVE" data-pixel="0"></script>

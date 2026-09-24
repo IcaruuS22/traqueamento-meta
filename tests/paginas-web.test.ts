@@ -8,6 +8,7 @@ import {
   dadosPersonalizados,
   dominioPermitido,
   ehEventIdPagina,
+  ehFbp,
   eventIdDaCompra,
   leCompra,
   limpaUrl,
@@ -358,6 +359,33 @@ describe('script da página', () => {
     assert.match(String(pv.id), /^site_pageview_[a-f0-9]{24}$/);
     assert.equal(jar.get('_trk_vid'), pv.vid);
     assert.equal(trk('visitante'), pv.vid);
+  });
+
+  test('sem pixel, a tag cria o _fbp no formato da Meta', async () => {
+    const { beacons, jar } = rodaScript();
+    const pv = await beacons[0].corpo;
+    // www.site.com.br grava em site.com.br: três partes, índice 2.
+    assert.match(String(pv.fbp), /^fb\.2\.\d{13}\.\d+$/);
+    assert.ok(ehFbp(pv.fbp));
+    assert.equal(jar.get('_fbp'), pv.fbp);
+  });
+
+  test('_fbp que já existe não é trocado', async () => {
+    const { beacons, jar } = rodaScript({ cookies: { _fbp: 'fb.1.1700000000000.42' } });
+    assert.equal((await beacons[0].corpo).fbp, 'fb.1.1700000000000.42');
+    assert.equal(jar.get('_fbp'), 'fb.1.1700000000000.42');
+  });
+
+  test('pixel bloqueado: depois de 2 s a tag cria o _fbp', async () => {
+    const { beacons, jar } = rodaScript({ pixel: '999' });
+    await new Promise((r) => setTimeout(r, 1000));
+    assert.equal(beacons.length, 0);
+    assert.equal(jar.get('_fbp'), undefined);
+    await new Promise((r) => setTimeout(r, 1300));
+    assert.equal(beacons.length, 1);
+    const pv = await beacons[0].corpo;
+    assert.ok(ehFbp(pv.fbp));
+    assert.equal(jar.get('_fbp'), pv.fbp);
   });
 
   test('mantém o visitante que já tinha cookie', async () => {
