@@ -11,7 +11,8 @@ import { DOMINIOS_CHECKOUT, REGRAS_CAMPO } from '@/lib/paginas-web';
  *    cópia no localStorage) e manda PageView a cada página vista,
  *    inclusive nas trocas de rota de SPA (Lovable, Next, React Router);
  *  - carrega o pixel da Meta do cliente e dispara cada evento no pixel e
- *    no servidor com o MESMO `eventID`, para a Meta contar uma vez só;
+ *    no servidor com o MESMO `eventID`, para a Meta contar uma vez só —
+ *    servidor primeiro, pixel depois (ver `evento`);
  *  - captura qualquer `<form>` enviado que tenha e-mail ou telefone e
  *    manda como Lead — o servidor grava o lead no banco do cliente e
  *    dispara o evento na Conversions API (o rastreio não fala com CRM);
@@ -210,18 +211,28 @@ const FONTE = String.raw`(function (w, d) {
 
   /* ---------- envio ---------- */
 
-  function envia(corpo) {
+  // text/plain não dispara preflight de CORS. sendBeacon e fetch com
+  // keepalive sobrevivem à troca de página — o Lead de um formulário que
+  // redireciona e o InitiateCheckout do clique que sai do site dependem
+  // disso.
+  function porFetch(s, depois) {
+    fetch(C.endpoint, { method: 'POST', body: s, keepalive: true, credentials: 'omit', headers: { 'Content-Type': 'text/plain' } })
+      .then(function () { depois(); }, function () { depois(); });
+  }
+
+  // "depois" roda quando a coleta responde — e ela só responde depois de
+  // entregar o evento à Conversions API. Sem quem esperar (sem pixel), o
+  // sendBeacon basta.
+  function envia(corpo, depois) {
     var s = JSON.stringify(corpo);
     log('envia', corpo);
-    // text/plain não dispara preflight de CORS, e o sendBeacon sobrevive
-    // à troca de página — o Lead de um formulário que redireciona e o
-    // InitiateCheckout do clique que sai do site dependem disso.
+    if (depois && w.fetch) {
+      try { return porFetch(s, depois); } catch (e) {}
+    }
     try {
-      if (navigator.sendBeacon && navigator.sendBeacon(C.endpoint, new Blob([s], { type: 'text/plain' }))) return;
+      if (navigator.sendBeacon && navigator.sendBeacon(C.endpoint, new Blob([s], { type: 'text/plain' }))) return depois && depois();
     } catch (e) {}
-    try {
-      fetch(C.endpoint, { method: 'POST', body: s, keepalive: true, credentials: 'omit', headers: { 'Content-Type': 'text/plain' } });
-    } catch (e) {}
+    try { porFetch(s, depois || function () {}); } catch (e) { if (depois) depois(); }
   }
 
   // Na primeira página o _fbp ainda não existe: o pixel o cria quando
@@ -234,16 +245,31 @@ const FONTE = String.raw`(function (w, d) {
 
   var referrer = d.referrer || null;
 
+  // Quanto o pixel espera a coleta confirmar antes de disparar mesmo assim.
+  var ESPERA_SERVIDOR = 4000;
+
+  // Servidor primeiro, pixel depois. Com o mesmo eventID nas duas cópias,
+  // a Meta fica com a que chega primeiro e descarta a outra — e a do
+  // servidor é a completa (e-mail, telefone e nome do lead já conhecido,
+  // fbc, fbp, IP). Se a coleta demorar ou falhar, o pixel sai mesmo assim:
+  // uma cópia do navegador vale mais que nenhuma.
   function evento(nome, extra, id, espera) {
     id = id || 'site_' + nome.toLowerCase() + '_' + hex(12);
     var corpo = { k: C.chave, ev: nome, id: id, vid: vid, url: location.href, ref: referrer };
     referrer = null;
     if (extra) for (var c in extra) if (Object.prototype.hasOwnProperty.call(extra, c)) corpo[c] = extra[c];
-    noPixel(nome, extra && extra.cd, id);
+    var disparado = false;
+    var dispara = function () {
+      if (disparado) return;
+      disparado = true;
+      noPixel(nome, extra && extra.cd, id);
+    };
     var manda = function () {
       corpo.fbc = leCookie('_fbc');
       corpo.fbp = leCookie('_fbp');
-      envia(corpo);
+      if (!pixel || !w.fbq) return envia(corpo);
+      envia(corpo, dispara);
+      setTimeout(dispara, ESPERA_SERVIDOR);
     };
     if (espera) quandoFbp(manda);
     else manda();

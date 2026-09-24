@@ -235,6 +235,8 @@ function rodaScript(opcoes: {
   cookies?: Record<string, string>;
   currentScript?: unknown;
   rolagem?: number;
+  /** Como a coleta responde ao fetch: na hora (padrão), com erro ou quando o teste mandar. */
+  coleta?: 'ok' | 'falha' | 'pendente';
   antes?: (janela: Record<string, unknown>) => void;
 } = {}) {
   const href = opcoes.href ?? 'https://www.site.com.br/?utm_campaign=camp1';
@@ -244,6 +246,7 @@ function rodaScript(opcoes: {
   const ouvintes: Record<string, ((e: unknown) => void)[]> = {};
   const ouvintesJanela: Record<string, ((e: unknown) => void)[]> = {};
   const beacons: Beacon[] = [];
+  const respondeColeta: (() => void)[] = [];
 
   const documento = {
     currentScript: opcoes.currentScript ?? null,
@@ -294,10 +297,21 @@ function rodaScript(opcoes: {
     addEventListener(tipo: string, fn: (e: unknown) => void) {
       (ouvintesJanela[tipo] ??= []).push(fn);
     },
+    fetch(destino: string, init: { body: string }) {
+      beacons.push({ url: destino, corpo: Promise.resolve(JSON.parse(init.body)) });
+      if (opcoes.coleta === 'falha') return Promise.reject(new TypeError('Failed to fetch'));
+      if (opcoes.coleta === 'pendente') return new Promise<void>((ok) => respondeColeta.push(ok));
+      return Promise.resolve({ status: 204 });
+    },
     URL,
     URLSearchParams,
     Blob,
-    setTimeout,
+    // unref: o prazo de segurança do pixel não segura o processo de teste.
+    setTimeout: (fn: () => void, ms?: number) => {
+      const t = setTimeout(fn, ms);
+      t.unref();
+      return t;
+    },
   };
   janela.window = janela;
   opcoes.antes?.(janela);
@@ -317,6 +331,7 @@ function rodaScript(opcoes: {
     ouvintes,
     ouvintesJanela,
     documento,
+    respondeColeta,
     trk: janela.trk as (...a: unknown[]) => unknown,
   };
 }
@@ -443,8 +458,13 @@ describe('script da página', () => {
     assert.equal(beacons.length, 1);
   });
 
+  const filaDoPixel = (janela: Record<string, unknown>) =>
+    JSON.parse(JSON.stringify((janela.fbq as { queue: unknown[][] }).queue.map((a) => [...a])));
+  const umInstante = () => new Promise((r) => setTimeout(r, 0));
+
   test('pixel recebe o mesmo eventID que o servidor', async () => {
     const { janela, beacons } = rodaScript({ pixel: '999', cookies: { _fbp: 'fb.1.1700000000000.42' } });
+    await umInstante();
     // Objetos criados dentro do vm têm outro Object.prototype; o JSON iguala.
     const fila = JSON.parse(JSON.stringify((janela.fbq as { queue: unknown[][] }).queue.map((a) => [...a])));
     assert.deepEqual(fila[0].slice(0, 2), ['init', '999']);
@@ -455,7 +475,9 @@ describe('script da página', () => {
 
   test('Lead passa os dados da pessoa ao pixel antes do evento', async () => {
     const { janela, beacons, trk } = rodaScript({ pixel: '999', cookies: { _fbp: 'fb.1.1700000000000.42' } });
+    await umInstante();
     trk('lead', { email: ' Ana@Site.com ', telefone: '(11) 98888-7777', nome: 'Ana Maria Souza', cidade: 'São Paulo', estado: 'SP', cep: '01310-100' });
+    await umInstante();
     const fila = JSON.parse(JSON.stringify((janela.fbq as { queue: unknown[][] }).queue.map((a) => [...a])));
     const i = fila.findIndex((a: unknown[]) => a[0] === 'init' && (a[2] as Record<string, unknown>).em);
     assert.ok(i > 0);
@@ -472,6 +494,31 @@ describe('script da página', () => {
       country: 'br',
     }]);
     assert.deepEqual(fila[i + 1], ['trackSingle', '999', 'Lead', {}, { eventID: lead.id }]);
+  });
+
+  test('pixel só dispara depois que a coleta responde', async () => {
+    const { janela, beacons, respondeColeta } = rodaScript({
+      pixel: '999',
+      cookies: { _fbp: 'fb.1.1700000000000.42' },
+      coleta: 'pendente',
+    });
+    await umInstante();
+    const semTrack = (f: unknown[][]) => f.every((a) => a[0] !== 'trackSingle');
+    assert.equal(beacons.length, 1);
+    assert.ok(semTrack(filaDoPixel(janela)));
+    respondeColeta[0]();
+    await umInstante();
+    const pv = await beacons[0].corpo;
+    const tracks = filaDoPixel(janela).filter((a: unknown[]) => a[0] === 'trackSingle');
+    assert.deepEqual(tracks, [['trackSingle', '999', 'PageView', {}, { eventID: pv.id }]]);
+  });
+
+  test('coleta com erro não impede o pixel', async () => {
+    const { janela } = rodaScript({ pixel: '999', cookies: { _fbp: 'fb.1.1700000000000.42' }, coleta: 'falha' });
+    await umInstante();
+    const tracks = filaDoPixel(janela).filter((a: unknown[]) => a[0] === 'trackSingle');
+    assert.equal(tracks.length, 1);
+    assert.equal(tracks[0][2], 'PageView');
   });
 
   test('ViewContent ao rolar: uma vez por página, só depois do limite', async () => {
