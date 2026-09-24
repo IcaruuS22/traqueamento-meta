@@ -63,6 +63,8 @@ CREATE TABLE IF NOT EXISTS trakeamento_controle.paginas_sites (
   kommo_status_id VARCHAR(40) NULL DEFAULT NULL,
   envia_kommo BOOLEAN NOT NULL DEFAULT TRUE,
   ativo BOOLEAN NOT NULL DEFAULT TRUE,
+  -- ViewContent ao rolar: 0 = desligado; senão, % da página vista.
+  viewcontent_rolagem TINYINT UNSIGNED NOT NULL DEFAULT 0,
   CONSTRAINT paginas_sites_site_key_key UNIQUE (site_key),
   CONSTRAINT paginas_sites_client_db_name_fkey
     FOREIGN KEY (client_db_name)
@@ -71,5 +73,5 @@ CREATE TABLE IF NOT EXISTS trakeamento_controle.paginas_sites (
     ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Conferência: deve listar as 13 colunas.
+-- Conferência: deve listar as 14 colunas.
 SHOW COLUMNS FROM trakeamento_controle.paginas_sites;

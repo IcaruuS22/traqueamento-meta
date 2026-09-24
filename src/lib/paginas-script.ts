@@ -17,7 +17,9 @@ import { DOMINIOS_CHECKOUT, REGRAS_CAMPO } from '@/lib/paginas-web';
  *    dispara o evento na Conversions API (o rastreio não fala com CRM);
  *  - reconhece link de checkout (Hotmart, Kiwify, Eduzz...), acrescenta
  *    o id do visitante na URL (`sck`) e dispara InitiateCheckout no
- *    clique. É o `sck` que liga a venda do webhook à visita.
+ *    clique. É o `sck` que liga a venda do webhook à visita;
+ *  - com a opção ligada no painel, manda ViewContent uma vez por página
+ *    quando o visitante rola até a porcentagem escolhida.
  *
  * E uma API para o resto: `trk('lead', {...})`, `trk('checkout')`,
  * `trk('purchase', {order_id, value})`, `trk('view_content')`.
@@ -41,6 +43,11 @@ export type ConfigScript = {
   chave: string;
   /** Pixel do cliente. `null` = só servidor, nenhum pixel no navegador. */
   pixel: string | null;
+  /**
+   * ViewContent ao rolar: porcentagem da página vista que dispara o
+   * evento, uma vez por página. 0 ou ausente = desligado.
+   */
+  rolagem?: number;
 };
 
 const MARCADOR = '/*__CONFIG__*/null';
@@ -163,6 +170,39 @@ const FONTE = String.raw`(function (w, d) {
     w.fbq('init', pixel, { external_id: vid });
   }
 
+  // Correspondência avançada manual. Sem ela, só a cópia do servidor
+  // levaria e-mail e telefone — e é justamente a cópia que a Meta descarta
+  // na deduplicação quando o navegador chega primeiro. O pixel criptografa
+  // (SHA-256) antes de enviar; a normalização segue a do servidor
+  // (montaUserData) para os dois lados baterem. Fica só na memória da
+  // página: nada de dado pessoal gravado no navegador do visitante.
+  var PONTUACAO = /[0-9!-\/:-@\[-\x60{-~]/g;
+  function identificaNoPixel(p) {
+    if (!pixel || !w.fbq) return;
+    var u = { external_id: vid };
+    if (p.email) u.em = p.email.toLowerCase();
+    if (p.telefone) u.ph = p.telefone.indexOf('55') === 0 ? p.telefone : '55' + p.telefone;
+    var nome = String(p.primeiro_nome || '').trim();
+    var sobrenome = String(p.sobrenome || '').trim();
+    if (!nome && p.nome) {
+      var partes = String(p.nome).trim().split(/\s+/);
+      nome = partes.shift() || '';
+      if (!sobrenome) sobrenome = partes.join(' ');
+    }
+    var fn = nome.toLowerCase().replace(PONTUACAO, '').replace(/\s+/g, ' ').trim();
+    var ln = sobrenome.toLowerCase().replace(PONTUACAO, '').replace(/\s+/g, ' ').trim();
+    var ct = String(p.cidade || '').toLowerCase().replace(PONTUACAO, '').replace(/\s+/g, '');
+    var st = String(p.estado || '').toLowerCase().trim();
+    var zp = String(p.cep || '').replace(/\D/g, '');
+    if (fn) u.fn = fn;
+    if (ln) u.ln = ln;
+    if (ct) u.ct = ct;
+    if (/^[a-z]{2}$/.test(st)) u.st = st;
+    if (zp.length >= 5 && zp.length <= 9) u.zp = zp;
+    if (u.ph) u.country = 'br';
+    try { w.fbq('init', pixel, u); } catch (e) {}
+  }
+
   function noPixel(nome, dados, id) {
     if (!pixel || !w.fbq) return;
     try { w.fbq('trackSingle', pixel, nome, dados || {}, { eventID: id }); } catch (e) {}
@@ -235,10 +275,12 @@ const FONTE = String.raw`(function (w, d) {
   /* ---------- PageView, inclusive em SPA ---------- */
 
   var ultimaUrl = null;
+  var vcEnviado = false;
   function pageview() {
     var u = location.href.split('#')[0];
     if (u === ultimaUrl) return;
     ultimaUrl = u;
+    vcEnviado = false;
     evento('PageView', null, null, true);
   }
 
@@ -252,6 +294,35 @@ const FONTE = String.raw`(function (w, d) {
     };
   });
   w.addEventListener('popstate', function () { setTimeout(pageview, 0); });
+
+  /* ---------- ViewContent ao rolar ---------- */
+
+  function viewContent(dados) {
+    vcEnviado = true;
+    return evento('ViewContent', { cd: personalizados(dados) });
+  }
+
+  // Uma vez por página (a troca de rota zera). Só conta rolagem de
+  // verdade: página curta, que cabe na tela, não dispara sozinha.
+  var ROLAGEM = C.rolagem > 0 ? C.rolagem : 0;
+  var rolagemAgendada = false;
+  function confereRolagem() {
+    rolagemAgendada = false;
+    if (vcEnviado) return;
+    var de = d.documentElement || {};
+    var alto = Math.max((d.body && d.body.scrollHeight) || 0, de.scrollHeight || 0);
+    if (!alto) return;
+    var topo = w.pageYOffset || de.scrollTop || 0;
+    var visto = topo + (w.innerHeight || de.clientHeight || 0);
+    if (topo > 0 && (visto / alto) * 100 >= ROLAGEM) viewContent({ content_name: d.title });
+  }
+  if (ROLAGEM) {
+    w.addEventListener('scroll', function () {
+      if (vcEnviado || rolagemAgendada) return;
+      rolagemAgendada = true;
+      setTimeout(confereRolagem, 200);
+    }, { passive: true });
+  }
 
   /* ---------- checkout ---------- */
 
@@ -384,18 +455,20 @@ const FONTE = String.raw`(function (w, d) {
     if (chave === ultimoLead && agora - ultimoLeadEm < 5000) return;
     ultimoLead = chave;
     ultimoLeadEm = agora;
-    return evento('Lead', {
-      dados: {
-        email: em || null,
-        telefone: tel || null,
-        nome: dados.nome || dados.name || null,
-        primeiro_nome: dados.primeiro_nome || null,
-        sobrenome: dados.sobrenome || null,
-        cidade: dados.cidade || null,
-        estado: dados.estado || null,
-        cep: dados.cep || null
-      }
-    });
+    var pessoa = {
+      email: em || null,
+      telefone: tel || null,
+      nome: dados.nome || dados.name || null,
+      primeiro_nome: dados.primeiro_nome || null,
+      sobrenome: dados.sobrenome || null,
+      cidade: dados.cidade || null,
+      estado: dados.estado || null,
+      cep: dados.cep || null
+    };
+    // Antes do evento: o Lead do pixel já sai com os dados da pessoa, e
+    // os eventos seguintes desta página também.
+    identificaNoPixel(pessoa);
+    return evento('Lead', { dados: pessoa });
   }
 
   // Fase de captura: roda antes do handler do construtor de página, que
@@ -430,7 +503,7 @@ const FONTE = String.raw`(function (w, d) {
       case 'checkout':
       case 'initiatecheckout': return evento('InitiateCheckout', { cd: personalizados(dados) });
       case 'view_content':
-      case 'viewcontent': return evento('ViewContent', { cd: personalizados(dados) });
+      case 'viewcontent': return viewContent(dados);
       case 'purchase':
       case 'compra': return compra(dados);
       case 'pageview': ultimaUrl = null; return pageview();
@@ -457,6 +530,7 @@ export function montaScript(c: ConfigScript): string {
     endpoint: c.endpoint,
     chave: c.chave,
     pixel: c.pixel,
+    rolagem: c.rolagem && c.rolagem > 0 && c.rolagem <= 100 ? Math.round(c.rolagem) : 0,
     regras: REGRAS_CAMPO,
     checkout: DOMINIOS_CHECKOUT,
   });

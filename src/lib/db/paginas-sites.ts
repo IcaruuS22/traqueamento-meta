@@ -1,7 +1,8 @@
 import 'server-only';
 import { randomBytes } from 'node:crypto';
-import { execute, query, queryOne } from '@/lib/db/pool';
+import { execute, lacunaDeEsquema, query, queryOne } from '@/lib/db/pool';
 import { sanitizaNomeBanco } from '@/lib/nomes-banco';
+import { ehOpcaoRolagem } from '@/lib/paginas-rolagem';
 
 /**
  * Cadastro dos sites rastreados (`trakeamento_controle.paginas_sites`).
@@ -25,6 +26,11 @@ export type SitePagina = {
   site_key: string;
   dominios: string[];
   ativo: boolean;
+  /**
+   * ViewContent automático ao rolar: 0 = desligado; senão, a porcentagem
+   * da página que o visitante precisa ter visto (25, 50, 75 ou 90).
+   */
+  viewcontent_rolagem: number;
   created_at: string;
 };
 
@@ -37,21 +43,48 @@ export type SiteDaColeta = SitePaginaComToken & {
   meta_pixel_dataset_id: string | null;
 };
 
-type Linha = Omit<SitePaginaComToken, 'dominios' | 'ativo'> & {
+type Linha = Omit<SitePaginaComToken, 'dominios' | 'ativo' | 'viewcontent_rolagem'> & {
   dominios: string;
   ativo: number | boolean;
+  viewcontent_rolagem: number | string | null;
 };
 
-const COLUNAS = `
+const COLUNAS_BASE = `
   s.id, s.client_db_name, s.nome, s.site_key, s.webhook_token, s.dominios,
   s.ativo, s.created_at
 `;
 
+const COLUNAS = `${COLUNAS_BASE}, s.viewcontent_rolagem`;
+
+/*
+ * `viewcontent_rolagem` chegou depois da tabela
+ * (`migracao_paginas_viewcontent.sql`). Até a migração rodar, as leituras
+ * repetem a consulta sem a coluna e tratam o recurso como desligado: a
+ * tag e a coleta não podem parar por causa de uma coluna opcional.
+ */
+const COLUNAS_SEM_ROLAGEM = `${COLUNAS_BASE}, 0 AS viewcontent_rolagem`;
+
+/** O erro é a falta de `viewcontent_rolagem` (migração não rodou)? */
+export function faltaColunaRolagem(erro: unknown): boolean {
+  return Boolean(lacunaDeEsquema(erro)?.includes('viewcontent_rolagem'));
+}
+
+async function comFallbackRolagem<T>(consulta: (colunas: string) => Promise<T>): Promise<T> {
+  try {
+    return await consulta(COLUNAS);
+  } catch (erro) {
+    if (!faltaColunaRolagem(erro)) throw erro;
+    return consulta(COLUNAS_SEM_ROLAGEM);
+  }
+}
+
 function deLinha<T extends Linha>(l: T) {
+  const rolagem = Number(l.viewcontent_rolagem) || 0;
   return {
     ...l,
     dominios: l.dominios ? l.dominios.split(',').filter(Boolean) : [],
     ativo: Boolean(l.ativo),
+    viewcontent_rolagem: ehOpcaoRolagem(rolagem) ? rolagem : 0,
   };
 }
 
@@ -79,12 +112,14 @@ export function ehChaveSite(v: unknown): v is string {
 export async function listaSitesComToken(clientDb: string): Promise<SitePaginaComToken[]> {
   const nome = sanitizaNomeBanco(clientDb);
   if (!nome) return [];
-  const linhas = await query<Linha>(
-    `SELECT ${COLUNAS}
-       FROM trakeamento_controle.paginas_sites s
-      WHERE s.client_db_name = ?
-      ORDER BY s.nome ASC, s.id ASC`,
-    [nome],
+  const linhas = await comFallbackRolagem((colunas) =>
+    query<Linha>(
+      `SELECT ${colunas}
+         FROM trakeamento_controle.paginas_sites s
+        WHERE s.client_db_name = ?
+        ORDER BY s.nome ASC, s.id ASC`,
+      [nome],
+    ),
   );
   return linhas.map(deLinha);
 }
@@ -133,13 +168,15 @@ export async function buscaSitePorChave(siteKey: string): Promise<SiteDaColeta |
   const guardado = cache.get(siteKey);
   if (guardado && guardado.ate > agora) return guardado.site;
 
-  const linha = await queryOne<Linha & { ad_account_id: string; meta_pixel_dataset_id: string | null }>(
-    `SELECT ${COLUNAS}, a.ad_account_id, a.meta_pixel_dataset_id
-       FROM trakeamento_controle.paginas_sites s
-       JOIN trakeamento_controle.ad_accounts a ON a.client_db_name = s.client_db_name
-      WHERE s.site_key = ?
-      LIMIT 1`,
-    [siteKey],
+  const linha = await comFallbackRolagem((colunas) =>
+    queryOne<Linha & { ad_account_id: string; meta_pixel_dataset_id: string | null }>(
+      `SELECT ${colunas}, a.ad_account_id, a.meta_pixel_dataset_id
+         FROM trakeamento_controle.paginas_sites s
+         JOIN trakeamento_controle.ad_accounts a ON a.client_db_name = s.client_db_name
+        WHERE s.site_key = ?
+        LIMIT 1`,
+      [siteKey],
+    ),
   );
   const site = linha ? deLinha(linha) : null;
 
@@ -152,7 +189,22 @@ export type DadosSite = {
   nome: string;
   dominios: string[];
   ativo: boolean;
+  viewcontent_rolagem: number;
 };
+
+/**
+ * Escrita com a coluna nova; sem ela no banco, repete sem — mas só quando
+ * o valor pedido é "desligado", que é o que a leitura já assume. Ligar o
+ * recurso antes da migração sobe o erro, e a tela pede para rodá-la.
+ */
+async function escreveComRolagem<T>(dados: DadosSite, com: () => Promise<T>, sem: () => Promise<T>): Promise<T> {
+  try {
+    return await com();
+  } catch (erro) {
+    if (!faltaColunaRolagem(erro) || dados.viewcontent_rolagem !== 0) throw erro;
+    return sem();
+  }
+}
 
 /*
  * As colunas `kommo_pipeline_id`, `kommo_status_id` e `envia_kommo` ainda
@@ -164,12 +216,25 @@ export type DadosSite = {
 export async function criaSite(clientDb: string, dados: DadosSite): Promise<number> {
   const nome = sanitizaNomeBanco(clientDb);
   if (!nome) throw new Error('Nome de banco de cliente inválido');
-  const { insertId } = await execute(
-    `INSERT INTO trakeamento_controle.paginas_sites
-       (client_db_name, nome, site_key, webhook_token, dominios,
-        kommo_pipeline_id, kommo_status_id, envia_kommo, ativo)
-     VALUES (?, ?, ?, ?, ?, NULL, NULL, FALSE, ?)`,
-    [nome, dados.nome, novaChaveSite(), novoTokenWebhook(), dados.dominios.join(','), dados.ativo],
+  const base = [nome, dados.nome, novaChaveSite(), novoTokenWebhook(), dados.dominios.join(','), dados.ativo];
+  const { insertId } = await escreveComRolagem(
+    dados,
+    () =>
+      execute(
+        `INSERT INTO trakeamento_controle.paginas_sites
+           (client_db_name, nome, site_key, webhook_token, dominios,
+            kommo_pipeline_id, kommo_status_id, envia_kommo, ativo, viewcontent_rolagem)
+         VALUES (?, ?, ?, ?, ?, NULL, NULL, FALSE, ?, ?)`,
+        [...base, dados.viewcontent_rolagem],
+      ),
+    () =>
+      execute(
+        `INSERT INTO trakeamento_controle.paginas_sites
+           (client_db_name, nome, site_key, webhook_token, dominios,
+            kommo_pipeline_id, kommo_status_id, envia_kommo, ativo)
+         VALUES (?, ?, ?, ?, ?, NULL, NULL, FALSE, ?)`,
+        base,
+      ),
   );
   limpaCache();
   return insertId;
@@ -181,12 +246,25 @@ export async function criaSite(clientDb: string, dados: DadosSite): Promise<numb
  * linha nenhuma, em vez de editar o cadastro alheio.
  */
 export async function atualizaSite(clientDb: string, id: number, dados: DadosSite): Promise<boolean> {
-  const { affectedRows } = await execute(
-    `UPDATE trakeamento_controle.paginas_sites
-        SET nome = ?, dominios = ?, kommo_pipeline_id = NULL, kommo_status_id = NULL,
-            envia_kommo = FALSE, ativo = ?
-      WHERE id = ? AND client_db_name = ?`,
-    [dados.nome, dados.dominios.join(','), dados.ativo, id, sanitizaNomeBanco(clientDb)],
+  const onde = [id, sanitizaNomeBanco(clientDb)];
+  const { affectedRows } = await escreveComRolagem(
+    dados,
+    () =>
+      execute(
+        `UPDATE trakeamento_controle.paginas_sites
+            SET nome = ?, dominios = ?, kommo_pipeline_id = NULL, kommo_status_id = NULL,
+                envia_kommo = FALSE, ativo = ?, viewcontent_rolagem = ?
+          WHERE id = ? AND client_db_name = ?`,
+        [dados.nome, dados.dominios.join(','), dados.ativo, dados.viewcontent_rolagem, ...onde],
+      ),
+    () =>
+      execute(
+        `UPDATE trakeamento_controle.paginas_sites
+            SET nome = ?, dominios = ?, kommo_pipeline_id = NULL, kommo_status_id = NULL,
+                envia_kommo = FALSE, ativo = ?
+          WHERE id = ? AND client_db_name = ?`,
+        [dados.nome, dados.dominios.join(','), dados.ativo, ...onde],
+      ),
   );
   limpaCache();
   return affectedRows > 0;

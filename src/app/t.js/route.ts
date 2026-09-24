@@ -52,6 +52,7 @@ export async function GET(req: Request) {
       endpoint: `${base}/api/rastreio/coleta`,
       chave: site.site_key,
       pixel: site.meta_pixel_dataset_id,
+      rolagem: site.viewcontent_rolagem,
     }),
     { headers: { ...CABECALHOS, 'Cache-Control': 'public, max-age=300' } },
   );

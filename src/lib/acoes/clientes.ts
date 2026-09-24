@@ -19,7 +19,7 @@ import {
 } from '@/lib/db/cliente';
 import { apagaBancoDoCliente, criaBancoDoCliente } from '@/lib/db/provisiona';
 import { salvaInvestimentoMensal } from '@/lib/db/orcamento';
-import { criaSite, limpaCacheDeSites } from '@/lib/db/paginas-sites';
+import { criaSite, faltaColunaRolagem, limpaCacheDeSites } from '@/lib/db/paginas-sites';
 import { lacunaDeEsquema } from '@/lib/db/pool';
 import { buscaConfigWhatsapp, salvaConfigWhatsapp } from '@/lib/db/whatsapp';
 import { confirmacaoDeExclusaoBate, geraNomeBanco } from '@/lib/nomes-banco';
@@ -36,6 +36,7 @@ import {
   subdominioKommoValido,
   type DadosDosProdutos,
 } from '@/lib/produtos-form';
+import { ROLAGEM_PADRAO } from '@/lib/paginas-rolagem';
 import type { EstadoFormulario } from '@/lib/auth/actions';
 
 /**
@@ -73,6 +74,24 @@ const MSG_SEM_COLUNA_PRODUTOS =
   'A lista de produtos não foi gravada: o banco central ainda não tem a coluna. Rode ' +
   '"Banco de Dados/migracao_produtos_cliente.sql"; até lá, a lista de clientes deduz os ' +
   'produtos pelo que está cadastrado.';
+
+/**
+ * Site criado junto com o cliente (ou com o produto Página de vendas):
+ * já nasce com o ViewContent por rolagem no padrão. Antes de
+ * `migracao_paginas_viewcontent.sql` rodar, nasce com ele desligado em vez
+ * de não nascer — dá para ligar depois em Editar site.
+ */
+async function criaSiteDoCadastro(
+  clientDb: string,
+  site: { nome: string; dominios: string[] },
+): Promise<number> {
+  try {
+    return await criaSite(clientDb, { ...site, ativo: true, viewcontent_rolagem: ROLAGEM_PADRAO });
+  } catch (erro) {
+    if (!faltaColunaRolagem(erro)) throw erro;
+    return criaSite(clientDb, { ...site, ativo: true, viewcontent_rolagem: 0 });
+  }
+}
 
 /** Onde terminar a configuração de cada produto escolhido. */
 function proximosPassos(clientDb: string, dados: DadosDosProdutos): string[] {
@@ -191,7 +210,7 @@ export async function acaoCriarCliente(
 
   if (doProduto.landing_page) {
     try {
-      siteId = await criaSite(clientDb, { ...doProduto.landing_page, ativo: true });
+      siteId = await criaSiteDoCadastro(clientDb, doProduto.landing_page);
     } catch (erro) {
       if (lacunaDeEsquema(erro)) {
         avisos.push('O site não foi criado: rode "Banco de Dados/migracao_paginas_central.sql".');
@@ -299,7 +318,7 @@ export async function acaoAdicionarProduto(
       await salvaCrmCliente(banco, formularios);
     }
     if (landing_page) {
-      siteId = await criaSite(banco, { ...landing_page, ativo: true });
+      siteId = await criaSiteDoCadastro(banco, landing_page);
     }
     if (whatsapp?.via === 'cloud') {
       // O código de teste da Meta mora em ad_accounts e a gravação da

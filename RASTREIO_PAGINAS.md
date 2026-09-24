@@ -36,7 +36,9 @@ Hotmart / Kiwify / outro checkout
 1. Rodar `Banco de Dados/migracao_paginas_central.sql` no banco central (`trakeamento_controle`).
 2. Rodar `Banco de Dados/migracao_paginas_cliente.sql` em **cada** banco de cliente que vai usar o rastreio.
 
-As duas migrações só criam tabelas e índices (`IF NOT EXISTS`). Não alteram tabela existente. Enquanto não rodarem, a Configuração mostra um aviso e a tela do cliente diz "fale com o administrador"; nada quebra.
+3. Rodar `Banco de Dados/migracao_paginas_viewcontent.sql` no banco central (acrescenta a coluna do ViewContent por rolagem; sem ela o recurso fica desligado e o resto funciona).
+
+As duas primeiras migrações só criam tabelas e índices (`IF NOT EXISTS`). Não alteram tabela existente. Enquanto não rodarem, a Configuração mostra um aviso e a tela do cliente diz "fale com o administrador"; nada quebra.
 
 ---
 
@@ -50,6 +52,7 @@ Página de vendas é um produto separado dos Formulários Instantâneos: não us
 |---|---|
 | Nome | Só para o painel. |
 | Domínios | Hosts autorizados, um por linha ou separados por vírgula. `exemplo.com` libera `www.exemplo.com` e `lp.exemplo.com`. Pode colar a URL inteira; o app limpa. |
+| ViewContent ao rolar a página | Desligado, 25%, 50%, 75% ou 90%. Site novo nasce com 50%. Vale sem trocar a tag, em até cinco minutos (cache da `/t.js`). |
 | Ativo | Desligado, a tag passa a devolver um script vazio e a coleta recusa os eventos. |
 
 A tela mostra, por site, a tag pronta para colar e as URLs de webhook de cada plataforma.
@@ -93,6 +96,7 @@ Adicione `data-debug` na tag, ou `?trk_debug=1` na URL da página, e veja o cons
 |---|---|
 | PageView | Carga da página e cada troca de rota. |
 | Lead | Envio de qualquer `<form>` com e-mail ou telefone (10+ dígitos). Os campos são reconhecidos por tipo, `name`, `id`, `autocomplete`, placeholder e rótulo. |
+| ViewContent | Com a opção ligada no cadastro do site: uma vez por página, quando o visitante rola até a porcentagem escolhida. `content_name` = título da página. Troca de rota em SPA libera de novo. Página curta, que não rola, não dispara. Um `trk('view_content')` manual na página conta como o ViewContent dela, e o automático não repete. |
 | InitiateCheckout | Clique em link para Hotmart, Kiwify, Eduzz, Perfect Pay, Monetizze, Ticto, Cakto, Yampi, Pagar.me e qualquer host externo começando com `checkout.` / `pay.` / `pagamento.` / `seguro.`. Outros checkouts: `data-trk-checkout` no link (seção 6). |
 
 Não vira Lead: formulário com campo de senha (login, área de membros), formulário com campo-armadilha preenchido (`honeypot`, `_gotcha`, `hp_…`, `bot_field`) e formulário que não passou na validação do navegador. Campos de CPF, CNPJ, empresa e similares são ignorados e nunca saem da página.

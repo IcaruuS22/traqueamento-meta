@@ -234,6 +234,7 @@ function rodaScript(opcoes: {
   href?: string;
   cookies?: Record<string, string>;
   currentScript?: unknown;
+  rolagem?: number;
   antes?: (janela: Record<string, unknown>) => void;
 } = {}) {
   const href = opcoes.href ?? 'https://www.site.com.br/?utm_campaign=camp1';
@@ -241,6 +242,7 @@ function rodaScript(opcoes: {
   const jar = new Map<string, string>(Object.entries(opcoes.cookies ?? {}));
   const armazenamento = new Map<string, string>();
   const ouvintes: Record<string, ((e: unknown) => void)[]> = {};
+  const ouvintesJanela: Record<string, ((e: unknown) => void)[]> = {};
   const beacons: Beacon[] = [];
 
   const documento = {
@@ -265,7 +267,8 @@ function rodaScript(opcoes: {
     getElementsByTagName: () => [],
     createElement: () => ({}),
     head: { appendChild() {} },
-    documentElement: {},
+    documentElement: {} as Record<string, unknown>,
+    title: '',
   };
 
   const janela: Record<string, unknown> = {
@@ -288,7 +291,9 @@ function rodaScript(opcoes: {
         return a;
       },
     },
-    addEventListener() {},
+    addEventListener(tipo: string, fn: (e: unknown) => void) {
+      (ouvintesJanela[tipo] ??= []).push(fn);
+    },
     URL,
     URLSearchParams,
     Blob,
@@ -297,7 +302,12 @@ function rodaScript(opcoes: {
   janela.window = janela;
   opcoes.antes?.(janela);
 
-  const codigo = montaScript({ endpoint: 'https://painel.test/api/rastreio/coleta', chave: 'chave123', pixel: opcoes.pixel ?? null });
+  const codigo = montaScript({
+    endpoint: 'https://painel.test/api/rastreio/coleta',
+    chave: 'chave123',
+    pixel: opcoes.pixel ?? null,
+    rolagem: opcoes.rolagem,
+  });
   new vm.Script(codigo).runInContext(vm.createContext(janela));
 
   return {
@@ -305,6 +315,8 @@ function rodaScript(opcoes: {
     jar,
     beacons,
     ouvintes,
+    ouvintesJanela,
+    documento,
     trk: janela.trk as (...a: unknown[]) => unknown,
   };
 }
@@ -439,6 +451,78 @@ describe('script da página', () => {
     const pv = await beacons[0].corpo;
     assert.deepEqual(fila[1], ['trackSingle', '999', 'PageView', {}, { eventID: pv.id }]);
     assert.equal(pv.fbp, 'fb.1.1700000000000.42');
+  });
+
+  test('Lead passa os dados da pessoa ao pixel antes do evento', async () => {
+    const { janela, beacons, trk } = rodaScript({ pixel: '999', cookies: { _fbp: 'fb.1.1700000000000.42' } });
+    trk('lead', { email: ' Ana@Site.com ', telefone: '(11) 98888-7777', nome: 'Ana Maria Souza', cidade: 'São Paulo', estado: 'SP', cep: '01310-100' });
+    const fila = JSON.parse(JSON.stringify((janela.fbq as { queue: unknown[][] }).queue.map((a) => [...a])));
+    const i = fila.findIndex((a: unknown[]) => a[0] === 'init' && (a[2] as Record<string, unknown>).em);
+    assert.ok(i > 0);
+    const lead = await beacons[1].corpo;
+    assert.deepEqual(fila[i], ['init', '999', {
+      external_id: lead.vid,
+      em: 'ana@site.com',
+      ph: '5511988887777',
+      fn: 'ana',
+      ln: 'maria souza',
+      ct: 'sãopaulo',
+      st: 'sp',
+      zp: '01310100',
+      country: 'br',
+    }]);
+    assert.deepEqual(fila[i + 1], ['trackSingle', '999', 'Lead', {}, { eventID: lead.id }]);
+  });
+
+  test('ViewContent ao rolar: uma vez por página, só depois do limite', async () => {
+    const { janela, documento, beacons, ouvintesJanela } = rodaScript({ rolagem: 50 });
+    documento.title = 'Curso de Fisio';
+    documento.documentElement.scrollHeight = 4000;
+    janela.innerHeight = 800;
+    const rola = async (y: number) => {
+      janela.pageYOffset = y;
+      for (const fn of ouvintesJanela.scroll ?? []) fn({});
+      await new Promise((r) => setTimeout(r, 250));
+    };
+
+    await rola(1000); // (1000 + 800) / 4000 = 45%
+    assert.equal(beacons.length, 1);
+    await rola(1300); // 52%
+    assert.equal(beacons.length, 2);
+    const vc = await beacons[1].corpo;
+    assert.equal(vc.ev, 'ViewContent');
+    assert.deepEqual(vc.cd, { content_name: 'Curso de Fisio' });
+    await rola(3200);
+    assert.equal(beacons.length, 2);
+  });
+
+  test('ViewContent ao rolar: troca de rota libera de novo; manual substitui', async () => {
+    const { janela, documento, beacons, ouvintesJanela, trk } = rodaScript({ rolagem: 25 });
+    documento.documentElement.scrollHeight = 2000;
+    janela.innerHeight = 500;
+    const rola = async (y: number) => {
+      janela.pageYOffset = y;
+      for (const fn of ouvintesJanela.scroll ?? []) fn({});
+      await new Promise((r) => setTimeout(r, 250));
+    };
+
+    trk('view_content', { produto: 'Curso' });
+    await rola(1500);
+    assert.deepEqual((await Promise.all(beacons.map((b) => b.corpo))).map((c) => c.ev), ['PageView', 'ViewContent']);
+
+    (janela.location as { href: string }).href = 'https://www.site.com.br/obrigado';
+    trk('pageview');
+    await rola(1500);
+    assert.deepEqual(
+      (await Promise.all(beacons.map((b) => b.corpo))).map((c) => c.ev),
+      ['PageView', 'ViewContent', 'PageView', 'ViewContent'],
+    );
+  });
+
+  test('ViewContent ao rolar: desligado não escuta rolagem', () => {
+    const { ouvintesJanela } = rodaScript();
+    assert.equal(ouvintesJanela.scroll, undefined);
+    assert.ok(montaScript({ endpoint: 'https://x', chave: 'k', pixel: null, rolagem: 500 }).includes('"rolagem":0'));
   });
 
   test('data-pixel="0" desliga o pixel e mantém o servidor', () => {

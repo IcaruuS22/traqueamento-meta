@@ -6,9 +6,10 @@ import { redirect } from 'next/navigation';
 import { requireAdmin } from '@/lib/auth/guard';
 import { ACOES, registraAuditoria } from '@/lib/audit';
 import { buscaAdAccount, salvaTestEventCode } from '@/lib/db/cliente';
-import { atualizaSite, criaSite, removeSite, trocaTokenSite } from '@/lib/db/paginas-sites';
+import { atualizaSite, criaSite, faltaColunaRolagem, removeSite, trocaTokenSite } from '@/lib/db/paginas-sites';
 import { lacunaDeEsquema } from '@/lib/db/pool';
 import { normalizaDominios } from '@/lib/paginas-web';
+import { ehOpcaoRolagem } from '@/lib/paginas-rolagem';
 import type { EstadoFormulario } from '@/lib/auth/actions';
 
 /**
@@ -26,12 +27,19 @@ import type { EstadoFormulario } from '@/lib/auth/actions';
 const MSG_SEM_TABELA =
   'O banco central ainda não tem a tabela de sites. Rode "Banco de Dados/migracao_paginas_central.sql" e tente de novo.';
 
+const MSG_SEM_COLUNA_ROLAGEM =
+  'O banco central ainda não tem a coluna do ViewContent por rolagem. Rode "Banco de Dados/migracao_paginas_viewcontent.sql" — ou deixe o ViewContent desligado por enquanto.';
+
 const schemaSite = z.object({
   client_db: z.string().trim().min(1).max(64),
   id: z.coerce.number().int().positive().optional(),
   nome: z.string().trim().min(2, 'Dê um nome ao site.').max(120),
   dominios: z.string().max(2000),
   ativo: z.boolean(),
+  viewcontent_rolagem: z.coerce
+    .number()
+    .int()
+    .refine(ehOpcaoRolagem, 'Escolha uma porcentagem da lista para o ViewContent.'),
 });
 
 /** Configuração e métricas mostram o cadastro: as duas revalidam. */
@@ -51,6 +59,7 @@ export async function acaoSalvarSite(_estado: EstadoFormulario, form: FormData):
     nome: form.get('nome') ?? '',
     dominios: form.get('dominios') ?? '',
     ativo: form.get('ativo') === 'on',
+    viewcontent_rolagem: form.get('viewcontent_rolagem') ?? 0,
   });
   if (!parsed.success) return { erro: parsed.error.issues[0]?.message ?? 'Dados inválidos' };
   const d = parsed.data;
@@ -64,7 +73,7 @@ export async function acaoSalvarSite(_estado: EstadoFormulario, form: FormData):
     return { erro: 'Cadastre ao menos um domínio. Sem domínio, o site não aceita evento de página nenhuma.' };
   }
 
-  const dados = { nome: d.nome, dominios, ativo: d.ativo };
+  const dados = { nome: d.nome, dominios, ativo: d.ativo, viewcontent_rolagem: d.viewcontent_rolagem };
 
   let id = d.id ?? null;
   try {
@@ -75,6 +84,7 @@ export async function acaoSalvarSite(_estado: EstadoFormulario, form: FormData):
       id = await criaSite(conta.client_db_name, dados);
     }
   } catch (erro) {
+    if (faltaColunaRolagem(erro)) return { erro: MSG_SEM_COLUNA_ROLAGEM };
     if (lacunaDeEsquema(erro)) return { erro: MSG_SEM_TABELA };
     console.error('[paginas] falha ao salvar o site', conta.client_db_name, erro);
     return { erro: 'Não foi possível salvar o site.' };
@@ -85,7 +95,14 @@ export async function acaoSalvarSite(_estado: EstadoFormulario, form: FormData):
     userEmail: admin.email,
     acao: ACOES.PAGINA_SITE_SALVO,
     clientDb: conta.client_db_name,
-    detalhe: { site_id: id, novo: !d.id, nome: d.nome, dominios, ativo: d.ativo },
+    detalhe: {
+      site_id: id,
+      novo: !d.id,
+      nome: d.nome,
+      dominios,
+      ativo: d.ativo,
+      viewcontent_rolagem: d.viewcontent_rolagem,
+    },
   });
 
   revalidaTelas(conta.client_db_name);

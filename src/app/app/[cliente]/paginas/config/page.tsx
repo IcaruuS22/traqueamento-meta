@@ -6,6 +6,7 @@ import { listaSitesComToken, type SitePaginaComToken } from '@/lib/db/paginas-si
 import { lacunaDeEsquema } from '@/lib/db/pool';
 import { env } from '@/lib/env';
 import { PLATAFORMAS, ROTULO_PLATAFORMA } from '@/lib/paginas-web';
+import { rotuloRolagem } from '@/lib/paginas-rolagem';
 import { PageHero } from '@/components/hero';
 import { Alerta } from '@/components/form';
 import { Copiavel, ExcluirSite, FormularioSite, TestEventCode, TrocarToken } from './formularios-site';
@@ -83,6 +84,13 @@ export default async function PaginaConfigPaginas({
               </span>
             </div>
             <p className="text-xs text-[var(--text-tertiary)]">Domínios: {site.dominios.join(', ')}</p>
+            <p className="text-xs text-[var(--text-tertiary)]">
+              Eventos automáticos: PageView, Lead, InitiateCheckout
+              {site.viewcontent_rolagem
+                ? `, ViewContent ${rotuloRolagem(site.viewcontent_rolagem)}`
+                : ' — ViewContent por rolagem desligado (ligue em “Editar site”)'}
+              . Purchase chega pelo webhook.
+            </p>
 
             <Copiavel rotulo="Tag para colar no <head> de todas as páginas do site" texto={tag} />
 
@@ -109,7 +117,13 @@ export default async function PaginaConfigPaginas({
               <div className="pt-3">
                 <FormularioSite
                   banco={conta.client_db_name}
-                  site={{ id: site.id, nome: site.nome, dominios: site.dominios, ativo: site.ativo }}
+                  site={{
+                    id: site.id,
+                    nome: site.nome,
+                    dominios: site.dominios,
+                    ativo: site.ativo,
+                    viewcontent_rolagem: site.viewcontent_rolagem,
+                  }}
                 />
               </div>
             </details>
@@ -139,7 +153,8 @@ export default async function PaginaConfigPaginas({
         <p>
           Sem mexer em nada, a tag já manda PageView (inclusive em trocas de rota de SPA), captura
           como Lead todo formulário com e-mail ou telefone e marca como InitiateCheckout o clique em
-          links da Hotmart, Kiwify, Eduzz e outros checkouts conhecidos.
+          links da Hotmart, Kiwify, Eduzz e outros checkouts conhecidos. O ViewContent por rolagem
+          é ligado por site, em “Editar site”, sem trocar a tag.
         </p>
         <p>
           Se o site já tem o pixel da Meta instalado, use <code>data-pixel=&quot;0&quot;</code> na tag
@@ -151,6 +166,7 @@ export default async function PaginaConfigPaginas({
             "window.trk=window.trk||function(){(trk.q=trk.q||[]).push(arguments)};",
             "trk('lead', { nome: 'Maria', email: 'maria@ex.com', telefone: '11999998888' });",
             "trk('checkout', { value: 497, produto: 'Curso' });",
+            "trk('view_content', { produto: 'Curso' }); // substitui o automático nesta página",
             "trk('purchase', { order_id: 'PEDIDO123', value: 497 }); // página de obrigado",
           ].join('\n')}
         />

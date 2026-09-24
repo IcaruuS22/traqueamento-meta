@@ -9,6 +9,7 @@ import {
 } from '@/lib/acoes/paginas';
 import type { EstadoFormulario } from '@/lib/auth/actions';
 import { Alerta } from '@/components/form';
+import { OPCOES_ROLAGEM, ROLAGEM_PADRAO } from '@/lib/paginas-rolagem';
 
 const ROTULO = 'mb-1.5 block text-xs font-medium text-[var(--text-tertiary)]';
 
@@ -17,6 +18,7 @@ export type SiteEditavel = {
   nome: string;
   dominios: string[];
   ativo: boolean;
+  viewcontent_rolagem: number;
 };
 
 /**
@@ -78,6 +80,27 @@ export function FormularioSite({ banco, site }: { banco: string; site?: SiteEdit
         O domínio libera ele mesmo e os subdomínios: <code>meusite.com.br</code> vale para{' '}
         <code>www.meusite.com.br</code>. Evento de página fora da lista é recusado. Para testar
         numa prévia (Lovable, Vercel), inclua o domínio da prévia também.
+      </p>
+
+      <label className="block sm:max-w-xs">
+        <span className={ROTULO}>ViewContent ao rolar a página</span>
+        <select
+          name="viewcontent_rolagem"
+          className="field"
+          defaultValue={String(site?.viewcontent_rolagem ?? ROLAGEM_PADRAO)}
+        >
+          {OPCOES_ROLAGEM.map((v) => (
+            <option key={v} value={v}>
+              {v ? `Quando rolar ${v}% da página` : 'Desligado'}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="text-xs text-[var(--text-tertiary)]">
+        Dispara um ViewContent por página quando o visitante rola até a porcentagem escolhida, com o
+        título da página como <code>content_name</code>. Em SPA, cada rota nova conta de novo. Não
+        precisa mexer na tag: a mudança vale em até cinco minutos. Se a página já chama{' '}
+        <code>trk(&apos;view_content&apos;)</code>, o automático não repete.
       </p>
 
       <label className="flex items-center gap-2 text-sm">
