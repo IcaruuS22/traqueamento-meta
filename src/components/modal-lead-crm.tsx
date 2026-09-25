@@ -228,7 +228,9 @@ export function ModalLeadCrm({
   // Kommo; no de WhatsApp é a própria etapa, que muda aqui dentro — por
   // isso sai de `lead`, e não do card: mandar o lead para perdido faz o
   // campo sumir na hora, sem fechar o modal.
-  const perdido = !!lead && (lead.perdido_em !== null || ehEtapaDePerda(lead.etapa_whatsapp));
+  const perdido =
+    !!lead &&
+    (lead.origem === 'whatsapp' ? ehEtapaDePerda(lead.etapa_whatsapp) : lead.perdido_em !== null);
 
   return (
     <div

@@ -115,8 +115,16 @@ async function leCartoes(
 
   // Banco sem a migração da etapa de perda troca a coluna por um
   // literal: o quadro inteiro não pode cair por causa do motivo.
-  const campoPerda = comPerda ? "NULLIF(c.lost_reason, '')" : 'NULL';
-  const campoPerdidoEm = comPerda ? 'c.lost_at' : 'NULL';
+  //
+  // `lost_at` só vale enquanto o lead continua numa etapa de perda: a
+  // automação de ganhos move o lead perdido que voltou e fechou negócio
+  // sem limpar a perda antiga, e ela não pode seguir mandando no card.
+  const naPerda = `EXISTS (SELECT 1 FROM ${db.tabela('crm_meta_event_map')} mp
+                    WHERE mp.is_lost = 1 AND mp.status_id = c.current_stage)`;
+  const campoPerda = comPerda
+    ? `CASE WHEN ${naPerda} THEN NULLIF(c.lost_reason, '') END`
+    : 'NULL';
+  const campoPerdidoEm = comPerda ? `CASE WHEN ${naPerda} THEN c.lost_at END` : 'NULL';
 
   // Quando o lead chegou na etapa em que está hoje.
   //
@@ -412,10 +420,18 @@ export async function buscaLeadCrm(
       // Perda do lead de formulário: quem grava é a automação
       // "Kommo - Sincroniza Perdidos", lendo o motivo do próprio CRM.
       // Mesmo motivo da consulta acima para ela ser separada.
+      //
+      // Só conta se a etapa atual ainda é de perda: lead que perdeu e
+      // depois ganhou no Kommo guarda o `lost_at` antigo, e sem esse
+      // filtro o modal escondia o valor do negócio de uma venda.
       lacunas.ou(
         db.queryOne<{ lost_reason: string | null; lost_at: string | null }>(
-          `SELECT NULLIF(lost_reason, '') AS lost_reason, lost_at
-             FROM ${db.tabela('customers')} WHERE id = ? LIMIT 1`,
+          `SELECT NULLIF(c.lost_reason, '') AS lost_reason, c.lost_at
+             FROM ${db.tabela('customers')} c
+            WHERE c.id = ?
+              AND EXISTS (SELECT 1 FROM ${db.tabela('crm_meta_event_map')} mp
+                           WHERE mp.is_lost = 1 AND mp.status_id = c.current_stage)
+            LIMIT 1`,
           [customerId],
         ),
         null,
